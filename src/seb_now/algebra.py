@@ -20,6 +20,9 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Callable, Generic, NamedTuple, Sequence, TypeVar
 
+import numpy as np
+from numba import njit
+
 V = TypeVar("V")
 
 Embed = Callable[[str], V]
@@ -110,8 +113,26 @@ class Combinable(Generic[V]):
 Vector = tuple[float, ...]
 
 
+@njit(cache=True)
+def _vec_add_jit(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    out = np.empty_like(a)
+    for i in range(a.shape[0]):
+        out[i] = a[i] + b[i]
+    return out
+
+
+@njit(cache=True)
+def _vec_scale_jit(v: np.ndarray, factor: float) -> np.ndarray:
+    out = np.empty_like(v)
+    for i in range(v.shape[0]):
+        out[i] = v[i] * factor
+    return out
+
+
 def vec_add(a: Vector, b: Vector) -> Vector:
-    return tuple(ai + bi for ai, bi in zip(a, b))
+    """Elementwise sum, jitted so it stays cheap as embedding dimensionality grows."""
+    result = _vec_add_jit(np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64))
+    return tuple(float(x) for x in result)
 
 
 def vec_isclose(a: Vector, b: Vector, tol: float = 1e-9) -> bool:
@@ -119,7 +140,8 @@ def vec_isclose(a: Vector, b: Vector, tol: float = 1e-9) -> bool:
 
 
 def vec_scale(v: Vector, factor: float) -> Vector:
-    return tuple(vi * factor for vi in v)
+    result = _vec_scale_jit(np.asarray(v, dtype=np.float64), factor)
+    return tuple(float(x) for x in result)
 
 
 def bag_of_words_embed(vocab: Sequence[str]) -> Embed[Vector]:

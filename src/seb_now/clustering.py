@@ -17,6 +17,9 @@ from dataclasses import dataclass, field
 from math import sqrt
 from typing import Sequence
 
+import numpy as np
+from numba import njit
+
 from seb_now.algebra import (
     Combinable,
     CombineEmb,
@@ -35,13 +38,26 @@ class IncompatibleEmbeddingError(ValueError):
     """Raised when an (embed, combine_emb) pair fails Combinable's law check."""
 
 
-def cosine_similarity(a: Vector, b: Vector) -> float:
-    dot = sum(ai * bi for ai, bi in zip(a, b))
-    norm_a = sqrt(sum(ai * ai for ai in a))
-    norm_b = sqrt(sum(bi * bi for bi in b))
+@njit(cache=True)
+def _cosine_similarity_jit(a: np.ndarray, b: np.ndarray) -> float:
+    dot = 0.0
+    norm_a = 0.0
+    norm_b = 0.0
+    for i in range(a.shape[0]):
+        dot += a[i] * b[i]
+        norm_a += a[i] * a[i]
+        norm_b += b[i] * b[i]
     if norm_a == 0.0 or norm_b == 0.0:
         return 0.0
-    return dot / (norm_a * norm_b)
+    return dot / (sqrt(norm_a) * sqrt(norm_b))
+
+
+def cosine_similarity(a: Vector, b: Vector) -> float:
+    """Called once per existing cluster on every add_article — jitted since
+    that makes it the hottest loop in the clusterer as embeddings scale up."""
+    return float(
+        _cosine_similarity_jit(np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64))
+    )
 
 
 @dataclass
