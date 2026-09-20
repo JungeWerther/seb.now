@@ -44,3 +44,18 @@ SKIPGRAM_NEAREST_WORDS_TOP_K = 4
 
 # site.py — render_site CLI default output directory
 DEFAULT_SITE_OUTPUT_DIR = "dist"
+
+# site.py — fetch_headlines / build_vocab
+FEED_FETCH_TIMEOUT_SECONDS = 8
+HEADLINES_PER_FEED_LIMIT = 8
+SITE_VOCAB_MAX_SIZE = 40
+SITE_VOCAB_MIN_WORD_LENGTH = 4
+
+
+class NewsFeed(StrEnum):
+    """Public RSS feeds fetched at build time to populate the homepage."""
+
+    BBC_WORLD = "https://feeds.bbci.co.uk/news/world/rss.xml"
+    NPR_WORLD = "https://feeds.npr.org/1004/rss.xml"
+    HACKER_NEWS_FRONT_PAGE = "https://news.ycombinator.com/rss"
+    TECHCRUNCH = "https://techcrunch.com/feed/"

@@ -48,6 +48,24 @@
     padding: 0.4rem 0;
     font-size: 1.05rem;
   }
+  .topic li a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .topic li a:hover {
+    text-decoration: underline;
+  }
+  .empty {
+    color: #9a9a9f;
+    padding: 2rem 0;
+  }
+  footer {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 1.5rem 3rem;
+    color: #6b6b70;
+    font-size: 0.8rem;
+  }
 </style>
 </head>
 <body>
@@ -58,11 +76,14 @@
     <h2>Topic {{ loop.index }}</h2>
     <ul>
     {% for headline in cluster.member_texts %}
-      <li>{{ headline }}</li>
+      <li><a href="{{ links.get(headline, '#') }}">{{ headline }}</a></li>
     {% endfor %}
     </ul>
   </section>
+{% else %}
+  <p class="empty">No headlines available right now — every source feed failed to load on this build.</p>
 {% endfor %}
 </main>
+<footer>Live headlines, clustered into topics on each build. Sources: {{ sources | join(", ") }}.</footer>
 </body>
 </html>
