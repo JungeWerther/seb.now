@@ -17,6 +17,7 @@ build-backend = "uv_build"
 dev = [
     "pytest>=8.0.0",
     "ruff>=0.6.0",
+    "hypothesis>=6.100.0",
 ]
 examples = [
     "sentence-transformers>=3.0.0",
