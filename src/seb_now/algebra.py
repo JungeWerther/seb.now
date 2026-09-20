@@ -109,6 +109,10 @@ def vec_isclose(a: Vector, b: Vector, tol: float = 1e-9) -> bool:
     return len(a) == len(b) and all(abs(ai - bi) <= tol for ai, bi in zip(a, b))
 
 
+def vec_scale(v: Vector, factor: float) -> Vector:
+    return tuple(vi * factor for vi in v)
+
+
 def bag_of_words_embed(vocab: Sequence[str]) -> Embed[Vector]:
     """A genuinely compositional embedding: word counts over a fixed vocab.
 
