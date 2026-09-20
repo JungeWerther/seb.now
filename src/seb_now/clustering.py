@@ -22,6 +22,7 @@ from seb_now.algebra import (
     CombineEmb,
     Embed,
     IsClose,
+    LawCheckKind,
     LawReport,
     SampleTriple,
     Vector,
@@ -78,9 +79,10 @@ class TopicClusterer:
         if not report.holds:
             raise IncompatibleEmbeddingError(
                 f"embed/combine_emb pair fails Combinable's law on {report.total} "
-                f"sample(s): {len(report.homomorphism_failures)} homomorphism, "
-                f"{len(report.combinator_associativity_failures)} combinator-associativity, "
-                f"{len(report.full_law_failures)} full-law failure(s). Incremental "
+                f"sample(s): {len(report.failures(LawCheckKind.HOMOMORPHISM))} homomorphism, "
+                f"{len(report.failures(LawCheckKind.COMBINATOR_ASSOCIATIVITY))} "
+                "combinator-associativity, "
+                f"{len(report.failures(LawCheckKind.FULL_LAW))} full-law failure(s). Incremental "
                 "cluster centroids would be order-dependent and silently wrong with "
                 "this embedding — pick a compositional embed (e.g. bag_of_words_embed) "
                 "or train one (see examples/train_compositional_embedding.py)."

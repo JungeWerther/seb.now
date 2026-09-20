@@ -2,6 +2,7 @@ from itertools import product
 
 from seb_now.algebra import (
     Combinable,
+    LawCheckKind,
     SampleTriple,
     bag_of_words_embed,
     hashed_embed,
@@ -33,10 +34,10 @@ def test_bag_of_words_is_a_homomorphism_and_satisfies_the_full_law() -> None:
     report = combinable.check(SAMPLES)
 
     assert report.holds
-    assert report.source_associativity_failures == []
-    assert report.homomorphism_failures == []
-    assert report.combinator_associativity_failures == []
-    assert report.full_law_failures == []
+    assert report.failures(LawCheckKind.SOURCE_ASSOCIATIVITY) == []
+    assert report.failures(LawCheckKind.HOMOMORPHISM) == []
+    assert report.failures(LawCheckKind.COMBINATOR_ASSOCIATIVITY) == []
+    assert report.failures(LawCheckKind.FULL_LAW) == []
 
 
 def test_hashed_embedding_fails_the_homomorphism_condition() -> None:
@@ -52,6 +53,6 @@ def test_hashed_embedding_fails_the_homomorphism_condition() -> None:
     assert not report.holds
     # vec_add is still associative on its own, and text concatenation is
     # still associative — only the embed-to-combine_emb relationship breaks.
-    assert report.combinator_associativity_failures == []
-    assert report.homomorphism_failures != []
-    assert report.full_law_failures != []
+    assert report.failures(LawCheckKind.COMBINATOR_ASSOCIATIVITY) == []
+    assert report.failures(LawCheckKind.HOMOMORPHISM) != []
+    assert report.failures(LawCheckKind.FULL_LAW) != []

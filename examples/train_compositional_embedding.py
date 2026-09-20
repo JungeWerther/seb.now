@@ -27,7 +27,15 @@ from itertools import product
 import torch
 from torch import Tensor, nn
 
-from seb_now.algebra import Combinable, Embed, SampleTriple, Vector, vec_add, vec_isclose
+from seb_now.algebra import (
+    Combinable,
+    Embed,
+    LawCheckKind,
+    SampleTriple,
+    Vector,
+    vec_add,
+    vec_isclose,
+)
 from seb_now.constants import (
     ATTENTION_BATCH_FIRST,
     ATTENTION_EMBEDDING_DIM,
@@ -118,8 +126,8 @@ def evaluate(model: TrainableEmbed) -> None:
         for x, y, z in product(TEXTS[:2], TEXTS[2:3], TEXTS[3:4])
     ]
     report = combinable.check(samples)
-    print(f"  homomorphism failures: {len(report.homomorphism_failures)} / {report.total}")
-    print(f"  full law failures:     {len(report.full_law_failures)} / {report.total}")
+    print(f"  homomorphism failures: {len(report.failures(LawCheckKind.HOMOMORPHISM))} / {report.total}")
+    print(f"  full law failures:     {len(report.failures(LawCheckKind.FULL_LAW))} / {report.total}")
 
 
 def main() -> None:

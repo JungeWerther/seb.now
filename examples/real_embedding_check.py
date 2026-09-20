@@ -14,7 +14,7 @@ from itertools import product
 
 from sentence_transformers import SentenceTransformer
 
-from seb_now.algebra import Combinable, Embed, SampleTriple, Vector, vec_add, vec_isclose
+from seb_now.algebra import Combinable, Embed, LawCheckKind, SampleTriple, Vector, vec_add, vec_isclose
 from seb_now.constants import ModelName, REAL_EMBEDDING_LAW_CHECK_TOLERANCE
 
 
@@ -51,10 +51,10 @@ def main() -> None:
     report = combinable.check(samples)
 
     print(f"samples checked:               {report.total}")
-    print(f"source associativity failures: {len(report.source_associativity_failures)}")
-    print(f"homomorphism failures:         {len(report.homomorphism_failures)}")
-    print(f"combinator associativity fail: {len(report.combinator_associativity_failures)}")
-    print(f"full law failures:             {len(report.full_law_failures)}")
+    print(f"source associativity failures: {len(report.failures(LawCheckKind.SOURCE_ASSOCIATIVITY))}")
+    print(f"homomorphism failures:         {len(report.failures(LawCheckKind.HOMOMORPHISM))}")
+    print(f"combinator associativity fail: {len(report.failures(LawCheckKind.COMBINATOR_ASSOCIATIVITY))}")
+    print(f"full law failures:             {len(report.failures(LawCheckKind.FULL_LAW))}")
     print()
     print(f"law holds overall: {report.holds}")
 

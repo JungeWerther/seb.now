@@ -17,6 +17,7 @@ broke, plus the composite `full_law_holds` for the identity itself.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Callable, Generic, NamedTuple, Sequence, TypeVar
 
 V = TypeVar("V")
@@ -27,33 +28,38 @@ CombineEmb = Callable[[V, V], V]
 IsClose = Callable[[V, V], bool]
 
 
-class SamplePair(NamedTuple):
-    x: str
-    y: str
-
-
 class SampleTriple(NamedTuple):
     x: str
     y: str
     z: str
 
 
+class LawCheckKind(StrEnum):
+    SOURCE_ASSOCIATIVITY = "source_associativity"
+    HOMOMORPHISM = "homomorphism"
+    COMBINATOR_ASSOCIATIVITY = "combinator_associativity"
+    FULL_LAW = "full_law"
+
+
+class LawCheckEvent(NamedTuple):
+    kind: LawCheckKind
+    sample: SampleTriple
+    passed: bool
+
+
 @dataclass(frozen=True)
 class LawReport:
     total: int
-    source_associativity_failures: list[SampleTriple] = field(default_factory=list)
-    homomorphism_failures: list[SamplePair] = field(default_factory=list)
-    combinator_associativity_failures: list[SampleTriple] = field(default_factory=list)
-    full_law_failures: list[SampleTriple] = field(default_factory=list)
+    events: list[LawCheckEvent] = field(default_factory=list)
 
     @property
     def holds(self) -> bool:
-        return self.total > 0 and not (
-            self.source_associativity_failures
-            or self.homomorphism_failures
-            or self.combinator_associativity_failures
-            or self.full_law_failures
-        )
+        return self.total > 0 and all(event.passed for event in self.events)
+
+    def failures(self, kind: LawCheckKind | None = None) -> list[LawCheckEvent]:
+        return [
+            event for event in self.events if not event.passed and (kind is None or event.kind is kind)
+        ]
 
 
 @dataclass(frozen=True)
@@ -85,17 +91,20 @@ class Combinable(Generic[V]):
         return self.is_close(self.embed(combined_text), predicted)
 
     def check(self, samples: Sequence[SampleTriple]) -> LawReport:
-        report = LawReport(total=len(samples))
+        events: list[LawCheckEvent] = []
         for x, y, z in samples:
-            if not self.is_source_associative(x, y, z):
-                report.source_associativity_failures.append(SampleTriple(x, y, z))
-            if not self.is_homomorphism(x, y):
-                report.homomorphism_failures.append(SamplePair(x, y))
-            if not self.is_combinator_associative(x, y, z):
-                report.combinator_associativity_failures.append(SampleTriple(x, y, z))
-            if not self.full_law_holds(x, y, z):
-                report.full_law_failures.append(SampleTriple(x, y, z))
-        return report
+            sample = SampleTriple(x, y, z)
+            events.append(
+                LawCheckEvent(LawCheckKind.SOURCE_ASSOCIATIVITY, sample, self.is_source_associative(x, y, z))
+            )
+            events.append(LawCheckEvent(LawCheckKind.HOMOMORPHISM, sample, self.is_homomorphism(x, y)))
+            events.append(
+                LawCheckEvent(
+                    LawCheckKind.COMBINATOR_ASSOCIATIVITY, sample, self.is_combinator_associative(x, y, z)
+                )
+            )
+            events.append(LawCheckEvent(LawCheckKind.FULL_LAW, sample, self.full_law_holds(x, y, z)))
+        return LawReport(total=len(samples), events=events)
 
 
 Vector = tuple[float, ...]
