@@ -23,42 +23,26 @@ Run with:
 
 from __future__ import annotations
 
+import json
 from itertools import chain
+from pathlib import Path
 
 import torch
 from torch import Tensor, nn
 
 from seb_now.algebra import Combinable, Embed, SampleTriple, Vector, vec_add, vec_isclose
 from seb_now.clustering import TopicClusterer
+from seb_now.constants import (
+    SKIPGRAM_EMBEDDING_DIM,
+    SKIPGRAM_EPOCHS,
+    SKIPGRAM_LAW_CHECK_TOLERANCE,
+    SKIPGRAM_LEARNING_RATE,
+    SKIPGRAM_NEAREST_WORDS_TOP_K,
+    SKIPGRAM_SIMILARITY_THRESHOLD,
+    SKIPGRAM_WINDOW,
+)
 
-CORPUS = [
-    "the election results show a close vote",
-    "voters cast their ballot in the election",
-    "the candidate leads in the latest poll",
-    "poll numbers shift after the debate",
-    "election officials count every vote and ballot",
-    "the candidate campaigns ahead of the vote",
-    "voter turnout affects the election outcome",
-    "the poll predicts a narrow election vote",
-    "fed raises interest rate amid inflation",
-    "inflation data pushes the fed to cut rate",
-    "stocks rally as the fed signals a rate cut",
-    "market watches the fed for the next rate move",
-    "rising inflation worries stock market investors",
-    "the fed decision on rate moves the stock market",
-]
-
-HEADLINES = [
-    "Fed signals rate cut as inflation cools",
-    "Stocks rally after inflation data beats forecasts",
-    "Market watches fed for next rate decision",
-    "Candidate leads poll ahead of election",
-    "Election officials report record ballot turnout",
-    "Vote count tightens in key swing state",
-]
-
-DIM = 8
-STOPWORDS = {"the", "a", "an", "of", "in", "on", "as", "to", "and", "their", "every", "next", "for"}
+DATA_DIR = Path(__file__).parent / "data"
 
 
 class SkipGram(nn.Module):
@@ -76,7 +60,9 @@ def build_vocab(tokenized: list[list[str]]) -> dict[str, int]:
     return {word: i for i, word in enumerate(words)}
 
 
-def skipgram_pairs(tokenized: list[list[str]], vocab: dict[str, int], window: int = 2) -> list[tuple[int, int]]:
+def skipgram_pairs(
+    tokenized: list[list[str]], vocab: dict[str, int], window: int = SKIPGRAM_WINDOW
+) -> list[tuple[int, int]]:
     pairs = []
     for sentence in tokenized:
         ids = [vocab[word] for word in sentence]
@@ -87,12 +73,18 @@ def skipgram_pairs(tokenized: list[list[str]], vocab: dict[str, int], window: in
     return pairs
 
 
-def train_word_vectors(dim: int = DIM, epochs: int = 800, lr: float = 0.05) -> tuple[dict[str, int], Tensor]:
+def train_word_vectors(
+    corpus: list[str],
+    stopwords: set[str],
+    dim: int = SKIPGRAM_EMBEDDING_DIM,
+    epochs: int = SKIPGRAM_EPOCHS,
+    lr: float = SKIPGRAM_LEARNING_RATE,
+) -> tuple[dict[str, int], Tensor]:
     tokenized = [
-        [word for word in sentence.split() if word not in STOPWORDS] for sentence in CORPUS
+        [word for word in sentence.split() if word not in stopwords] for sentence in corpus
     ]
     vocab = build_vocab(tokenized)
-    pairs = skipgram_pairs(tokenized, vocab, window=3)
+    pairs = skipgram_pairs(tokenized, vocab)
 
     model = SkipGram(len(vocab), dim)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -124,7 +116,9 @@ def semantic_embed(vocab: dict[str, int], word_vectors: Tensor) -> Embed[Vector]
     return embed
 
 
-def nearest_words(word: str, vocab: dict[str, int], word_vectors: Tensor, top_k: int = 4) -> list[str]:
+def nearest_words(
+    word: str, vocab: dict[str, int], word_vectors: Tensor, top_k: int = SKIPGRAM_NEAREST_WORDS_TOP_K
+) -> list[str]:
     target = word_vectors[vocab[word]]
     similarities = nn.functional.cosine_similarity(target.unsqueeze(0), word_vectors)
     ranked = sorted(vocab, key=lambda w: -similarities[vocab[w]].item())
@@ -133,8 +127,14 @@ def nearest_words(word: str, vocab: dict[str, int], word_vectors: Tensor, top_k:
 
 def main() -> None:
     torch.manual_seed(0)
+
+    corpus_data = json.loads((DATA_DIR / "skipgram_corpus.json").read_text())
+    corpus: list[str] = corpus_data["corpus"]
+    stopwords: set[str] = set(corpus_data["stopwords"])
+    headlines: list[str] = json.loads((DATA_DIR / "headlines.json").read_text())
+
     print("Training skip-gram word vectors locally (no network, no pretrained weights)...")
-    vocab, word_vectors = train_word_vectors()
+    vocab, word_vectors = train_word_vectors(corpus, stopwords)
 
     print()
     print(f"nearest words to 'vote':    {nearest_words('vote', vocab, word_vectors)}")
@@ -145,23 +145,23 @@ def main() -> None:
     clusterer = TopicClusterer(
         embed=embed,
         combine_emb=vec_add,
-        is_close=lambda a, b: vec_isclose(a, b, tol=1e-4),
-        similarity_threshold=0.3,
+        is_close=lambda a, b: vec_isclose(a, b, tol=SKIPGRAM_LAW_CHECK_TOLERANCE),
+        similarity_threshold=SKIPGRAM_SIMILARITY_THRESHOLD,
     )
 
     combinable = Combinable(
         embed=embed,
         combine_text=lambda x, y: f"{x} {y}",
         combine_emb=vec_add,
-        is_close=lambda a, b: vec_isclose(a, b, tol=1e-4),
+        is_close=lambda a, b: vec_isclose(a, b, tol=SKIPGRAM_LAW_CHECK_TOLERANCE),
     )
-    samples = [SampleTriple(HEADLINES[0], HEADLINES[1], HEADLINES[2])]
+    samples = [SampleTriple(headlines[0], headlines[1], headlines[2])]
     report = combinable.check(samples)
     print()
     print(f"Combinable check (sum-pooling is homomorphic by construction): holds={report.holds}")
 
     print()
-    for headline in HEADLINES:
+    for headline in headlines:
         cluster = clusterer.add_article(headline)
         cluster_id = clusterer.clusters.index(cluster)
         print(f"[cluster {cluster_id}] {headline}")

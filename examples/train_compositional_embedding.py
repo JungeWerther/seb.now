@@ -28,13 +28,20 @@ import torch
 from torch import Tensor, nn
 
 from seb_now.algebra import Combinable, Embed, SampleTriple, Vector, vec_add, vec_isclose
+from seb_now.constants import (
+    ATTENTION_BATCH_FIRST,
+    ATTENTION_EMBEDDING_DIM,
+    SELF_ATTENTION_NUM_HEADS,
+    TRAINABLE_EMBED_LAW_CHECK_TOLERANCE,
+    TRAINABLE_EMBED_LEARNING_RATE,
+    TRAINABLE_EMBED_TRAIN_STEPS,
+)
 
 VOCAB = [
     "macro", "prices", "rose", "fell", "today",
     "after", "announcement", "analysts", "surprised", "sharply",
 ]
-WORD_TO_IDX = {word: i for i, word in enumerate(VOCAB)}
-DIM = 16
+WORD_TO_INDEX = {word: i for i, word in enumerate(VOCAB)}
 
 TEXTS = [
     "macro prices",
@@ -51,7 +58,9 @@ class TrainableEmbed(nn.Module):
     def __init__(self, vocab_size: int, dim: int) -> None:
         super().__init__()
         self.token_embedding = nn.Embedding(vocab_size, dim)
-        self.attention = nn.MultiheadAttention(dim, num_heads=1, batch_first=True)
+        self.attention = nn.MultiheadAttention(
+            dim, num_heads=SELF_ATTENTION_NUM_HEADS, batch_first=ATTENTION_BATCH_FIRST
+        )
 
     def forward(self, token_ids: Tensor) -> Tensor:
         tokens = self.token_embedding(token_ids)  # (1, seq_len, dim)
@@ -59,7 +68,7 @@ class TrainableEmbed(nn.Module):
         return attended.mean(dim=1).squeeze(0)  # (dim,)
 
     def encode(self, text: str) -> Tensor:
-        ids = torch.tensor([[WORD_TO_IDX[word] for word in text.lower().split()]])
+        ids = torch.tensor([[WORD_TO_INDEX[word] for word in text.lower().split()]])
         return self.forward(ids)
 
     def as_embed(self) -> Embed[Vector]:
@@ -80,7 +89,11 @@ def homomorphism_loss(model: TrainableEmbed, x: str, y: str) -> Tensor:
     return nn.functional.mse_loss(combined, predicted)
 
 
-def train(model: TrainableEmbed, steps: int = 300, lr: float = 0.05) -> None:
+def train(
+    model: TrainableEmbed,
+    steps: int = TRAINABLE_EMBED_TRAIN_STEPS,
+    lr: float = TRAINABLE_EMBED_LEARNING_RATE,
+) -> None:
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     pairs = list(product(TEXTS, TEXTS))
     for step in range(steps):
@@ -98,7 +111,7 @@ def evaluate(model: TrainableEmbed) -> None:
         embed=model.as_embed(),
         combine_text=combine_text,
         combine_emb=vec_add,
-        is_close=lambda a, b: vec_isclose(a, b, tol=0.05),
+        is_close=lambda a, b: vec_isclose(a, b, tol=TRAINABLE_EMBED_LAW_CHECK_TOLERANCE),
     )
     samples = [
         SampleTriple(x, y, z)
@@ -112,7 +125,7 @@ def evaluate(model: TrainableEmbed) -> None:
 def main() -> None:
     torch.manual_seed(0)
     random.seed(0)
-    model = TrainableEmbed(vocab_size=len(VOCAB), dim=DIM)
+    model = TrainableEmbed(vocab_size=len(VOCAB), dim=ATTENTION_EMBEDDING_DIM)
 
     print("Before training:")
     evaluate(model)

@@ -27,6 +27,7 @@ from seb_now.algebra import (
     Vector,
     vec_scale,
 )
+from seb_now.constants import DEFAULT_SIMILARITY_THRESHOLD
 
 
 class IncompatibleEmbeddingError(ValueError):
@@ -58,7 +59,7 @@ class TopicClusterer:
     embed: Embed[Vector]
     combine_emb: CombineEmb[Vector]
     is_close: IsClose[Vector]
-    similarity_threshold: float = 0.5
+    similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD
     clusters: list[TopicCluster] = field(default_factory=list)
 
     def combinable(self) -> Combinable[Vector]:

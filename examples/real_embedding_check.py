@@ -15,6 +15,7 @@ from itertools import product
 from sentence_transformers import SentenceTransformer
 
 from seb_now.algebra import Combinable, Embed, SampleTriple, Vector, vec_add, vec_isclose
+from seb_now.constants import ModelName, REAL_EMBEDDING_LAW_CHECK_TOLERANCE
 
 
 def real_embed(model: SentenceTransformer) -> Embed[Vector]:
@@ -29,13 +30,13 @@ def join_with_space(x: str, y: str) -> str:
 
 
 def main() -> None:
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+    model = SentenceTransformer(ModelName.ALL_MINI_LM_L6_V2)
 
     combinable = Combinable(
         embed=real_embed(model),
         combine_text=join_with_space,
         combine_emb=vec_add,
-        is_close=lambda a, b: vec_isclose(a, b, tol=1e-4),
+        is_close=lambda a, b: vec_isclose(a, b, tol=REAL_EMBEDDING_LAW_CHECK_TOLERANCE),
     )
 
     samples = [

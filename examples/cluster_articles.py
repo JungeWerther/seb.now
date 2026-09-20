@@ -9,40 +9,35 @@ Run with:
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from seb_now.algebra import SampleTriple, bag_of_words_embed, vec_add, vec_isclose
 from seb_now.clustering import TopicClusterer
+from seb_now.constants import BAG_OF_WORDS_SIMILARITY_THRESHOLD
 
-VOCAB = [
-    "fed", "rate", "inflation", "market", "stocks",
-    "election", "vote", "poll", "candidate", "ballot",
-]
-
-HEADLINES = [
-    "Fed signals rate cut as inflation cools",
-    "Stocks rally after inflation data beats forecasts",
-    "Market watches fed for next rate decision",
-    "Candidate leads poll ahead of election",
-    "Election officials report record ballot turnout",
-    "Vote count tightens in key swing state",
-]
+DATA_DIR = Path(__file__).parent / "data"
 
 
 def main() -> None:
+    vocab: list[str] = json.loads((DATA_DIR / "bag_of_words_vocab.json").read_text())
+    headlines: list[str] = json.loads((DATA_DIR / "headlines.json").read_text())
+
     clusterer = TopicClusterer(
-        embed=bag_of_words_embed(VOCAB),
+        embed=bag_of_words_embed(vocab),
         combine_emb=vec_add,
         is_close=vec_isclose,
-        similarity_threshold=0.2,
+        similarity_threshold=BAG_OF_WORDS_SIMILARITY_THRESHOLD,
     )
 
     validation_samples = [
-        SampleTriple(HEADLINES[0], HEADLINES[1], HEADLINES[2]),
-        SampleTriple(HEADLINES[3], HEADLINES[4], HEADLINES[5]),
+        SampleTriple(headlines[0], headlines[1], headlines[2]),
+        SampleTriple(headlines[3], headlines[4], headlines[5]),
     ]
     clusterer.require_valid(validation_samples)
     print("embedding validated against Combinable's law — safe to cluster incrementally\n")
 
-    for headline in HEADLINES:
+    for headline in headlines:
         cluster = clusterer.add_article(headline)
         cluster_id = clusterer.clusters.index(cluster)
         print(f"[cluster {cluster_id}] {headline}")

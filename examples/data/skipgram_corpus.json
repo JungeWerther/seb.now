@@ -1,0 +1,22 @@
+{
+    "corpus": [
+        "the election results show a close vote",
+        "voters cast their ballot in the election",
+        "the candidate leads in the latest poll",
+        "poll numbers shift after the debate",
+        "election officials count every vote and ballot",
+        "the candidate campaigns ahead of the vote",
+        "voter turnout affects the election outcome",
+        "the poll predicts a narrow election vote",
+        "fed raises interest rate amid inflation",
+        "inflation data pushes the fed to cut rate",
+        "stocks rally as the fed signals a rate cut",
+        "market watches the fed for the next rate move",
+        "rising inflation worries stock market investors",
+        "the fed decision on rate moves the stock market"
+    ],
+    "stopwords": [
+        "the", "a", "an", "of", "in", "on", "as", "to",
+        "and", "their", "every", "next", "for"
+    ]
+}
