@@ -36,3 +36,25 @@ ready to merge:
 The goal is to minimize merge-conflict surface area between concurrently
 open PRs, not to avoid opening PRs — many small, independent PRs are
 preferred over one large one.
+
+## Constants, not hardcoded metaparameters
+
+Metaparameters (hyperparameters, thresholds, tolerances, and identifiers
+naming an external resource like a model) live in `src/seb_now/constants.py`
+as named values — never as bare literals inline in code. A string that
+names one of a fixed set of external things (e.g. a pretrained model id)
+is a `StrEnum` member there, not a raw string.
+
+In particular, a call that instantiates a class (`nn.MultiheadAttention(...)`,
+`SentenceTransformer(...)`, `TopicClusterer(...)`) must not take a literal
+`int`/`float`/`str`/`bool` argument — reference a name from `constants.py`
+instead. `tests/test_constants_convention.py` asserts this in CI by
+AST-scanning `src/seb_now/*.py` and `examples/*.py` for class-instantiation
+calls with literal arguments (not `tests/`, where literal fixtures are
+normal pytest style, and not stdlib idioms like `TypeVar("V")`, where the
+literal *is* the name rather than a metaparameter — see the exclusion list
+in that test for the exact scope).
+
+This does not extend to every literal anywhere (`range(0, n)`, `.unsqueeze(0)`,
+a `torch.manual_seed(0)` reproducibility seed) — only to values instantiating
+a class where the choice of value is itself a design decision worth naming.
