@@ -17,7 +17,7 @@ broke, plus the composite `full_law_holds` for the identity itself.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Generic, Sequence, TypeVar
+from typing import Callable, Generic, NamedTuple, Sequence, TypeVar
 
 V = TypeVar("V")
 
@@ -27,13 +27,24 @@ CombineEmb = Callable[[V, V], V]
 IsClose = Callable[[V, V], bool]
 
 
+class SamplePair(NamedTuple):
+    x: str
+    y: str
+
+
+class SampleTriple(NamedTuple):
+    x: str
+    y: str
+    z: str
+
+
 @dataclass(frozen=True)
 class LawReport:
     total: int
-    source_associativity_failures: list[tuple[str, str, str]] = field(default_factory=list)
-    homomorphism_failures: list[tuple[str, str]] = field(default_factory=list)
-    combinator_associativity_failures: list[tuple[str, str, str]] = field(default_factory=list)
-    full_law_failures: list[tuple[str, str, str]] = field(default_factory=list)
+    source_associativity_failures: list[SampleTriple] = field(default_factory=list)
+    homomorphism_failures: list[SamplePair] = field(default_factory=list)
+    combinator_associativity_failures: list[SampleTriple] = field(default_factory=list)
+    full_law_failures: list[SampleTriple] = field(default_factory=list)
 
     @property
     def holds(self) -> bool:
@@ -73,17 +84,17 @@ class Combinable(Generic[V]):
         predicted = self.combine_emb(self.combine_emb(self.embed(x), self.embed(y)), self.embed(z))
         return self.is_close(self.embed(combined_text), predicted)
 
-    def check(self, samples: Sequence[tuple[str, str, str]]) -> LawReport:
+    def check(self, samples: Sequence[SampleTriple]) -> LawReport:
         report = LawReport(total=len(samples))
         for x, y, z in samples:
             if not self.is_source_associative(x, y, z):
-                report.source_associativity_failures.append((x, y, z))
+                report.source_associativity_failures.append(SampleTriple(x, y, z))
             if not self.is_homomorphism(x, y):
-                report.homomorphism_failures.append((x, y))
+                report.homomorphism_failures.append(SamplePair(x, y))
             if not self.is_combinator_associative(x, y, z):
-                report.combinator_associativity_failures.append((x, y, z))
+                report.combinator_associativity_failures.append(SampleTriple(x, y, z))
             if not self.full_law_holds(x, y, z):
-                report.full_law_failures.append((x, y, z))
+                report.full_law_failures.append(SampleTriple(x, y, z))
         return report
 
 
