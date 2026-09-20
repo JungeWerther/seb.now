@@ -1,10 +1,13 @@
 """Property-based tests: fuzz Combinable's law instead of hand-picking samples.
 
-test_algebra.py checks the law against 2 fixed triples chosen by hand.
-Hypothesis generates many more — including ones nobody would think to pick,
-like single-word texts or texts sharing no vocabulary — which is the actual
-QuickCheck-style guarantee: the law holds for the *space* of inputs, not
-just the couple of examples someone happened to write down.
+test_algebra.py checks the law against 2 fixed triples drawn from a fixed
+9-word list. Neither is a good fuzz target: fixed examples only cover what
+someone thought to write down, and sampling from a fixed word list only
+fuzzes *combinations* of those 9 words, not the input space. Here, words
+themselves are generated (word_strategy, plain lowercase letters, no fixed
+vocabulary anywhere), and bag_of_words_embed's vocab is derived per-example
+from whatever words actually appear in x/y/z — so every generated example
+gets its own vocabulary, not a shared hardcoded one.
 
 bag_of_words_embed is expected to satisfy the law for everything Hypothesis
 generates. hashed_embed is expected to violate it — xfail(strict=True)
@@ -21,9 +24,8 @@ from hypothesis import strategies as st
 
 from seb_now.algebra import Combinable, bag_of_words_embed, hashed_embed, vec_add, vec_isclose
 
-WORDS = ["macro", "prices", "rose", "fell", "today", "team", "scored", "goal", "win"]
-
-text_strategy = st.lists(st.sampled_from(WORDS), min_size=1, max_size=4).map(" ".join)
+word_strategy = st.text(alphabet=st.characters(min_codepoint=ord("a"), max_codepoint=ord("z")), min_size=1, max_size=8)
+text_strategy = st.lists(word_strategy, min_size=1, max_size=4).map(" ".join)
 
 
 def join_with_space(x: str, y: str) -> str:
@@ -32,8 +34,9 @@ def join_with_space(x: str, y: str) -> str:
 
 @given(x=text_strategy, y=text_strategy, z=text_strategy)
 def test_bag_of_words_full_law_holds_for_any_generated_sample(x: str, y: str, z: str) -> None:
+    vocab = sorted(set(f"{x} {y} {z}".lower().split()))
     combinable = Combinable(
-        embed=bag_of_words_embed(WORDS),
+        embed=bag_of_words_embed(vocab),
         combine_text=join_with_space,
         combine_emb=vec_add,
         is_close=vec_isclose,
