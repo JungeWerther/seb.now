@@ -22,7 +22,7 @@ SAMPLES = [
 ]
 
 
-def test_bag_of_words_is_a_homomorphism_and_satisfies_the_full_law():
+def test_bag_of_words_is_a_homomorphism_and_satisfies_the_full_law() -> None:
     combinable = Combinable(
         embed=bag_of_words_embed(WORDS),
         combine_text=join_with_space,
@@ -39,7 +39,7 @@ def test_bag_of_words_is_a_homomorphism_and_satisfies_the_full_law():
     assert report.full_law_failures == []
 
 
-def test_hashed_embedding_fails_the_homomorphism_condition():
+def test_hashed_embedding_fails_the_homomorphism_condition() -> None:
     combinable = Combinable(
         embed=hashed_embed(),
         combine_text=join_with_space,

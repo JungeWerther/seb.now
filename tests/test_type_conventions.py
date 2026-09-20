@@ -23,7 +23,7 @@ def _bare_tuple_subscripts(source: str) -> list[str]:
     ]
 
 
-def test_no_bare_tuple_annotations_outside_the_vector_alias():
+def test_no_bare_tuple_annotations_outside_the_vector_alias() -> None:
     offenders = _bare_tuple_subscripts(ALGEBRA_SOURCE.read_text())
 
     assert offenders == [VECTOR_ALIAS], (

@@ -14,10 +14,10 @@ from itertools import product
 
 from sentence_transformers import SentenceTransformer
 
-from seb_now.algebra import Combinable, SampleTriple, Vector, vec_add, vec_isclose
+from seb_now.algebra import Combinable, Embed, SampleTriple, Vector, vec_add, vec_isclose
 
 
-def real_embed(model: SentenceTransformer):
+def real_embed(model: SentenceTransformer) -> Embed[Vector]:
     def embed(text: str) -> Vector:
         return tuple(float(v) for v in model.encode(text, show_progress_bar=False))
 
