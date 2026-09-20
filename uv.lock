@@ -1065,6 +1065,9 @@ wheels = [
 name = "seb-now"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "jinja2" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -1078,6 +1081,7 @@ examples = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "jinja2", specifier = ">=3.1.0" }]
 
 [package.metadata.requires-dev]
 dev = [
