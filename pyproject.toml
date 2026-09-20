@@ -20,6 +20,7 @@ dev = [
 ]
 examples = [
     "sentence-transformers>=3.0.0",
+    "torch>=2.0.0",
 ]
 
 [tool.ruff]

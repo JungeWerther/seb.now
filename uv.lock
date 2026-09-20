@@ -1001,6 +1001,7 @@ dev = [
 ]
 examples = [
     { name = "sentence-transformers" },
+    { name = "torch" },
 ]
 
 [package.metadata]
@@ -1010,7 +1011,10 @@ dev = [
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "ruff", specifier = ">=0.6.0" },
 ]
-examples = [{ name = "sentence-transformers", specifier = ">=3.0.0" }]
+examples = [
+    { name = "sentence-transformers", specifier = ">=3.0.0" },
+    { name = "torch", specifier = ">=2.0.0" },
+]
 
 [[package]]
 name = "sentence-transformers"
