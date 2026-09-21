@@ -128,6 +128,14 @@ def group_by_source_type(articles: list[Article]) -> dict[SourceType, list[Artic
     return groups
 
 
+def group_by_cluster(articles: list[Article]) -> list[tuple[int, list[Article]]]:
+    """Sub-groups a source type's articles by topic cluster id, cluster ids ascending."""
+    by_cluster: dict[int, list[Article]] = {}
+    for article in articles:
+        by_cluster.setdefault(article.cluster_id, []).append(article)
+    return sorted(by_cluster.items())
+
+
 def render_site(output_dir: Path) -> None:
     articles = build_articles(fetch_headlines())
     groups = group_by_source_type(articles)
@@ -139,7 +147,7 @@ def render_site(output_dir: Path) -> None:
     template = env.get_template("index.html")
     html = template.render(
         groups=[
-            (SOURCE_TYPE_LABELS[source_type], groups[source_type])
+            (SOURCE_TYPE_LABELS[source_type], group_by_cluster(groups[source_type]))
             for source_type in SourceType
             if groups[source_type]
         ],

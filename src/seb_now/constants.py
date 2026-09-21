@@ -17,9 +17,11 @@ class ModelName(StrEnum):
 
 
 class SourceType(StrEnum):
+    """Declaration order is the order sections render on the homepage."""
+
+    DIRECT_LINK = "direct_link"
     MAINSTREAM_MEDIA = "mainstream_media"
     YOUTUBE_LONGFORM = "youtube_longform"
-    DIRECT_LINK = "direct_link"
 
 
 # source_type.py — classify_source
@@ -55,9 +57,9 @@ YOUTUBE_DOMAINS: frozenset[str] = frozenset({"youtube.com", "youtu.be"})
 
 # site.py — display label per SourceType, in the order groups render on the page
 SOURCE_TYPE_LABELS: dict[SourceType, str] = {
+    SourceType.DIRECT_LINK: "Direct Link",
     SourceType.MAINSTREAM_MEDIA: "Mainstream Media",
     SourceType.YOUTUBE_LONGFORM: "YouTube Long-form",
-    SourceType.DIRECT_LINK: "Direct Link",
 }
 
 # clustering.py — TopicClusterer

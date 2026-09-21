@@ -55,10 +55,15 @@
   .topic li a:hover {
     text-decoration: underline;
   }
-  .topic li .cluster {
-    font-size: 0.75rem;
+  .topic h3 {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
     color: #6b6b70;
-    margin-left: 0.5rem;
+    margin: 1rem 0 0.25rem;
+  }
+  .topic h3:first-of-type {
+    margin-top: 0;
   }
   .empty {
     color: #9a9a9f;
@@ -76,14 +81,17 @@
 <body>
 <header><h1>seb.now</h1></header>
 <main>
-{% for label, articles in groups %}
+{% for label, topics in groups %}
   <section class="topic">
     <h2>{{ label }}</h2>
+    {% for cluster_id, articles in topics %}
+    <h3>Topic {{ cluster_id }}</h3>
     <ul>
     {% for article in articles %}
-      <li><a href="{{ article.url or '#' }}">{{ article.title }}</a><span class="cluster">topic {{ article.cluster_id }}</span></li>
+      <li><a href="{{ article.url or '#' }}">{{ article.title }}</a></li>
     {% endfor %}
     </ul>
+    {% endfor %}
   </section>
 {% else %}
   <p class="empty">No headlines available right now — every source feed failed to load on this build.</p>
