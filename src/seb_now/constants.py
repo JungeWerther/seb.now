@@ -16,6 +16,43 @@ class ModelName(StrEnum):
     ALL_MINI_LM_L6_V2 = "all-MiniLM-L6-v2"
 
 
+class SourceType(StrEnum):
+    MAINSTREAM_MEDIA = "mainstream_media"
+    YOUTUBE_LONGFORM = "youtube_longform"
+    DIRECT_LINK = "direct_link"
+
+
+# source_type.py — classify_source
+# Domains recognized as mainstream media outlets. Anything else falls
+# through to DIRECT_LINK rather than growing this list unboundedly.
+MAINSTREAM_MEDIA_DOMAINS: frozenset[str] = frozenset(
+    {
+        "nytimes.com",
+        "washingtonpost.com",
+        "wsj.com",
+        "bbc.com",
+        "bbc.co.uk",
+        "cnn.com",
+        "reuters.com",
+        "apnews.com",
+        "theguardian.com",
+        "npr.org",
+        "ft.com",
+        "bloomberg.com",
+        "foxnews.com",
+        "nbcnews.com",
+        "cbsnews.com",
+        "abcnews.go.com",
+        "usatoday.com",
+        "politico.com",
+        "axios.com",
+        "time.com",
+        "newsweek.com",
+        "economist.com",
+    }
+)
+YOUTUBE_DOMAINS: frozenset[str] = frozenset({"youtube.com", "youtu.be"})
+
 # clustering.py — TopicClusterer
 DEFAULT_SIMILARITY_THRESHOLD = 0.5
 
