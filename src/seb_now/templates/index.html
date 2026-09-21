@@ -55,6 +55,11 @@
   .topic li a:hover {
     text-decoration: underline;
   }
+  .topic li .cluster {
+    font-size: 0.75rem;
+    color: #6b6b70;
+    margin-left: 0.5rem;
+  }
   .empty {
     color: #9a9a9f;
     padding: 2rem 0;
@@ -71,12 +76,12 @@
 <body>
 <header><h1>seb.now</h1></header>
 <main>
-{% for cluster in clusters %}
+{% for label, articles in groups %}
   <section class="topic">
-    <h2>Topic {{ loop.index }}</h2>
+    <h2>{{ label }}</h2>
     <ul>
-    {% for headline in cluster.member_texts %}
-      <li><a href="{{ links.get(headline, '#') }}">{{ headline }}</a></li>
+    {% for article in articles %}
+      <li><a href="{{ article.url or '#' }}">{{ article.title }}</a><span class="cluster">topic {{ article.cluster_id }}</span></li>
     {% endfor %}
     </ul>
   </section>
@@ -84,6 +89,6 @@
   <p class="empty">No headlines available right now — every source feed failed to load on this build.</p>
 {% endfor %}
 </main>
-<footer>Live headlines, clustered into topics on each build. Sources: {{ sources | join(", ") }}.</footer>
+<footer>Live headlines, grouped by source type on each build. Sources: {{ sources | join(", ") }}.</footer>
 </body>
 </html>

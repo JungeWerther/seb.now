@@ -11,9 +11,12 @@ use so incremental clustering can't silently go order-dependent.
 `site.py` is the frontend: it fetches live headlines from the RSS feeds in
 `constants.py`'s `NewsFeed` enum, derives a bag-of-words vocabulary from
 whatever came back (a vocab hardcoded for one day's headlines means
-nothing against tomorrow's), runs them through `TopicClusterer`, and
-renders the result via the Jinja2 template in `src/seb_now/templates/` —
-a static site, no server-side framework. See "Deployment" below for how
+nothing against tomorrow's), and runs them through `TopicClusterer`. The
+homepage's primary grouping is by source type — mainstream media, YouTube
+long-form, direct link — via `source_type.py`'s domain-based
+`classify_source()`; each headline is also tagged with its topic-cluster
+id. Rendered via the Jinja2 template in `src/seb_now/templates/` — a
+static site, no server-side framework. See "Deployment" below for how
 that output actually reaches seb.now.
 
 ## Deployment

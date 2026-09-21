@@ -1,5 +1,6 @@
 """Renders the seb.now homepage: real headlines from public RSS feeds, grouped
-into topics by TopicClusterer.
+by source type (mainstream media / YouTube long-form / direct link), each
+headline tagged with its topic cluster from TopicClusterer.
 
 Same clustering path as examples/cluster_articles.py — bag_of_words_embed over
 a fixed vocab, folded incrementally with vec_add — except the vocab can't be
@@ -14,6 +15,7 @@ import re
 import sys
 import urllib.request
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -28,8 +30,11 @@ from seb_now.constants import (
     HEADLINES_PER_FEED_LIMIT,
     SITE_VOCAB_MAX_SIZE,
     SITE_VOCAB_MIN_WORD_LENGTH,
+    SOURCE_TYPE_LABELS,
     NewsFeed,
+    SourceType,
 )
+from seb_now.source_type import classify_source
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 USER_AGENT = "seb-now-site-builder/0.1 (+https://seb.now)"
@@ -77,22 +82,55 @@ def build_vocab(headlines: list[str]) -> tuple[str, ...]:
     return tuple(word for word, _ in counts.most_common(SITE_VOCAB_MAX_SIZE))
 
 
-def cluster_headlines(headlines: list[str]) -> list[TopicCluster]:
+def cluster_headlines(headlines: list[str]) -> tuple[list[TopicCluster], list[int]]:
+    """Clusters and, aligned to `headlines`, each headline's cluster index."""
     clusterer = TopicClusterer(
         embed=bag_of_words_embed(build_vocab(headlines)),
         combine_emb=vec_add,
         is_close=vec_isclose,
         similarity_threshold=BAG_OF_WORDS_SIMILARITY_THRESHOLD,
     )
+    cluster_ids = []
     for headline in headlines:
-        clusterer.add_article(headline)
-    return clusterer.clusters
+        cluster = clusterer.add_article(headline)
+        cluster_ids.append(clusterer.clusters.index(cluster))
+    return clusterer.clusters, cluster_ids
+
+
+@dataclass(frozen=True)
+class Article:
+    title: str
+    url: str
+    source_type: SourceType
+    cluster_id: int
+
+
+def build_articles(items: list[tuple[str, str]]) -> list[Article]:
+    titles = [title for title, _ in items]
+    links = dict(items)
+    _, cluster_ids = cluster_headlines(titles)
+
+    return [
+        Article(
+            title=title,
+            url=links.get(title, ""),
+            source_type=classify_source(links.get(title, "")),
+            cluster_id=cluster_id,
+        )
+        for title, cluster_id in zip(titles, cluster_ids)
+    ]
+
+
+def group_by_source_type(articles: list[Article]) -> dict[SourceType, list[Article]]:
+    groups: dict[SourceType, list[Article]] = {source_type: [] for source_type in SourceType}
+    for article in articles:
+        groups[article.source_type].append(article)
+    return groups
 
 
 def render_site(output_dir: Path) -> None:
-    items = fetch_headlines()
-    titles = [title for title, _ in items]
-    links = dict(items)
+    articles = build_articles(fetch_headlines())
+    groups = group_by_source_type(articles)
 
     env = Environment(
         loader=FileSystemLoader(TEMPLATES_DIR),
@@ -100,8 +138,11 @@ def render_site(output_dir: Path) -> None:
     )
     template = env.get_template("index.html")
     html = template.render(
-        clusters=cluster_headlines(titles),
-        links=links,
+        groups=[
+            (SOURCE_TYPE_LABELS[source_type], groups[source_type])
+            for source_type in SourceType
+            if groups[source_type]
+        ],
         sources=list(NewsFeed.__members__),
     )
 
