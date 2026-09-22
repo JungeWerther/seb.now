@@ -21,8 +21,10 @@ REPO_ROOT = Path(__file__).parent.parent
 SCANNED_DIRS = [REPO_ROOT / "src" / "seb_now", REPO_ROOT / "examples"]
 EXCLUDED_FILES = {"constants.py"}
 # TypeVar("V")'s string literal IS the type variable's name, per the stdlib
-# typing idiom — there's no separate metaparameter to extract.
-EXCLUDED_CALLEES = {"TypeVar"}
+# typing idiom — there's no separate metaparameter to extract. Built-in
+# exceptions are the same shape: the literal is a human-readable message,
+# not a metaparameter worth naming in constants.py.
+EXCLUDED_CALLEES = {"TypeVar", "RuntimeError", "ValueError", "TypeError", "KeyError"}
 
 LITERAL_TYPES = (bool, int, float, str)
 

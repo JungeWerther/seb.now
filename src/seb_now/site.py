@@ -1,15 +1,15 @@
 """Render index.html: articles grouped by source type, each tagged with its topic cluster.
 
-Feed: src/seb_now/data/articles.json (title + url pairs). Vocab: built from
-the corpus itself, so it never drifts out of sync with the feed. Clustering:
-TopicClusterer over titles, bag-of-words embedded. Grouping: classify_source
-buckets each article's url into a SourceType; SOURCE_TYPE_LABELS's key order
-is the page's group order (mainstream media, YouTube long-form, direct link).
+Feed: the `links` table in Supabase (title + url per row), read with the
+public anon client. Vocab: built from the corpus itself, so it never drifts
+out of sync with the feed. Clustering: TopicClusterer over titles,
+bag-of-words embedded. Grouping: classify_source buckets each article's url
+into a SourceType; SOURCE_TYPE_LABELS's key order is the page's group order
+(mainstream media, YouTube long-form, direct link).
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
@@ -18,11 +18,11 @@ from typing import Sequence
 from seb_now.algebra import bag_of_words_embed, vec_add, vec_isclose
 from seb_now.clustering import TopicClusterer
 from seb_now.constants import BAG_OF_WORDS_SIMILARITY_THRESHOLD, SOURCE_TYPE_LABELS, SourceType
+from seb_now.auth import get_unauthenticated_client
+from seb_now.domain.models import Link
 from seb_now.source_type import classify_source
 
-DATA_DIR = Path(__file__).parent / "data"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
-ARTICLES_PATH = DATA_DIR / "articles.json"
 TEMPLATE_PATH = TEMPLATES_DIR / "index.html"
 OUTPUT_PATH = Path(__file__).parent.parent.parent / "dist" / "index.html"
 
@@ -45,7 +45,10 @@ def _vocab(titles: Sequence[str]) -> list[str]:
 
 
 def load_feed() -> list[dict[str, str]]:
-    return json.loads(ARTICLES_PATH.read_text())
+    client = get_unauthenticated_client()
+    response = client.table(Link.__tablename__).select("*").order("created_at").execute()
+    links = [Link.model_validate(row) for row in response.data]
+    return [{"title": link.title, "url": link.url} for link in links]
 
 
 def build_articles(feed: Sequence[dict[str, str]]) -> list[Article]:
