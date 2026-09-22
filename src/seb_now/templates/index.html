@@ -13,7 +13,50 @@
       padding: 0 1rem;
       line-height: 1.5;
     }
-    h1 { font-size: 1.5rem; margin-bottom: 2rem; }
+    header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 2rem; }
+    h1 { font-size: 1.5rem; margin: 0; }
+    #settings-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1.25rem;
+      line-height: 1;
+      padding: 0.25rem;
+      color: inherit;
+      opacity: 0.7;
+    }
+    #settings-btn:hover { opacity: 1; }
+    #settings-panel {
+      display: none;
+      border: 1px solid rgba(128, 128, 128, 0.35);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 2rem;
+    }
+    #settings-panel.open { display: block; }
+    #settings-panel label { display: block; font-size: 0.8rem; color: gray; margin-bottom: 0.3rem; }
+    #settings-panel input {
+      font: inherit;
+      padding: 0.4rem 0.5rem;
+      width: 100%;
+      max-width: 260px;
+      box-sizing: border-box;
+      border: 1px solid rgba(128, 128, 128, 0.5);
+      border-radius: 4px;
+      background: transparent;
+      color: inherit;
+    }
+    #settings-panel .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    #settings-panel button.save {
+      font: inherit;
+      padding: 0.4rem 0.8rem;
+      border: 1px solid currentColor;
+      border-radius: 4px;
+      background: none;
+      color: inherit;
+      cursor: pointer;
+    }
+    #settings-status { font-size: 0.8rem; color: gray; }
     section.source-group { margin-bottom: 2rem; }
     section.source-group h2 {
       font-size: 0.85rem;
@@ -26,51 +69,57 @@
     }
     ul.articles { list-style: none; padding: 0; margin: 0; }
     li.article {
-      padding: 0.6rem 0;
+      position: relative;
+      overflow: hidden;
       border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+      touch-action: pan-y;
     }
-    li.article a {
-      text-decoration: none;
-      color: inherit;
-    }
-    li.article a:hover { text-decoration: underline; }
-    li.article .cluster {
-      font-size: 0.75rem;
-      color: gray;
-      margin-left: 0.5rem;
-    }
-    li.article { display: flex; align-items: center; gap: 0.6rem; }
-    li.article a { flex: 1; }
-    .vote {
+    li.article.upvoted { box-shadow: inset 3px 0 0 #2da44e; }
+    .swipe-bg {
+      position: absolute;
+      inset: 0;
       display: flex;
-      flex-direction: column;
       align-items: center;
-      gap: 0.1rem;
-      font-size: 0.7rem;
-      color: gray;
-      flex-shrink: 0;
+      justify-content: space-between;
+      padding: 0 1rem;
+      font-size: 1.1rem;
+      font-weight: bold;
     }
-    .vote-btn {
-      background: none;
-      border: none;
-      cursor: pointer;
-      padding: 0.1rem 0.3rem;
-      font-size: 0.7rem;
-      color: inherit;
-      line-height: 1;
+    .swipe-bg .hint { opacity: 0; transition: opacity 0.1s; }
+    .swipe-bg .hint-down { color: #cf222e; }
+    .swipe-bg .hint-up { color: #2da44e; }
+    .swipe-content {
+      position: relative;
+      background: Canvas;
+      padding: 0.6rem 0;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
     }
-    .vote-btn:hover { color: currentColor; }
-    .vote-btn.active { color: #0969da; }
-    .vote .score { min-width: 1.2em; text-align: center; }
+    .swipe-content a { flex: 1; text-decoration: none; color: inherit; }
+    .swipe-content a:hover { text-decoration: underline; }
+    .swipe-content .cluster { font-size: 0.75rem; color: gray; margin-left: 0.5rem; }
   </style>
 </head>
 <body>
-  <h1>seb.now</h1>
+  <header>
+    <button id="settings-btn" aria-label="Settings">&#9881;</button>
+    <h1>seb.now</h1>
+  </header>
+  <div id="settings-panel">
+    <label for="handle-input">Your handle</label>
+    <div class="row">
+      <input id="handle-input" type="text" placeholder="pick a handle" maxlength="40">
+      <button class="save" id="handle-save">Save</button>
+      <span id="settings-status"></span>
+    </div>
+  </div>
   <!--ARTICLES-->
   <script type="module">
     import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
     const supabase = createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__);
+    const SWIPE_COMMIT_THRESHOLD_PX = 90;
 
     async function ensureSession() {
       const { data: { session } } = await supabase.auth.getSession();
@@ -81,17 +130,6 @@
         return null;
       }
       return data.session;
-    }
-
-    async function loadScores(linkIds) {
-      const { data, error } = await supabase.from("votes").select("link_id, value").in("link_id", linkIds);
-      if (error) {
-        console.error("failed to load votes", error);
-        return {};
-      }
-      const scores = {};
-      for (const row of data) scores[row.link_id] = (scores[row.link_id] || 0) + row.value;
-      return scores;
     }
 
     async function loadOwnVotes(linkIds, userId) {
@@ -109,55 +147,145 @@
       return own;
     }
 
-    function renderScore(widget, score) {
-      widget.querySelector(".score").textContent = score;
-    }
-
-    function renderOwnVote(widget, value) {
-      for (const btn of widget.querySelectorAll(".vote-btn")) {
-        btn.classList.toggle("active", Number(btn.dataset.value) === value);
-      }
-    }
-
-    async function castVote(session, linkId, value, widget) {
+    async function castVote(session, linkId, value) {
       if (!session) return;
       const { error } = await supabase
         .from("votes")
         .upsert({ link_id: linkId, voter_id: session.user.id, value }, { onConflict: "link_id,voter_id" });
-      if (error) {
-        console.error("vote failed", error);
-        return;
-      }
-      renderOwnVote(widget, value);
-      const scores = await loadScores([linkId]);
-      renderScore(widget, scores[linkId] || 0);
+      if (error) console.error("vote failed", error);
     }
 
-    async function main() {
-      const widgets = [...document.querySelectorAll(".vote")];
-      const linkIds = widgets.map((w) => w.dataset.linkId);
-      if (linkIds.length === 0) return;
+    function setupSwipe(li, session) {
+      const content = li.querySelector(".swipe-content");
+      const hintDown = li.querySelector(".hint-down");
+      const hintUp = li.querySelector(".hint-up");
+      const linkId = li.dataset.linkId;
 
-      const [session, scores] = await Promise.all([ensureSession(), loadScores(linkIds)]);
-      for (const widget of widgets) renderScore(widget, scores[widget.dataset.linkId] || 0);
+      let startX = null;
+      let dx = 0;
+      let dragging = false;
 
+      function reset() {
+        content.style.transition = "transform 0.2s";
+        content.style.transform = "translateX(0)";
+        hintDown.style.opacity = 0;
+        hintUp.style.opacity = 0;
+      }
+
+      function onDown(e) {
+        startX = e.clientX;
+        dragging = true;
+        content.style.transition = "none";
+        li.setPointerCapture(e.pointerId);
+      }
+
+      function onMove(e) {
+        if (!dragging || startX === null) return;
+        dx = e.clientX - startX;
+        content.style.transform = `translateX(${dx}px)`;
+        const progress = Math.min(Math.abs(dx) / SWIPE_COMMIT_THRESHOLD_PX, 1);
+        if (dx < 0) {
+          hintDown.style.opacity = progress;
+          hintUp.style.opacity = 0;
+        } else {
+          hintUp.style.opacity = progress;
+          hintDown.style.opacity = 0;
+        }
+      }
+
+      async function onUp() {
+        if (!dragging) return;
+        dragging = false;
+
+        if (dx <= -SWIPE_COMMIT_THRESHOLD_PX) {
+          content.style.transition = "transform 0.2s ease-in";
+          content.style.transform = "translateX(-120%)";
+          await castVote(session, linkId, -1);
+          li.style.transition = "max-height 0.2s ease-in, opacity 0.2s ease-in";
+          li.style.maxHeight = li.offsetHeight + "px";
+          requestAnimationFrame(() => {
+            li.style.maxHeight = "0px";
+            li.style.opacity = "0";
+          });
+          setTimeout(() => li.remove(), 220);
+        } else if (dx >= SWIPE_COMMIT_THRESHOLD_PX) {
+          reset();
+          li.classList.add("upvoted");
+          await castVote(session, linkId, 1);
+        } else {
+          reset();
+        }
+        dx = 0;
+        startX = null;
+      }
+
+      li.addEventListener("pointerdown", onDown);
+      li.addEventListener("pointermove", onMove);
+      li.addEventListener("pointerup", onUp);
+      li.addEventListener("pointercancel", () => {
+        dragging = false;
+        dx = 0;
+        startX = null;
+        reset();
+      });
+    }
+
+    async function setupVoting() {
+      const items = [...document.querySelectorAll("li.article")];
+      if (items.length === 0) return;
+
+      const session = await ensureSession();
       if (session) {
+        const linkIds = items.map((li) => li.dataset.linkId);
         const own = await loadOwnVotes(linkIds, session.user.id);
-        for (const widget of widgets) {
-          const value = own[widget.dataset.linkId];
-          if (value) renderOwnVote(widget, value);
+        for (const li of items) {
+          const value = own[li.dataset.linkId];
+          if (value === -1) {
+            li.remove();
+          } else if (value === 1) {
+            li.classList.add("upvoted");
+          }
         }
       }
 
-      for (const widget of widgets) {
-        const linkId = widget.dataset.linkId;
-        for (const btn of widget.querySelectorAll(".vote-btn")) {
-          btn.addEventListener("click", () => castVote(session, linkId, Number(btn.dataset.value), widget));
-        }
+      for (const li of document.querySelectorAll("li.article")) {
+        setupSwipe(li, session);
       }
     }
 
-    main();
+    async function setupSettings() {
+      const btn = document.getElementById("settings-btn");
+      const panel = document.getElementById("settings-panel");
+      const input = document.getElementById("handle-input");
+      const saveBtn = document.getElementById("handle-save");
+      const status = document.getElementById("settings-status");
+
+      btn.addEventListener("click", async () => {
+        panel.classList.toggle("open");
+        if (panel.classList.contains("open")) {
+          const session = await ensureSession();
+          if (session) {
+            const { data } = await supabase.from("profiles").select("handle").eq("id", session.user.id).single();
+            input.value = data?.handle ?? "";
+          }
+        }
+      });
+
+      saveBtn.addEventListener("click", async () => {
+        const session = await ensureSession();
+        if (!session) return;
+        status.textContent = "saving...";
+        const { error } = await supabase
+          .from("profiles")
+          .update({ handle: input.value.trim() || null })
+          .eq("id", session.user.id);
+        status.textContent = error ? "failed to save" : "saved";
+        setTimeout(() => (status.textContent = ""), 2000);
+      });
+    }
+
+    setupVoting();
+    setupSettings();
   </script>
 </body>
 </html>

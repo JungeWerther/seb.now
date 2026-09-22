@@ -65,7 +65,7 @@ def test_render_omits_empty_groups() -> None:
     assert "Direct Link" not in html
 
 
-def test_render_includes_vote_widget_per_article() -> None:
+def test_render_includes_swipeable_article_with_link_id() -> None:
     articles = [
         Article(
             id="a1",
@@ -78,9 +78,16 @@ def test_render_includes_vote_widget_per_article() -> None:
 
     html = render(articles)
 
-    assert 'data-link-id="a1"' in html
-    assert 'data-value="1"' in html
-    assert 'data-value="-1"' in html
+    assert 'li class="article" data-link-id="a1"' in html
+    assert 'class="swipe-bg"' in html
+    assert 'class="swipe-content"' in html
+
+
+def test_render_includes_settings_icon() -> None:
+    html = render([])
+
+    assert 'id="settings-btn"' in html
+    assert 'id="settings-panel"' in html
 
 
 def test_render_injects_supabase_config() -> None:

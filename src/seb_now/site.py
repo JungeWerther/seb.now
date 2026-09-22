@@ -90,14 +90,12 @@ def _group_by_source_type(articles: Sequence[Article]) -> dict[SourceType, list[
 def _render_article(article: Article) -> str:
     link_id = escape(article.id)
     return (
-        f'      <li class="article">'
-        f'<div class="vote" data-link-id="{link_id}">'
-        f'<button class="vote-btn" data-value="1" aria-label="Upvote">&#9650;</button>'
-        f'<span class="score">0</span>'
-        f'<button class="vote-btn" data-value="-1" aria-label="Downvote">&#9660;</button>'
-        f"</div>"
+        f'      <li class="article" data-link-id="{link_id}">'
+        f'<div class="swipe-bg"><span class="hint hint-down">&#10005;</span><span class="hint hint-up">&#10003;</span></div>'
+        f'<div class="swipe-content">'
         f'<a href="{escape(article.url)}">{escape(article.title)}</a>'
         f'<span class="cluster">cluster {article.cluster_id}</span>'
+        f"</div>"
         f"</li>"
     )
 
