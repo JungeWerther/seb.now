@@ -42,6 +42,7 @@ class Article:
     domain: str
     source_type: SourceType
     cluster_id: int
+    image_url: str | None = None
 
 
 def _vocab(titles: Sequence[str]) -> list[str]:
@@ -55,7 +56,10 @@ def load_feed() -> list[dict[str, str]]:
     client = get_unauthenticated_client()
     response = client.table(Link.__tablename__).select("*").order("created_at").execute()
     links = [Link.model_validate(row) for row in response.data]
-    return [{"id": str(link.id), "title": link.title, "url": link.url} for link in links]
+    return [
+        {"id": str(link.id), "title": link.title, "url": link.url, "image_url": link.image_url or ""}
+        for link in links
+    ]
 
 
 def build_articles(feed: Sequence[dict[str, str]]) -> list[Article]:
@@ -78,6 +82,7 @@ def build_articles(feed: Sequence[dict[str, str]]) -> list[Article]:
                 domain=display_domain(item["url"]),
                 source_type=classify_source(item["url"]),
                 cluster_id=clusterer.clusters.index(cluster),
+                image_url=item.get("image_url") or None,
             )
         )
     return articles
@@ -85,6 +90,11 @@ def build_articles(feed: Sequence[dict[str, str]]) -> list[Article]:
 
 def _render_article(article: Article) -> str:
     link_id = escape(article.id)
+    thumb = (
+        f'<img class="thumb" src="{escape(article.image_url)}" alt="" loading="lazy">'
+        if article.image_url
+        else ""
+    )
     return (
         f'      <li class="article" data-link-id="{link_id}">'
         f'<div class="swipe-bg">'
@@ -106,6 +116,7 @@ def _render_article(article: Article) -> str:
         f'<div class="swipe-content">'
         f'<span class="domain">{escape(article.domain)}</span>'
         f'<div class="article-row">'
+        f"{thumb}"
         f'<a href="{escape(article.url)}" target="_blank" rel="noopener noreferrer">{escape(article.title)}</a>'
         f'<span class="score">0</span>'
         f'<span class="cluster">cluster {article.cluster_id}</span>'

@@ -10,6 +10,7 @@ const ACCOUNTS: { instance: string; handle: string }[] = [
 ];
 
 const POSTS_PER_ACCOUNT = 10;
+const IMAGE_FETCH_TIMEOUT_MS = 5000;
 
 // Mastodon wraps long URLs in inline <span> for ellipsis display with no
 // real whitespace between spans - only block-level tags (p, br) represent
@@ -52,6 +53,33 @@ function titleFrom(status: { content: string; card?: { title?: string } | null }
   return text.length > 140 ? text.slice(0, 140) + "…" : text;
 }
 
+// Mastodon's card already carries a preview image when it generated one.
+// When it didn't (same cases titleFrom falls back for), peek at the
+// target page ourselves: prefer its og:image, else its first <img>.
+async function scrapePreviewImage(pageUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(pageUrl, { signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS) });
+    if (!res.ok) return null;
+    if (!(res.headers.get("content-type") ?? "").includes("text/html")) return null;
+    const html = await res.text();
+    const ogImage =
+      html.match(/<meta[^>]+(?:property|name)=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ??
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']og:image["']/i)?.[1];
+    const candidate = ogImage ?? html.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1];
+    return candidate ? new URL(candidate, pageUrl).toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function imageFrom(
+  status: { card?: { image?: string | null } | null },
+  sourceUrl: string,
+): Promise<string | null> {
+  if (status.card?.image) return status.card.image;
+  return scrapePreviewImage(sourceUrl);
+}
+
 Deno.serve(async (_req: Request) => {
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -84,11 +112,13 @@ Deno.serve(async (_req: Request) => {
       for (const status of statuses) {
         if (!status.url) continue;
         const sourceUrl = status.card?.url || extractLinkedUrl(status.content) || status.url;
+        const imageUrl = await imageFrom(status, sourceUrl);
         const { error } = await supabase.from("links").upsert(
           {
             url: sourceUrl,
             thread_url: status.url,
             title: titleFrom(status, account.display_name || handle),
+            image_url: imageUrl,
             origin: "fediverse",
             fediverse_post_uri: status.uri,
             submitted_by: null,

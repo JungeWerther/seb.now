@@ -59,6 +59,13 @@ they call their own project's own functions):
   (not a full XML parser — the feed's `<item>`/`<title>`/`<link>` shape
   is stable and simple enough that a parser dependency isn't worth it).
 
+`fediverse-ingest` also populates `links.image_url`: Mastodon's own
+`status.card.image` when a card exists, else `fediverse-ingest` peeks at
+the target page itself (5s timeout) for `og:image`, falling back to the
+page's first `<img>`. HN/TechCrunch links leave `image_url` null - their
+ingest functions don't peek at target pages. `site.py` renders a 36px
+thumbnail next to the title when `image_url` is set.
+
 Both upsert into `links` as `origin: 'feed'`, `onConflict: 'url'` (falling
 back to the HN item's own discussion-page URL when a story has no
 external `url`, e.g. Ask HN). `links.url` and `links.fediverse_post_uri`
