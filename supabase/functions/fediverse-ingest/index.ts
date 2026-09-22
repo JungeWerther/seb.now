@@ -27,6 +27,21 @@ function stripHtml(html: string): string {
   return decoded.replace(/\s+/g, " ").trim();
 }
 
+// Mastodon only generates a card for posts with exactly one link, and even
+// then not always (e.g. if its fetcher can't reach the target) - so a card
+// alone misses plenty of single-link posts. Fall back to the post's own
+// markup, where a real link is a plain <a href> with no mention/hashtag
+// class (those point back into the fediverse, not out to a source).
+function extractLinkedUrl(html: string): string | null {
+  const linkTag = /<a\s+href="([^"]+)"[^>]*>/g;
+  let match: RegExpExecArray | null;
+  while ((match = linkTag.exec(html))) {
+    if (/class="[^"]*\b(mention|hashtag)\b/.test(match[0])) continue;
+    return match[1];
+  }
+  return null;
+}
+
 // When a post links to a single external page, Mastodon's own preview-card
 // generator (status.card) already identifies it - more reliable than
 // scanning post text for a URL, and gives us the target page's real title.
@@ -68,7 +83,7 @@ Deno.serve(async (_req: Request) => {
       let upserted = 0;
       for (const status of statuses) {
         if (!status.url) continue;
-        const sourceUrl = status.card?.url || status.url;
+        const sourceUrl = status.card?.url || extractLinkedUrl(status.content) || status.url;
         const { error } = await supabase.from("links").upsert(
           {
             url: sourceUrl,
