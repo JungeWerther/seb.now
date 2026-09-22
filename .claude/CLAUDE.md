@@ -29,9 +29,29 @@ this repo — `.env` is git-ignored here. It's kept in two places instead:
 a local, untracked `.env` (`SUPABASE_URL` + `SUPABASE_ANON_KEY`) for local
 dev/test, and GitHub Actions repository **variables** (not secrets, since
 it isn't one) of the same names, which `.github/workflows/ci.yml` reads
-for the integration test. The `service_role` key is never used by this
-app at all — every write goes through RLS as an authenticated (including
-anonymous) user, not a privileged backend.
+for the integration test. The static site itself (browser client, and
+`site.py`'s build-time read) never uses `service_role` — every user
+write goes through RLS as an authenticated (including anonymous) user.
+The one exception is `service_role` inside the `fediverse-ingest` Edge
+Function (see below) — server-side only, never shipped to a client.
+
+**Ingestion — `fediverse-ingest` Edge Function.** Pulls recent public
+posts from a fixed list of Mastodon accounts (`ACCOUNTS` in
+`supabase/functions/fediverse-ingest/index.ts`) via each instance's
+public REST API (no auth needed for public statuses — this is simpler
+and more stable than parsing raw ActivityPub outboxes, and every
+account on the list happens to be Mastodon) and upserts them into
+`links` as `origin: 'fediverse'`. Runs on a `pg_cron` schedule
+(`fediverse-ingest`, every 6 hours) inside the `seb-now` project itself
+— unlike the DO deploy trigger, this doesn't need the personal CRM
+project or its vault secret, since it's calling its own project's own
+function. `links.fediverse_post_uri` has a plain (non-partial) unique
+index so the upsert is idempotent; note PostgREST's `upsert(onConflict:)`
+can't resolve against a *partial* unique index (Postgres won't infer
+the conflict target through the extra `WHERE`), which is why it's a
+full index rather than `... where fediverse_post_uri is not null` —
+harmless here since `NULL` never collides with `NULL` under uniqueness
+anyway.
 
 **Hosting — DigitalOcean.** The site is meant to ship as a static
 site (no server framework — see the architecture discussion for why:
