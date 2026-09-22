@@ -6,10 +6,10 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // and every account we pull from happens to be Mastodon.
 const ACCOUNTS: { instance: string; handle: string }[] = [
   { instance: "dair-community.social", handle: "DAIR" },
-  { instance: "mastodon.online", handle: "blendernation" },
+  { instance: "mastodon.art", handle: "colossal" },
 ];
 
-const POSTS_PER_ACCOUNT = 5;
+const POSTS_PER_ACCOUNT = 10;
 
 // Mastodon wraps long URLs in inline <span> for ellipsis display with no
 // real whitespace between spans - only block-level tags (p, br) represent

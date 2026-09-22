@@ -32,26 +32,56 @@ it isn't one) of the same names, which `.github/workflows/ci.yml` reads
 for the integration test. The static site itself (browser client, and
 `site.py`'s build-time read) never uses `service_role` — every user
 write goes through RLS as an authenticated (including anonymous) user.
-The one exception is `service_role` inside the `fediverse-ingest` Edge
-Function (see below) — server-side only, never shipped to a client.
+The one exception is `service_role` inside the three ingestion Edge
+Functions (see below) — server-side only, never shipped to a client.
 
-**Ingestion — `fediverse-ingest` Edge Function.** Pulls recent public
-posts from a fixed list of Mastodon accounts (`ACCOUNTS` in
-`supabase/functions/fediverse-ingest/index.ts`) via each instance's
-public REST API (no auth needed for public statuses — this is simpler
-and more stable than parsing raw ActivityPub outboxes, and every
-account on the list happens to be Mastodon) and upserts them into
-`links` as `origin: 'fediverse'`. Runs on a `pg_cron` schedule
-(`fediverse-ingest`, every 6 hours) inside the `seb-now` project itself
-— unlike the DO deploy trigger, this doesn't need the personal CRM
-project or its vault secret, since it's calling its own project's own
-function. `links.fediverse_post_uri` has a plain (non-partial) unique
-index so the upsert is idempotent; note PostgREST's `upsert(onConflict:)`
-can't resolve against a *partial* unique index (Postgres won't infer
-the conflict target through the extra `WHERE`), which is why it's a
-full index rather than `... where fediverse_post_uri is not null` —
-harmless here since `NULL` never collides with `NULL` under uniqueness
-anyway.
+**Ingestion — three Edge Functions, each on its own `pg_cron` schedule,
+all inside the `seb-now` project itself** (unlike the DO deploy trigger,
+these don't need the personal CRM project or its vault secret, since
+they call their own project's own functions):
+
+- `fediverse-ingest` (`0 */6 * * *`) — pulls recent public posts from a
+  fixed list of Mastodon accounts (`ACCOUNTS` in
+  `supabase/functions/fediverse-ingest/index.ts`; currently
+  `@DAIR@dair-community.social` for AI ethics/policy and
+  `@colossal@mastodon.art` for contemporary art/visual culture — swapped
+  in for `@blendernation@mastodon.online`, which turned out to read as
+  3D-software tutorial news rather than art) via each instance's public
+  REST API (no auth needed for public statuses — simpler and more
+  stable than parsing raw ActivityPub outboxes, and every account on
+  the list happens to be Mastodon). Upserts into `links` as
+  `origin: 'fediverse'`, `onConflict: 'fediverse_post_uri'`,
+  `POSTS_PER_ACCOUNT = 10`.
+- `hn-ingest` (`15 */6 * * *`) — Hacker News's public Firebase API
+  (`topstories.json` + `item/{id}.json`, no auth), top 25 stories.
+- `techcrunch-ingest` (`30 */6 * * *`) — TechCrunch's public RSS feed
+  (`techcrunch.com/feed/`), top 20 items, extracted with a small regex
+  (not a full XML parser — the feed's `<item>`/`<title>`/`<link>` shape
+  is stable and simple enough that a parser dependency isn't worth it).
+
+Both upsert into `links` as `origin: 'feed'`, `onConflict: 'url'` (falling
+back to the HN item's own discussion-page URL when a story has no
+external `url`, e.g. Ask HN). `links.url` and `links.fediverse_post_uri`
+both have plain (non-partial) unique indexes for this — note PostgREST's
+`upsert(onConflict:)` can't resolve against a *partial* unique index
+(Postgres won't infer the conflict target through an unstated `WHERE`),
+which is why these are full indexes rather than e.g.
+`... where fediverse_post_uri is not null` — harmless here since `NULL`
+never collides with `NULL` under uniqueness anyway.
+
+The three schedules are staggered 15 minutes apart (`:00`/`:15`/`:30`)
+so they don't all hit the DB/edge runtime at once.
+
+`origin` has three values: `local` (a user's own submission — none yet;
+no UI for it exists), `fediverse`, and `feed` (HN/TechCrunch). The
+original TechCrunch/HN seed rows were hand-picked once via web search
+before `hn-ingest`/`techcrunch-ingest` existed and were tagged `local`
+for lack of a better bucket at the time; they've since been reclassified
+to `feed` (same category, just picked by hand) rather than deleted,
+since three of them already carried real votes and a delete+reingest
+would have orphaned that history for no reason (their URLs simply
+weren't in HN's/TechCrunch's *current* top lists at seed time, so a
+plain re-run wouldn't have touched them).
 
 **Hosting — DigitalOcean.** The site is meant to ship as a static
 site (no server framework — see the architecture discussion for why:
