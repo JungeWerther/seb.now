@@ -19,4 +19,5 @@ class Link(BaseModel):
     description: str | None = None
     origin: Literal["local", "fediverse", "feed"]
     fediverse_post_uri: str | None = None
+    thread_url: str | None = None
     created_at: datetime

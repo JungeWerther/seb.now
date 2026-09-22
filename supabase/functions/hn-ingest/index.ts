@@ -35,12 +35,13 @@ Deno.serve(async (_req: Request) => {
       const itemRes = await fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`);
       const item = await itemRes.json();
       if (!item || item.type !== "story" || !item.title) continue;
-      const url = item.url ?? `https://news.ycombinator.com/item?id=${item.id}`;
+      const threadUrl = `https://news.ycombinator.com/item?id=${item.id}`;
+      const url = item.url ?? threadUrl;
 
       const { error } = await supabase
         .from("links")
         .upsert(
-          { url, title: decodeEntities(item.title), origin: "feed", submitted_by: null },
+          { url, thread_url: threadUrl, title: decodeEntities(item.title), origin: "feed", submitted_by: null },
           { onConflict: "url" },
         );
       if (error) errors.push({ id, error: error.message });

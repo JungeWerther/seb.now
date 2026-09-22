@@ -27,7 +27,11 @@ function stripHtml(html: string): string {
   return decoded.replace(/\s+/g, " ").trim();
 }
 
-function titleFrom(status: { content: string }, displayName: string): string {
+// When a post links to a single external page, Mastodon's own preview-card
+// generator (status.card) already identifies it - more reliable than
+// scanning post text for a URL, and gives us the target page's real title.
+function titleFrom(status: { content: string; card?: { title?: string } | null }, displayName: string): string {
+  if (status.card?.title) return status.card.title;
   const text = stripHtml(status.content);
   if (!text) return `Post by ${displayName}`;
   return text.length > 140 ? text.slice(0, 140) + "…" : text;
@@ -64,9 +68,11 @@ Deno.serve(async (_req: Request) => {
       let upserted = 0;
       for (const status of statuses) {
         if (!status.url) continue;
+        const sourceUrl = status.card?.url || status.url;
         const { error } = await supabase.from("links").upsert(
           {
-            url: status.url,
+            url: sourceUrl,
+            thread_url: status.url,
             title: titleFrom(status, account.display_name || handle),
             origin: "fediverse",
             fediverse_post_uri: status.uri,
