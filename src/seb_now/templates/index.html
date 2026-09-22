@@ -122,6 +122,11 @@
       flex-direction: column;
       gap: 0.15rem;
     }
+    .swipe-content.flash-positive { animation: flash-positive 0.9s ease-out; }
+    @keyframes flash-positive {
+      from { background-color: var(--positive-soft); }
+      to { background-color: var(--bg); }
+    }
     .swipe-content .domain {
       font-size: 0.7rem;
       color: gray;
@@ -374,6 +379,8 @@
           // right = upvote
           reset();
           li.classList.add("upvoted");
+          content.classList.add("flash-positive");
+          content.addEventListener("animationend", () => content.classList.remove("flash-positive"), { once: true });
           await castVote(session, linkId, 1);
           const scores = await loadScores([linkId]);
           renderScore(li, scores[linkId] || 0);
