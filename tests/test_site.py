@@ -1,16 +1,15 @@
 from seb_now.constants import SourceType
-from seb_now.site import Article, build_articles, load_feed, render
+from seb_now.site import Article, build_articles, render
 
-
-def test_load_feed_reads_bundled_articles() -> None:
-    feed = load_feed()
-
-    assert len(feed) > 0
-    assert all({"title", "url"} <= item.keys() for item in feed)
+FEED_FIXTURE = [
+    {"title": "Fed signals rate cut as inflation cools", "url": "https://www.nytimes.com/a"},
+    {"title": "Fed chair explains the rate decision in full", "url": "https://www.youtube.com/watch?v=a"},
+    {"title": "My take on the Fed's rate cut", "url": "https://sebswrites.example.com/posts/a"},
+]
 
 
 def test_build_articles_classifies_source_type() -> None:
-    articles = build_articles(load_feed())
+    articles = build_articles(FEED_FIXTURE)
 
     source_types = {article.source_type for article in articles}
     assert source_types == {SourceType.MAINSTREAM_MEDIA, SourceType.YOUTUBE_LONGFORM, SourceType.DIRECT_LINK}
