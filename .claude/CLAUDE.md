@@ -5,6 +5,49 @@
 `seb.now` — a news website. Currently scaffolded as a bare `uv`-managed
 Python package (`src/seb_now`); no web framework has been chosen yet.
 
+## Infrastructure: Supabase + DigitalOcean
+
+**Storage — Supabase.** Project `seb-now`, ref `yoxrhqlzsqwfjmsjpari`, org
+"Seb Private" (`jlizhkmtqqlztnjcknso`), region `eu-west-1`, URL
+`https://yoxrhqlzsqwfjmsjpari.supabase.co`. This is a dedicated project —
+deliberately separate from the `bhewgqnzhyllvxcdmjrd` project (personal
+CRM + EventMCP) so a public-facing site's anon key never shares a database
+with private data. Access it with the `mcp__Supabase__*` tools using that
+project ref; there is no CLI/local Supabase link in this repo.
+
+Schema: `profiles` / `links` / `votes` / `follows`, RLS enabled on all four
+(policies scoped to `auth.uid()`), migrations versioned under
+`supabase/migrations/`. `profiles` rows are auto-created by an
+`auth.users` insert trigger. **Anonymous Sign-ins must be enabled in the
+Supabase dashboard** (Authentication → Sign In / Providers) — no MCP tool
+exposes that toggle, and votes/follows depend on it (RLS write access
+without requiring a real signup).
+
+The anon/publishable key is safe to expose (RLS is what protects the
+data, not secrecy of that key) but is deliberately **not committed** to
+this repo — `.env` is git-ignored here. It's kept in two places instead:
+a local, untracked `.env` (`SUPABASE_URL` + `SUPABASE_ANON_KEY`) for local
+dev/test, and GitHub Actions repository **variables** (not secrets, since
+it isn't one) of the same names, which `.github/workflows/ci.yml` reads
+for the integration test. The `service_role` key is never used by this
+app at all — every write goes through RLS as an authenticated (including
+anonymous) user, not a privileged backend.
+
+**Hosting — DigitalOcean.** The site is meant to ship as a static
+site (no server framework — see the architecture discussion for why:
+Supabase's auto-generated REST API + `supabase-js` + RLS covers reads,
+votes, and follows straight from the browser). DO's env should hold
+*only* `SUPABASE_ANON_KEY`/`SUPABASE_URL` — no `service_role`, matching
+the Supabase secrets policy above. **No DigitalOcean MCP/CLI is
+connected in this environment** — there is currently no automated way to
+inspect or deploy to DO from a Claude Code session here; DO setup is a
+manual step until that changes.
+
+A second Supabase project on this account, `trading.swiechers.nl`
+(`fvtapzjbxkqvmikdapla`, org `qiliecndqbdzhhdlcvgv`), was **paused** to
+free a free-tier project slot for `seb-now` — unrelated to this app, but
+worth knowing before assuming it's still active.
+
 ## Review-comment workflow
 
 When the user leaves review comments on an open PR, address them in a loop:
