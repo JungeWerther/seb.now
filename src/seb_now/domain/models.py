@@ -17,6 +17,6 @@ class Link(BaseModel):
     url: str
     title: str
     description: str | None = None
-    origin: Literal["local", "fediverse"]
+    origin: Literal["local", "fediverse", "feed"]
     fediverse_post_uri: str | None = None
     created_at: datetime
