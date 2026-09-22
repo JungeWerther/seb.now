@@ -81,6 +81,7 @@ def test_render_includes_swipeable_article_with_link_id() -> None:
     assert 'li class="article" data-link-id="a1"' in html
     assert 'class="swipe-bg"' in html
     assert 'class="swipe-content"' in html
+    assert 'class="score"' in html
 
 
 def test_render_includes_settings_icon() -> None:

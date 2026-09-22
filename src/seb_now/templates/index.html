@@ -5,7 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>seb.now</title>
   <style>
-    :root { color-scheme: light dark; }
+    :root {
+      color-scheme: light dark;
+      --positive: #4c9a6a;
+      --positive-soft: #e1f3e6;
+      --negative: #c96a6a;
+      --negative-soft: #f8e6e6;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --positive: #7fc999;
+        --positive-soft: #203a29;
+        --negative: #e0a0a0;
+        --negative-soft: #3a2323;
+      }
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       max-width: 720px;
@@ -74,20 +88,16 @@
       border-bottom: 1px solid rgba(128, 128, 128, 0.25);
       touch-action: pan-y;
     }
-    li.article.upvoted { box-shadow: inset 3px 0 0 #2da44e; }
-    .swipe-bg {
+    li.article.upvoted { box-shadow: inset 3px 0 0 var(--positive); }
+    .swipe-bg { position: absolute; inset: 0; }
+    .swipe-bg .tint {
       position: absolute;
       inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 1rem;
-      font-size: 1.1rem;
-      font-weight: bold;
+      opacity: 0;
+      transition: opacity 0.1s;
     }
-    .swipe-bg .hint { opacity: 0; transition: opacity 0.1s; }
-    .swipe-bg .hint-down { color: #cf222e; }
-    .swipe-bg .hint-up { color: #2da44e; }
+    .swipe-bg .tint-down { background: var(--negative-soft); }
+    .swipe-bg .tint-up { background: var(--positive-soft); }
     .swipe-content {
       position: relative;
       background: Canvas;
@@ -98,6 +108,15 @@
     }
     .swipe-content a { flex: 1; text-decoration: none; color: inherit; }
     .swipe-content a:hover { text-decoration: underline; }
+    .swipe-content .score {
+      font-size: 0.75rem;
+      font-variant-numeric: tabular-nums;
+      color: gray;
+      min-width: 1.5em;
+      text-align: right;
+    }
+    .swipe-content .score.positive { color: var(--positive); }
+    .swipe-content .score.negative { color: var(--negative); }
     .swipe-content .cluster { font-size: 0.75rem; color: gray; margin-left: 0.5rem; }
   </style>
 </head>
@@ -132,6 +151,17 @@
       return data.session;
     }
 
+    async function loadScores(linkIds) {
+      const { data, error } = await supabase.from("votes").select("link_id, value").in("link_id", linkIds);
+      if (error) {
+        console.error("failed to load votes", error);
+        return {};
+      }
+      const scores = {};
+      for (const row of data) scores[row.link_id] = (scores[row.link_id] || 0) + row.value;
+      return scores;
+    }
+
     async function loadOwnVotes(linkIds, userId) {
       const { data, error } = await supabase
         .from("votes")
@@ -155,10 +185,17 @@
       if (error) console.error("vote failed", error);
     }
 
+    function renderScore(li, score) {
+      const badge = li.querySelector(".score");
+      badge.textContent = score > 0 ? `+${score}` : String(score);
+      badge.classList.toggle("positive", score > 0);
+      badge.classList.toggle("negative", score < 0);
+    }
+
     function setupSwipe(li, session) {
       const content = li.querySelector(".swipe-content");
-      const hintDown = li.querySelector(".hint-down");
-      const hintUp = li.querySelector(".hint-up");
+      const tintDown = li.querySelector(".tint-down");
+      const tintUp = li.querySelector(".tint-up");
       const linkId = li.dataset.linkId;
 
       let startX = null;
@@ -168,8 +205,8 @@
       function reset() {
         content.style.transition = "transform 0.2s";
         content.style.transform = "translateX(0)";
-        hintDown.style.opacity = 0;
-        hintUp.style.opacity = 0;
+        tintDown.style.opacity = 0;
+        tintUp.style.opacity = 0;
       }
 
       function onDown(e) {
@@ -185,11 +222,11 @@
         content.style.transform = `translateX(${dx}px)`;
         const progress = Math.min(Math.abs(dx) / SWIPE_COMMIT_THRESHOLD_PX, 1);
         if (dx < 0) {
-          hintDown.style.opacity = progress;
-          hintUp.style.opacity = 0;
+          tintDown.style.opacity = progress;
+          tintUp.style.opacity = 0;
         } else {
-          hintUp.style.opacity = progress;
-          hintDown.style.opacity = 0;
+          tintUp.style.opacity = progress;
+          tintDown.style.opacity = 0;
         }
       }
 
@@ -212,6 +249,8 @@
           reset();
           li.classList.add("upvoted");
           await castVote(session, linkId, 1);
+          const scores = await loadScores([linkId]);
+          renderScore(li, scores[linkId] || 0);
         } else {
           reset();
         }
@@ -248,9 +287,14 @@
         }
       }
 
-      for (const li of document.querySelectorAll("li.article")) {
-        setupSwipe(li, session);
+      const visible = [...document.querySelectorAll("li.article")];
+      const visibleIds = visible.map((li) => li.dataset.linkId);
+      if (visibleIds.length > 0) {
+        const scores = await loadScores(visibleIds);
+        for (const li of visible) renderScore(li, scores[li.dataset.linkId] || 0);
       }
+
+      for (const li of visible) setupSwipe(li, session);
     }
 
     async function setupSettings() {

@@ -91,9 +91,10 @@ def _render_article(article: Article) -> str:
     link_id = escape(article.id)
     return (
         f'      <li class="article" data-link-id="{link_id}">'
-        f'<div class="swipe-bg"><span class="hint hint-down">&#10005;</span><span class="hint hint-up">&#10003;</span></div>'
+        f'<div class="swipe-bg"><span class="tint tint-down"></span><span class="tint tint-up"></span></div>'
         f'<div class="swipe-content">'
         f'<a href="{escape(article.url)}">{escape(article.title)}</a>'
+        f'<span class="score">0</span>'
         f'<span class="cluster">cluster {article.cluster_id}</span>'
         f"</div>"
         f"</li>"
