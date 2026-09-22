@@ -10,6 +10,8 @@ into a SourceType; SOURCE_TYPE_LABELS's key order is the page's group order
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
@@ -27,10 +29,13 @@ TEMPLATE_PATH = TEMPLATES_DIR / "index.html"
 OUTPUT_PATH = Path(__file__).parent.parent.parent / "dist" / "index.html"
 
 ARTICLES_PLACEHOLDER = "<!--ARTICLES-->"
+SUPABASE_URL_PLACEHOLDER = "__SUPABASE_URL__"
+SUPABASE_ANON_KEY_PLACEHOLDER = "__SUPABASE_ANON_KEY__"
 
 
 @dataclass(frozen=True)
 class Article:
+    id: str
     title: str
     url: str
     source_type: SourceType
@@ -48,7 +53,7 @@ def load_feed() -> list[dict[str, str]]:
     client = get_unauthenticated_client()
     response = client.table(Link.__tablename__).select("*").order("created_at").execute()
     links = [Link.model_validate(row) for row in response.data]
-    return [{"title": link.title, "url": link.url} for link in links]
+    return [{"id": str(link.id), "title": link.title, "url": link.url} for link in links]
 
 
 def build_articles(feed: Sequence[dict[str, str]]) -> list[Article]:
@@ -65,6 +70,7 @@ def build_articles(feed: Sequence[dict[str, str]]) -> list[Article]:
         cluster = clusterer.add_article(item["title"])
         articles.append(
             Article(
+                id=item["id"],
                 title=item["title"],
                 url=item["url"],
                 source_type=classify_source(item["url"]),
@@ -82,8 +88,14 @@ def _group_by_source_type(articles: Sequence[Article]) -> dict[SourceType, list[
 
 
 def _render_article(article: Article) -> str:
+    link_id = escape(article.id)
     return (
         f'      <li class="article">'
+        f'<div class="vote" data-link-id="{link_id}">'
+        f'<button class="vote-btn" data-value="1" aria-label="Upvote">&#9650;</button>'
+        f'<span class="score">0</span>'
+        f'<button class="vote-btn" data-value="-1" aria-label="Downvote">&#9660;</button>'
+        f"</div>"
         f'<a href="{escape(article.url)}">{escape(article.title)}</a>'
         f'<span class="cluster">cluster {article.cluster_id}</span>'
         f"</li>"
@@ -101,19 +113,26 @@ def _render_group(source_type: SourceType, articles: Sequence[Article]) -> str:
     )
 
 
-def render(articles: Sequence[Article]) -> str:
+def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon_key: str = "") -> str:
     groups = _group_by_source_type(articles)
     sections = "\n".join(
         _render_group(source_type, groups[source_type])
         for source_type in SOURCE_TYPE_LABELS
         if groups[source_type]
     )
-    return TEMPLATE_PATH.read_text().replace(ARTICLES_PLACEHOLDER, sections)
+    html = TEMPLATE_PATH.read_text().replace(ARTICLES_PLACEHOLDER, sections)
+    html = html.replace(SUPABASE_URL_PLACEHOLDER, json.dumps(supabase_url))
+    html = html.replace(SUPABASE_ANON_KEY_PLACEHOLDER, json.dumps(supabase_anon_key))
+    return html
 
 
 def main() -> None:
     articles = build_articles(load_feed())
-    html = render(articles)
+    html = render(
+        articles,
+        supabase_url=os.environ["SUPABASE_URL"],
+        supabase_anon_key=os.environ["SUPABASE_ANON_KEY"],
+    )
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(html)
     print(f"wrote {OUTPUT_PATH}")

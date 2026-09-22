@@ -2,9 +2,9 @@ from seb_now.constants import SourceType
 from seb_now.site import Article, build_articles, render
 
 FEED_FIXTURE = [
-    {"title": "Fed signals rate cut as inflation cools", "url": "https://www.nytimes.com/a"},
-    {"title": "Fed chair explains the rate decision in full", "url": "https://www.youtube.com/watch?v=a"},
-    {"title": "My take on the Fed's rate cut", "url": "https://sebswrites.example.com/posts/a"},
+    {"id": "11111111-1111-1111-1111-111111111111", "title": "Fed signals rate cut as inflation cools", "url": "https://www.nytimes.com/a"},
+    {"id": "22222222-2222-2222-2222-222222222222", "title": "Fed chair explains the rate decision in full", "url": "https://www.youtube.com/watch?v=a"},
+    {"id": "33333333-3333-3333-3333-333333333333", "title": "My take on the Fed's rate cut", "url": "https://sebswrites.example.com/posts/a"},
 ]
 
 
@@ -17,14 +17,18 @@ def test_build_articles_classifies_source_type() -> None:
 
 def test_render_groups_by_source_type_in_label_order() -> None:
     articles = [
-        Article(title="Blog post", url="https://blog.example.com/a", source_type=SourceType.DIRECT_LINK, cluster_id=0),
         Article(
+            id="a1", title="Blog post", url="https://blog.example.com/a", source_type=SourceType.DIRECT_LINK, cluster_id=0
+        ),
+        Article(
+            id="a2",
             title="Long-form video",
             url="https://youtu.be/x",
             source_type=SourceType.YOUTUBE_LONGFORM,
             cluster_id=0,
         ),
         Article(
+            id="a3",
             title="Wire story",
             url="https://www.reuters.com/a",
             source_type=SourceType.MAINSTREAM_MEDIA,
@@ -46,6 +50,7 @@ def test_render_groups_by_source_type_in_label_order() -> None:
 def test_render_omits_empty_groups() -> None:
     articles = [
         Article(
+            id="a1",
             title="Wire story",
             url="https://www.reuters.com/a",
             source_type=SourceType.MAINSTREAM_MEDIA,
@@ -58,3 +63,30 @@ def test_render_omits_empty_groups() -> None:
     assert "Mainstream Media" in html
     assert "YouTube Long-form" not in html
     assert "Direct Link" not in html
+
+
+def test_render_includes_vote_widget_per_article() -> None:
+    articles = [
+        Article(
+            id="a1",
+            title="Wire story",
+            url="https://www.reuters.com/a",
+            source_type=SourceType.MAINSTREAM_MEDIA,
+            cluster_id=0,
+        )
+    ]
+
+    html = render(articles)
+
+    assert 'data-link-id="a1"' in html
+    assert 'data-value="1"' in html
+    assert 'data-value="-1"' in html
+
+
+def test_render_injects_supabase_config() -> None:
+    html = render([], supabase_url="https://example.supabase.co", supabase_anon_key="test-anon-key")
+
+    assert "https://example.supabase.co" in html
+    assert "test-anon-key" in html
+    assert "__SUPABASE_URL__" not in html
+    assert "__SUPABASE_ANON_KEY__" not in html

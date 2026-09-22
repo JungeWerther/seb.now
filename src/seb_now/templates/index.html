@@ -39,10 +39,125 @@
       color: gray;
       margin-left: 0.5rem;
     }
+    li.article { display: flex; align-items: center; gap: 0.6rem; }
+    li.article a { flex: 1; }
+    .vote {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.1rem;
+      font-size: 0.7rem;
+      color: gray;
+      flex-shrink: 0;
+    }
+    .vote-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0.1rem 0.3rem;
+      font-size: 0.7rem;
+      color: inherit;
+      line-height: 1;
+    }
+    .vote-btn:hover { color: currentColor; }
+    .vote-btn.active { color: #0969da; }
+    .vote .score { min-width: 1.2em; text-align: center; }
   </style>
 </head>
 <body>
   <h1>seb.now</h1>
   <!--ARTICLES-->
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+    const supabase = createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__);
+
+    async function ensureSession() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) return session;
+      const { data, error } = await supabase.auth.signInAnonymously();
+      if (error) {
+        console.error("anonymous sign-in failed", error);
+        return null;
+      }
+      return data.session;
+    }
+
+    async function loadScores(linkIds) {
+      const { data, error } = await supabase.from("votes").select("link_id, value").in("link_id", linkIds);
+      if (error) {
+        console.error("failed to load votes", error);
+        return {};
+      }
+      const scores = {};
+      for (const row of data) scores[row.link_id] = (scores[row.link_id] || 0) + row.value;
+      return scores;
+    }
+
+    async function loadOwnVotes(linkIds, userId) {
+      const { data, error } = await supabase
+        .from("votes")
+        .select("link_id, value")
+        .eq("voter_id", userId)
+        .in("link_id", linkIds);
+      if (error) {
+        console.error("failed to load own votes", error);
+        return {};
+      }
+      const own = {};
+      for (const row of data) own[row.link_id] = row.value;
+      return own;
+    }
+
+    function renderScore(widget, score) {
+      widget.querySelector(".score").textContent = score;
+    }
+
+    function renderOwnVote(widget, value) {
+      for (const btn of widget.querySelectorAll(".vote-btn")) {
+        btn.classList.toggle("active", Number(btn.dataset.value) === value);
+      }
+    }
+
+    async function castVote(session, linkId, value, widget) {
+      if (!session) return;
+      const { error } = await supabase
+        .from("votes")
+        .upsert({ link_id: linkId, voter_id: session.user.id, value }, { onConflict: "link_id,voter_id" });
+      if (error) {
+        console.error("vote failed", error);
+        return;
+      }
+      renderOwnVote(widget, value);
+      const scores = await loadScores([linkId]);
+      renderScore(widget, scores[linkId] || 0);
+    }
+
+    async function main() {
+      const widgets = [...document.querySelectorAll(".vote")];
+      const linkIds = widgets.map((w) => w.dataset.linkId);
+      if (linkIds.length === 0) return;
+
+      const [session, scores] = await Promise.all([ensureSession(), loadScores(linkIds)]);
+      for (const widget of widgets) renderScore(widget, scores[widget.dataset.linkId] || 0);
+
+      if (session) {
+        const own = await loadOwnVotes(linkIds, session.user.id);
+        for (const widget of widgets) {
+          const value = own[widget.dataset.linkId];
+          if (value) renderOwnVote(widget, value);
+        }
+      }
+
+      for (const widget of widgets) {
+        const linkId = widget.dataset.linkId;
+        for (const btn of widget.querySelectorAll(".vote-btn")) {
+          btn.addEventListener("click", () => castVote(session, linkId, Number(btn.dataset.value), widget));
+        }
+      }
+    }
+
+    main();
+  </script>
 </body>
 </html>
