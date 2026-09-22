@@ -44,9 +44,8 @@
       padding: 1rem 0;
       margin-bottom: 1.5rem;
     }
-    .brand { display: flex; align-items: center; gap: 0.5rem; }
-    .brand .logo { color: var(--fg); flex-shrink: 0; }
-    h1 { font-size: 1.3rem; margin: 0; letter-spacing: -0.01em; }
+    h1.brand { margin: 0; line-height: 0; }
+    h1.brand .wordmark { height: 26px; width: auto; display: block; }
     #settings-btn {
       position: absolute;
       left: 1rem;
@@ -182,14 +181,13 @@
 <body>
   <header>
     <button id="settings-btn" aria-label="Settings">&#9881;</button>
-    <div class="brand">
-      <svg class="logo" width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
-        <line x1="12" y1="12" x2="12" y2="5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        <circle cx="12" cy="12" r="1.4" fill="currentColor"/>
+    <h1 class="brand">
+      <svg class="wordmark" viewBox="0 0 172 34" role="img" aria-label="seb.now" xmlns="http://www.w3.org/2000/svg">
+        <text x="0" y="25" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="27" font-weight="700">
+          <tspan fill="var(--fg)">seb</tspan><tspan fill="var(--positive)"><animate attributeName="opacity" values="1;0.35;1" dur="2.4s" repeatCount="indefinite"/>.</tspan><tspan fill="var(--fg)" font-weight="400" opacity="0.85">now</tspan>
+        </text>
       </svg>
-      <h1>seb.now</h1>
-    </div>
+    </h1>
   </header>
   <div id="toast-container"></div>
   <div id="settings-panel">
