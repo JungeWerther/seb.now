@@ -53,13 +53,6 @@ MAINSTREAM_MEDIA_DOMAINS: frozenset[str] = frozenset(
 )
 YOUTUBE_DOMAINS: frozenset[str] = frozenset({"youtube.com", "youtu.be"})
 
-# site.py — display label per SourceType, in the order groups render on the page
-SOURCE_TYPE_LABELS: dict[SourceType, str] = {
-    SourceType.MAINSTREAM_MEDIA: "Mainstream Media",
-    SourceType.YOUTUBE_LONGFORM: "YouTube Long-form",
-    SourceType.DIRECT_LINK: "Direct Link",
-}
-
 # clustering.py — TopicClusterer
 DEFAULT_SIMILARITY_THRESHOLD = 0.5
 

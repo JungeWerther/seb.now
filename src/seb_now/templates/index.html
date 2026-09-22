@@ -33,9 +33,23 @@
       background: var(--bg);
       color: var(--fg);
     }
-    header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 2rem; }
-    h1 { font-size: 1.5rem; margin: 0; }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem 0;
+      margin-bottom: 1.5rem;
+    }
+    .brand { display: flex; align-items: center; gap: 0.5rem; }
+    .brand .logo { color: var(--fg); flex-shrink: 0; }
+    h1 { font-size: 1.3rem; margin: 0; letter-spacing: -0.01em; }
     #settings-btn {
+      position: absolute;
+      left: 1rem;
       background: none;
       border: none;
       cursor: pointer;
@@ -77,16 +91,6 @@
       cursor: pointer;
     }
     #settings-status { font-size: 0.8rem; color: gray; }
-    section.source-group { margin-bottom: 2rem; }
-    section.source-group h2 {
-      font-size: 0.85rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: gray;
-      border-bottom: 1px solid currentColor;
-      padding-bottom: 0.25rem;
-      margin-bottom: 0.5rem;
-    }
     ul.articles { list-style: none; padding: 0; margin: 0; }
     li.article {
       position: relative;
@@ -109,21 +113,27 @@
       background: var(--bg);
       padding: 0.6rem 0;
       display: flex;
-      align-items: center;
-      gap: 0.6rem;
+      flex-direction: column;
+      gap: 0.15rem;
     }
-    .swipe-content a { flex: 1; text-decoration: none; color: inherit; }
-    .swipe-content a:hover { text-decoration: underline; }
-    .swipe-content .score {
+    .swipe-content .domain {
+      font-size: 0.7rem;
+      color: gray;
+      text-align: left;
+    }
+    .article-row { display: flex; align-items: center; gap: 0.6rem; }
+    .article-row a { flex: 1; text-decoration: none; color: inherit; }
+    .article-row a:hover { text-decoration: underline; }
+    .article-row .score {
       font-size: 0.75rem;
       font-variant-numeric: tabular-nums;
       color: gray;
       min-width: 1.5em;
       text-align: right;
     }
-    .swipe-content .score.positive { color: var(--positive); }
-    .swipe-content .score.negative { color: var(--negative); }
-    .swipe-content .cluster { font-size: 0.75rem; color: gray; margin-left: 0.5rem; }
+    .article-row .score.positive { color: var(--positive); }
+    .article-row .score.negative { color: var(--negative); }
+    .article-row .cluster { font-size: 0.75rem; color: gray; margin-left: 0.5rem; }
     #toast-container {
       position: fixed;
       bottom: 1.25rem;
@@ -172,7 +182,14 @@
 <body>
   <header>
     <button id="settings-btn" aria-label="Settings">&#9881;</button>
-    <h1>seb.now</h1>
+    <div class="brand">
+      <svg class="logo" width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+        <line x1="12" y1="12" x2="12" y2="5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="12" cy="12" r="1.4" fill="currentColor"/>
+      </svg>
+      <h1>seb.now</h1>
+    </div>
   </header>
   <div id="toast-container"></div>
   <div id="settings-panel">

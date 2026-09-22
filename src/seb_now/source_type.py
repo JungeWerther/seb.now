@@ -20,6 +20,12 @@ def _registrable_domain(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+def display_domain(url: str) -> str:
+    """Domain for on-page display: no scheme, no www., no TLD suffix."""
+    domain = _registrable_domain(url)
+    return domain.rsplit(".", 1)[0] if "." in domain else domain
+
+
 def classify_source(url: str) -> SourceType:
     domain = _registrable_domain(url)
     if domain in YOUTUBE_DOMAINS:

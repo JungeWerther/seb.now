@@ -15,22 +15,30 @@ def test_build_articles_classifies_source_type() -> None:
     assert source_types == {SourceType.MAINSTREAM_MEDIA, SourceType.YOUTUBE_LONGFORM, SourceType.DIRECT_LINK}
 
 
-def test_render_groups_by_source_type_in_label_order() -> None:
+def test_build_articles_computes_display_domain() -> None:
+    articles = build_articles(FEED_FIXTURE)
+
+    domains = {article.id: article.domain for article in articles}
+    assert domains["11111111-1111-1111-1111-111111111111"] == "nytimes"
+    assert domains["22222222-2222-2222-2222-222222222222"] == "youtube"
+    assert domains["33333333-3333-3333-3333-333333333333"] == "sebswrites.example"
+
+
+def test_render_is_a_flat_list_with_no_group_headers() -> None:
     articles = [
         Article(
-            id="a1", title="Blog post", url="https://blog.example.com/a", source_type=SourceType.DIRECT_LINK, cluster_id=0
+            id="a1",
+            title="Blog post",
+            url="https://blog.example.com/a",
+            domain="blog.example",
+            source_type=SourceType.DIRECT_LINK,
+            cluster_id=0,
         ),
         Article(
             id="a2",
-            title="Long-form video",
-            url="https://youtu.be/x",
-            source_type=SourceType.YOUTUBE_LONGFORM,
-            cluster_id=0,
-        ),
-        Article(
-            id="a3",
             title="Wire story",
             url="https://www.reuters.com/a",
+            domain="reuters",
             source_type=SourceType.MAINSTREAM_MEDIA,
             cluster_id=0,
         ),
@@ -38,39 +46,21 @@ def test_render_groups_by_source_type_in_label_order() -> None:
 
     html = render(articles)
 
-    mainstream_index = html.index("Mainstream Media")
-    youtube_index = html.index("YouTube Long-form")
-    direct_index = html.index("Direct Link")
-    assert mainstream_index < youtube_index < direct_index
-    assert html.index("Wire story") < youtube_index
-    assert html.index("Long-form video") < direct_index
     assert "Blog post" in html
-
-
-def test_render_omits_empty_groups() -> None:
-    articles = [
-        Article(
-            id="a1",
-            title="Wire story",
-            url="https://www.reuters.com/a",
-            source_type=SourceType.MAINSTREAM_MEDIA,
-            cluster_id=0,
-        )
-    ]
-
-    html = render(articles)
-
-    assert "Mainstream Media" in html
-    assert "YouTube Long-form" not in html
+    assert "Wire story" in html
+    assert "Mainstream Media" not in html
     assert "Direct Link" not in html
+    assert "<h2>" not in html
+    assert html.count('li class="article"') == 2
 
 
-def test_render_includes_swipeable_article_with_link_id() -> None:
+def test_render_includes_swipeable_article_with_link_id_and_domain() -> None:
     articles = [
         Article(
             id="a1",
             title="Wire story",
             url="https://www.reuters.com/a",
+            domain="reuters",
             source_type=SourceType.MAINSTREAM_MEDIA,
             cluster_id=0,
         )
@@ -82,6 +72,7 @@ def test_render_includes_swipeable_article_with_link_id() -> None:
     assert 'class="swipe-bg"' in html
     assert 'class="swipe-content"' in html
     assert 'class="score"' in html
+    assert '<span class="domain">reuters</span>' in html
 
 
 def test_render_includes_settings_icon() -> None:
@@ -89,6 +80,13 @@ def test_render_includes_settings_icon() -> None:
 
     assert 'id="settings-btn"' in html
     assert 'id="settings-panel"' in html
+
+
+def test_render_includes_logo_and_wordmark() -> None:
+    html = render([])
+
+    assert '<svg class="logo"' in html
+    assert "<h1>seb.now</h1>" in html
 
 
 def test_render_injects_supabase_config() -> None:
