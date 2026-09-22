@@ -7,6 +7,8 @@
   <style>
     :root {
       color-scheme: light dark;
+      --bg: #ffffff;
+      --fg: #1a1a1a;
       --positive: #4c9a6a;
       --positive-soft: #e1f3e6;
       --negative: #c96a6a;
@@ -14,6 +16,8 @@
     }
     @media (prefers-color-scheme: dark) {
       :root {
+        --bg: #0a0a0a;
+        --fg: #e8e8e8;
         --positive: #7fc999;
         --positive-soft: #203a29;
         --negative: #e0a0a0;
@@ -26,6 +30,8 @@
       margin: 2rem auto;
       padding: 0 1rem;
       line-height: 1.5;
+      background: var(--bg);
+      color: var(--fg);
     }
     header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 2rem; }
     h1 { font-size: 1.5rem; margin: 0; }
@@ -100,7 +106,7 @@
     .swipe-bg .tint-up { background: var(--positive-soft); }
     .swipe-content {
       position: relative;
-      background: Canvas;
+      background: var(--bg);
       padding: 0.6rem 0;
       display: flex;
       align-items: center;
