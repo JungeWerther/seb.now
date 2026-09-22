@@ -106,7 +106,7 @@ def _render_article(article: Article) -> str:
         f'<div class="swipe-content">'
         f'<span class="domain">{escape(article.domain)}</span>'
         f'<div class="article-row">'
-        f'<a href="{escape(article.url)}">{escape(article.title)}</a>'
+        f'<a href="{escape(article.url)}" target="_blank" rel="noopener noreferrer">{escape(article.title)}</a>'
         f'<span class="score">0</span>'
         f'<span class="cluster">cluster {article.cluster_id}</span>'
         f"</div>"

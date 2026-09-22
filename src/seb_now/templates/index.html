@@ -135,6 +135,7 @@
     .article-row { display: flex; align-items: center; gap: 0.6rem; }
     .article-row a { flex: 1; text-decoration: none; color: inherit; }
     .article-row a:hover { text-decoration: underline; }
+    .article-row a.visited { color: gray; }
     .article-row .score {
       font-size: 0.75rem;
       font-variant-numeric: tabular-nums;
@@ -258,6 +259,30 @@
       const own = {};
       for (const row of data) own[row.link_id] = row.value;
       return own;
+    }
+
+    async function loadVisited(linkIds, userId) {
+      const { data, error } = await supabase
+        .from("link_visits")
+        .select("link_id")
+        .eq("visitor_id", userId)
+        .in("link_id", linkIds);
+      if (error) {
+        console.error("failed to load visited links", error);
+        return new Set();
+      }
+      return new Set(data.map((row) => row.link_id));
+    }
+
+    async function markVisited(session, linkId) {
+      if (!session) return;
+      const { error } = await supabase
+        .from("link_visits")
+        .upsert(
+          { link_id: linkId, visitor_id: session.user.id },
+          { onConflict: "link_id,visitor_id", ignoreDuplicates: true },
+        );
+      if (error) console.error("mark visited failed", error);
     }
 
     async function castVote(session, linkId, value) {
@@ -425,6 +450,19 @@
       if (visibleIds.length > 0) {
         const scores = await loadScores(visibleIds);
         for (const li of visible) renderScore(li, scores[li.dataset.linkId] || 0);
+      }
+
+      if (session && visibleIds.length > 0) {
+        const visited = await loadVisited(visibleIds, session.user.id);
+        for (const li of visible) {
+          const link = li.querySelector(".article-row a");
+          const linkId = li.dataset.linkId;
+          if (visited.has(linkId)) link.classList.add("visited");
+          link.addEventListener("click", () => {
+            link.classList.add("visited");
+            markVisited(session, linkId);
+          });
+        }
       }
 
       for (const li of visible) setupSwipe(li, session);
