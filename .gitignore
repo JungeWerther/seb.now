@@ -1,3 +1,7 @@
+# Local-only Claude Code memory (deployment/infra notes that must never
+# reach this public repo) - see CLAUDE.local.md
+.claude/CLAUDE.local.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
