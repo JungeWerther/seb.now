@@ -139,24 +139,75 @@ A second Supabase project on this account, `trading.swiechers.nl`
 free a free-tier project slot for `seb-now` — unrelated to this app, but
 worth knowing before assuming it's still active.
 
-**ActivityPub proxy (scaffolding, live and routing correctly).**
-`fediverse-ingest` above only ever *reads* from the fediverse (Mastodon's
-public REST API). Becoming a followable ActivityPub actor at `@seb@seb.now`
-needs the opposite direction too — but WebFinger resolution for that handle
-requires `GET https://seb.now/.well-known/webfinger` to be answered by
-something at that exact host, which a static site can't do on its own.
-`functions/` is a DigitalOcean Functions project (a `functions`-type App
-Platform component, free under DO's per-team 90,000 GiB-second/month
-allowance) added to the app spec to give `seb.now` real endpoints at that
-host: `/.well-known/webfinger`, `/ap/actor`, `/ap/inbox`. Each function is a
+**ActivityPub proxy — real actor, not a stub.** `fediverse-ingest` above
+only ever *reads* from the fediverse (Mastodon's public REST API).
+Becoming a followable ActivityPub actor at `@seb@seb.now` needs the
+opposite direction too — but WebFinger resolution for that handle requires
+`GET https://seb.now/.well-known/webfinger` to be answered by something at
+that exact host, which a static site can't do on its own. `functions/` is
+a DigitalOcean Functions project (a `functions`-type App Platform
+component, free under DO's per-team 90,000 GiB-second/month allowance)
+added to the app spec to give `seb.now` real endpoints at that host:
+`/.well-known/webfinger`, `/ap/actor`, `/ap/inbox`. Each function is a
 thin proxy forwarding to the `activitypub` Supabase Edge Function and
 relaying the response back unchanged, keeping the actual protocol logic in
-one runtime. That Supabase function is a stub (501 on every known path,
-404 on anything else) — real ActivityPub behavior (actor identity, HTTP
-Signatures, a followers table, outbound delivery, likely via Fedify) is
-unbuilt. Verified end-to-end: `curl https://seb.now/.well-known/webfinger`,
-`/ap/actor`, and `POST /ap/inbox` all reach the Supabase stub and return
-its 501, not a DO gateway error.
+one runtime.
+
+That Supabase function implements the real protocol, hand-rolled (not
+Fedify): a single site-wide `Person` actor (not per-profile — the local
+`profiles`/`follows` tables model something else, a profile following
+someone; this models the world following the site), with a real RSA
+keypair for HTTP Signatures, a `public.ap_followers` table, and signed
+`Accept` replies to `Follow` activities. What's built:
+
+- **WebFinger** (`/.well-known/webfinger?resource=acct:seb@seb.now`) —
+  returns a real JRD pointing at the actor.
+- **Actor document** (`/ap/actor`) — a `Person` with `publicKey` (fetched
+  from Vault at request time, not embedded in source).
+- **Inbox** (`POST /ap/inbox`) — verifies the sender's HTTP Signature
+  (draft-cavage, RSA-SHA256 over `(request-target) host date digest`,
+  fetching the sender's own actor doc for their public key), then:
+  `Follow` → upserts into `ap_followers` and delivers a signed `Accept`
+  back to the follower's inbox; `Undo` of a `Follow` → deletes the
+  follower row. Everything else (`Like`, `Announce`, `Create`, `Delete`,
+  ...) is accepted (202) and logged, not acted on.
+- **Keys** — a 2048-bit RSA keypair (PKCS8 private / SPKI public PEM),
+  generated once with `openssl` and stored in the `seb-now` project's
+  Supabase Vault as `ap-actor-private-key` / `ap-actor-public-key`, read
+  via a `public.get_vault_secret(secret_name text)` RPC (mirrors the
+  personal-CRM project's `do-api` pattern; `execute` is revoked from
+  `anon`/`authenticated`, so it's reachable only via the edge function's
+  own `service_role` client). Rotating the key means regenerating both
+  secrets and redeploying — nothing else references the key material
+  directly.
+
+**Not built yet**: an outbox, or any automatic boosting. Per the earlier
+design discussion, a boost should follow a deliberate human upvote on a
+link, not ingestion volume — that wiring (upvote → signed `Announce` to
+followers) doesn't exist yet. Also unbuilt: replay/nonce protection on
+inbound signatures (a captured, still-valid signed request could be
+replayed within its clock-skew tolerance), and a `followers` collection
+endpoint (the actor doc omits the `followers` field rather than publish a
+dead link).
+
+Verified end-to-end against a real, independently-signed request (a
+temporary mock remote actor + keypair, deleted after testing): a properly
+signed `Follow` is verified, stored in `ap_followers`, and answered with a
+correctly-signed `Accept` delivered back to the follower's inbox — not
+just `curl`ing the stub for a canned response.
+
+**HTTP Signature header forwarding through the DO proxy.** The `/ap/inbox`
+DO Function must forward the sender's original `Date`, `Digest`, and
+`Signature` headers to the Supabase function unmodified (`web: raw`'s
+`args.http.headers`, lowercased) — signature verification checks these
+exact bytes. Since the request reaches the Supabase function proxied
+through an internal DO→Supabase hop (not `seb.now` directly), the
+`(request-target)` and `host` values used to reconstruct the sender's
+original signing string are **hardcoded** in the Supabase function
+(`post /ap/inbox`, `seb.now`) rather than read from the proxied request —
+that's what the sender actually signed against, since our own actor
+document is what told them `inbox: https://seb.now/ap/inbox` in the first
+place.
 
 Two non-obvious things had to be right simultaneously for this to route at
 all — get either wrong and it silently 404s or 400s even though the build
