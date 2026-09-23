@@ -7,35 +7,22 @@ const ACTIVITYPUB_FUNCTION_URL = "https://yoxrhqlzsqwfjmsjpari.supabase.co/funct
 
 async function main(args) {
   const http = args.http || {};
-  const results = {};
-  try {
-    const url = `${ACTIVITYPUB_FUNCTION_URL}/ap/inbox`;
-    results.step1_url = url;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: http.body || "",
-    });
-    results.step2_status = res.status;
-    try {
-      results.step3_contentType = res.headers.get("content-type");
-    } catch (e) {
-      results.step3_error = String(e);
-    }
-    try {
-      results.step4_body = await res.text();
-    } catch (e) {
-      results.step4_error = String(e);
-    }
-  } catch (e) {
-    results.step2_error = String(e);
-    results.step2_stack = e && e.stack;
+  let body = http.body || "";
+  if (http.isBase64Encoded) {
+    body = Buffer.from(body, "base64").toString("utf8");
   }
 
-  return {
-    statusCode: 200,
+  const res = await fetch(`${ACTIVITYPUB_FUNCTION_URL}/ap/inbox`, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(results),
+    body,
+  });
+  const responseBody = await res.text();
+
+  return {
+    statusCode: res.status,
+    headers: { "Content-Type": res.headers.get("content-type") || "application/json" },
+    body: responseBody,
   };
 }
 
