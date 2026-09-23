@@ -209,6 +209,23 @@ that's what the sender actually signed against, since our own actor
 document is what told them `inbox: https://seb.now/ap/inbox` in the first
 place.
 
+**Another DO gateway quirk: reject `+json` response Content-Types.**
+WebFinger and the actor document are spec-correctly `application/jrd+json`
+and `application/activity+json` in `handleWebfinger`/`handleActor`'s JSON
+*data* (the `links[].type`/context fields), but the actual HTTP response
+`Content-Type` **header** for both is plain `application/json` — DO's
+OpenWhisk-based functions gateway 400s
+(`Messages.httpContentTypeError`, `"Response type in header did not match
+generated content type."`) on a `+json`-suffixed response header under
+`web: raw`, even though the JSON body itself is fine (traced to
+`WebActions.scala` in `apache/openwhisk`; DO's fork evidently diverges
+from upstream's `isJsonFamily` handling here). Real ActivityPub/WebFinger
+clients negotiate content on `Accept`, not a strict response
+`Content-Type` match, so this doesn't break federation — but don't
+"fix" these back to the spec-correct MIME type without re-testing through
+the live DO route, not just against Supabase directly (Supabase alone
+never reproduces this — it's DO's gateway specifically).
+
 Two non-obvious things had to be right simultaneously for this to route at
 all — get either wrong and it silently 404s or 400s even though the build
 succeeds:
