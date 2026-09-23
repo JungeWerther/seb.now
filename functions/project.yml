@@ -6,6 +6,14 @@
 # than split between two runtimes - these exist only so the site's own
 # domain answers WebFinger/actor/inbox requests, since WebFinger requires
 # the response to come from the exact host in the acct: handle.
+#
+# `web: raw` (not `web: true`) is required for the custom ingress.rules
+# rewrite (package/function, no namespace) to route at all - `web: true`
+# actions 404/400 through App Platform's custom domain ingress even though
+# they build and deploy fine; only `web: raw` actions resolve. Confirmed
+# against a working reference app (rarebit-one/rarebit-static-v3). Handlers
+# read args.http.{method,queryString,body,isBase64Encoded} under raw mode,
+# not flattened top-level params.
 packages:
   - name: wellknown
     functions:
@@ -13,16 +21,16 @@ packages:
         binary: false
         main: main
         runtime: "nodejs:22"
-        web: true
+        web: raw
   - name: ap
     functions:
       - name: actor
         binary: false
         main: main
         runtime: "nodejs:22"
-        web: true
+        web: raw
       - name: inbox
         binary: false
         main: main
         runtime: "nodejs:22"
-        web: true
+        web: raw

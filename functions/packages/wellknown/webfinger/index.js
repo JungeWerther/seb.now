@@ -6,12 +6,7 @@
 const ACTIVITYPUB_FUNCTION_URL = "https://yoxrhqlzsqwfjmsjpari.supabase.co/functions/v1/activitypub";
 
 async function main(args) {
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(args)) {
-    if (key.startsWith("__ow_")) continue;
-    query.set(key, value);
-  }
-  const qs = query.toString();
+  const qs = (args.http && args.http.queryString) || "";
   const target = `${ACTIVITYPUB_FUNCTION_URL}/.well-known/webfinger${qs ? `?${qs}` : ""}`;
 
   const res = await fetch(target, { method: "GET" });
