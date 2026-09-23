@@ -139,7 +139,7 @@ A second Supabase project on this account, `trading.swiechers.nl`
 free a free-tier project slot for `seb-now` — unrelated to this app, but
 worth knowing before assuming it's still active.
 
-**ActivityPub proxy (scaffolding, not live yet — routing unresolved).**
+**ActivityPub proxy (scaffolding, live and routing correctly).**
 `fediverse-ingest` above only ever *reads* from the fediverse (Mastodon's
 public REST API). Becoming a followable ActivityPub actor at `@seb@seb.now`
 needs the opposite direction too — but WebFinger resolution for that handle
@@ -148,47 +148,49 @@ something at that exact host, which a static site can't do on its own.
 `functions/` is a DigitalOcean Functions project (a `functions`-type App
 Platform component, free under DO's per-team 90,000 GiB-second/month
 allowance) added to the app spec to give `seb.now` real endpoints at that
-host: `/.well-known/webfinger`, `/ap/actor`, `/ap/inbox`, routed there via
-`ingress.rules` entries (`/.well-known` needs an explicit `rewrite` to
-`/wellknown`, since `.` isn't a valid DO Functions package name; `/ap`
-rewrites to `/ap`, identity, since its sub-paths already are valid function
-names). Each function is meant to be a thin proxy forwarding to the
-`activitypub` Supabase Edge Function and relaying the response back
-unchanged, keeping the actual protocol logic in one runtime. That Supabase
-function is a stub (501 on every known path) — real ActivityPub behavior
-(actor identity, HTTP Signatures, a followers table, outbound delivery,
-likely via Fedify) is unbuilt.
+host: `/.well-known/webfinger`, `/ap/actor`, `/ap/inbox`. Each function is a
+thin proxy forwarding to the `activitypub` Supabase Edge Function and
+relaying the response back unchanged, keeping the actual protocol logic in
+one runtime. That Supabase function is a stub (501 on every known path,
+404 on anything else) — real ActivityPub behavior (actor identity, HTTP
+Signatures, a followers table, outbound delivery, likely via Fedify) is
+unbuilt. Verified end-to-end: `curl https://seb.now/.well-known/webfinger`,
+`/ap/actor`, and `POST /ap/inbox` all reach the Supabase stub and return
+its 501, not a DO gateway error.
 
-**Known-broken: the functions component builds but does not route.**
-`nodejs:20` isn't a valid DO Functions runtime (fixed to `nodejs:22` —
-valid values are 14/18/22/24, confirmed via DO docs); with that fixed, the
-`activitypub` functions component now builds and deploys successfully
-(`Deployed actions: ap/actor, ap/inbox, wellknown/webfinger`, confirmed
-from the build log). But every request through the custom `ingress.rules`
-above still 404s ("The requested resource does not exist.") or, with a
-too-short rewrite target, 400s with OpenWhisk's
-`Incomplete web function path. The path must contain
-/$namespace/$package/$function`. That error confirms DO's functions
-gateway wants a 3-segment `namespace/package/function` path, not just
-`package/function` — but the functions component's `namespace` (visible
-per-deployment as `active_deployment.functions[0].namespace`, e.g.
-`ap-<uuid>`, and **regenerated on every rebuild**, including a
-`force_build` with no spec change) tried in that position was
-systematically tested — the real, freshly-fetched current value, the
-component name, the app id, the `x-do-app-origin` response header value,
-and the namespace UUID without its `ap-` prefix — and **all five 404'd**.
-The ingress spec is currently reverted to the simplest docs-literal form
-(`rewrite: /wellknown` / `rewrite: /ap`, 2 segments, matching the deployed
-action names exactly) rather than left with a guessed value baked in. This
-is either an undocumented DO App Platform quirk (functions-component
-ingress may need a mechanism this session couldn't find in public docs) or
-requires DO support to resolve — don't re-guess namespace values without
-new information; if picking this back up, start from DO support or a
-working reference app, not more trial-and-error redeploys. The `inbox`
-function's `web: true` action auto-parses the JSON body into params rather
-than exposing it raw, which loses the byte-for-byte fidelity real
-signature verification needs — fine for a stub, but switch to `web: raw`
-when inbox processing becomes real.
+Two non-obvious things had to be right simultaneously for this to route at
+all — get either wrong and it silently 404s or 400s even though the build
+succeeds:
+
+- **`web: raw`, not `web: true`, in `project.yml`.** `web: true` actions
+  build and deploy fine but 400 through App Platform's custom
+  `ingress.rules` with OpenWhisk's `Incomplete web function path. The path
+  must contain /$namespace/$package/$function` error — `web: raw` actions
+  resolve correctly at the same 2-segment `package/function` address.
+  Confirmed by finding a working reference app
+  (`rarebit-one/rarebit-static-v3`) using the identical pattern. Handlers
+  read `args.http.{method,queryString,body,isBase64Encoded,headers}` under
+  raw mode (DO's own envelope, not flattened top-level params, and not
+  OpenWhisk's classic `__ow_*` keys, though those are also still present
+  alongside `http`).
+- **The ingress `match.path.prefix` must equal the full target path with
+  an empty remainder** — i.e. `rewrite` must fully supply the
+  `package/function` address itself, with nothing left over from the
+  original request path to append. A broader prefix (e.g. `/ap` catching
+  both `/ap/actor` and `/ap/inbox`, rewritten with the remainder appended)
+  reproduces the *same* `Incomplete web function path` 400 as `web: true`
+  did, even under `web: raw` — DO's rewrite-then-append doesn't resolve to
+  a valid function path for functions components, contrary to what the
+  App Spec reference's generic rewrite semantics would suggest. Current
+  `ingress.rules`: `/.well-known/webfinger` → `rewrite: /wellknown/webfinger`,
+  `/ap/actor` → `rewrite: /ap/actor`, `/ap/inbox` → `rewrite: /ap/inbox` —
+  one exact-match rule per function, not one broader rule per package.
+
+Both of these were confirmed by testing against a real, independently
+working app with the same shape (not guessed blindly) — if either changes
+again in the future (new function added, path changed), extend the same
+one-rule-per-function, `web: raw` pattern rather than reintroducing a
+broader prefix.
 
 ## Review-comment workflow
 
