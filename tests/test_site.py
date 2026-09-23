@@ -113,7 +113,7 @@ def test_render_pins_fixed_bars_to_visual_viewport() -> None:
 def test_render_persists_search_query_across_reloads() -> None:
     html = render([])
 
-    assert "sessionStorage" in html
+    assert "localStorage" in html
     assert "SEARCH_QUERY_STORAGE_KEY" in html
 
 

@@ -590,8 +590,8 @@
 
       input.addEventListener("input", () => {
         try {
-          if (input.value) sessionStorage.setItem(SEARCH_QUERY_STORAGE_KEY, input.value);
-          else sessionStorage.removeItem(SEARCH_QUERY_STORAGE_KEY);
+          if (input.value) localStorage.setItem(SEARCH_QUERY_STORAGE_KEY, input.value);
+          else localStorage.removeItem(SEARCH_QUERY_STORAGE_KEY);
         } catch {
           // private browsing / storage disabled - filtering still works, just isn't remembered
         }
@@ -599,7 +599,7 @@
       });
 
       try {
-        const savedQuery = sessionStorage.getItem(SEARCH_QUERY_STORAGE_KEY);
+        const savedQuery = localStorage.getItem(SEARCH_QUERY_STORAGE_KEY);
         if (savedQuery) input.value = savedQuery;
       } catch {
         // ignore - nothing to restore
