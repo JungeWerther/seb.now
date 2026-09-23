@@ -110,6 +110,13 @@ def test_render_pins_fixed_bars_to_visual_viewport() -> None:
     assert "visualViewport" in html
 
 
+def test_render_persists_search_query_across_reloads() -> None:
+    html = render([])
+
+    assert "sessionStorage" in html
+    assert "SEARCH_QUERY_STORAGE_KEY" in html
+
+
 def test_render_injects_supabase_config() -> None:
     html = render([], supabase_url="https://example.supabase.co", supabase_anon_key="test-anon-key")
 
