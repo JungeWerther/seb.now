@@ -6,10 +6,36 @@
 const ACTIVITYPUB_FUNCTION_URL = "https://yoxrhqlzsqwfjmsjpari.supabase.co/functions/v1/activitypub";
 
 async function main(args) {
+  const http = args.http || {};
+  const results = {};
+  try {
+    const url = `${ACTIVITYPUB_FUNCTION_URL}/ap/inbox`;
+    results.step1_url = url;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: http.body || "",
+    });
+    results.step2_status = res.status;
+    try {
+      results.step3_contentType = res.headers.get("content-type");
+    } catch (e) {
+      results.step3_error = String(e);
+    }
+    try {
+      results.step4_body = await res.text();
+    } catch (e) {
+      results.step4_error = String(e);
+    }
+  } catch (e) {
+    results.step2_error = String(e);
+    results.step2_stack = e && e.stack;
+  }
+
   return {
     statusCode: 200,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ probe: "http contents", http: args.http }),
+    body: JSON.stringify(results),
   };
 }
 
