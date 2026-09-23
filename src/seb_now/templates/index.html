@@ -47,6 +47,7 @@
       z-index: 10;
       background: var(--bg);
       border-bottom: 1px solid rgba(128, 128, 128, 0.12);
+      will-change: transform;
     }
     .header-inner {
       max-width: 720px;
@@ -71,6 +72,7 @@
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
       pointer-events: none;
+      will-change: transform;
     }
     #search-bar { width: 100%; max-width: 480px; pointer-events: auto; }
     #search-input {
@@ -78,13 +80,16 @@
       box-sizing: border-box;
       font: inherit;
       padding: 0.8rem 1.2rem;
-      border: 1px solid rgba(128, 128, 128, 0.35);
+      border: 1px solid var(--positive);
       border-radius: 999px;
       background: var(--bg);
       color: inherit;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
     }
-    #search-input:focus { outline: none; border-color: var(--positive); }
+    #search-input:focus {
+      outline: none;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18), 0 0 0 3px var(--positive-soft);
+    }
     #search-input::placeholder { color: gray; }
     #search-input::-webkit-search-cancel-button { cursor: pointer; }
     #search-empty {
@@ -583,9 +588,32 @@
       });
     }
 
+    // iOS/Android nudge the whole layout viewport up to keep a focused
+    // input clear of the on-screen keyboard - including position:fixed
+    // elements, which are meant to stay put. The visualViewport API
+    // reports the visible region separately from that shifted layout
+    // viewport, so we counter-translate the header/dock by the gap
+    // between them, keeping both pinned to what's actually on screen.
+    function setupViewportPinning() {
+      const vv = window.visualViewport;
+      if (!vv) return;
+      const header = document.querySelector("header");
+      const dock = document.getElementById("search-dock");
+
+      function reposition() {
+        header.style.transform = vv.offsetTop ? `translateY(${vv.offsetTop}px)` : "";
+        const bottomGap = window.innerHeight - (vv.height + vv.offsetTop);
+        dock.style.transform = bottomGap ? `translateY(${-bottomGap}px)` : "";
+      }
+
+      vv.addEventListener("resize", reposition);
+      vv.addEventListener("scroll", reposition);
+    }
+
     setupVoting();
     setupSettings();
     setupSearch();
+    setupViewportPinning();
   </script>
 </body>
 </html>

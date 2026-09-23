@@ -103,6 +103,13 @@ def test_render_includes_live_search_bar() -> None:
     assert 'id="search-dock"' in html
 
 
+def test_render_pins_fixed_bars_to_visual_viewport() -> None:
+    html = render([])
+
+    assert "setupViewportPinning" in html
+    assert "visualViewport" in html
+
+
 def test_render_injects_supabase_config() -> None:
     html = render([], supabase_url="https://example.supabase.co", supabase_anon_key="test-anon-key")
 
