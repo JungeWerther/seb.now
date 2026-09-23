@@ -1,7 +1,7 @@
-"""Blog posts: authored as Markdown files under `posts/`, rendered to a
-static page per post. Frontmatter is a plain `key: value` block (not full
-YAML - the fields here are flat strings, so a real YAML parser would only
-add a dependency for syntax this format never uses).
+"""Blog posts: rows in `public.links` (origin='local') that carry a slug
+and a full markdown body, rendered to a static page per post at build
+time. Content lives in the database, not in this repo - publishing a post
+means inserting a links row directly, not committing a file.
 """
 
 from __future__ import annotations
@@ -13,9 +13,10 @@ from typing import Sequence
 
 import markdown
 
+from seb_now.auth import get_unauthenticated_client
+from seb_now.domain.models import Link
+
 SITE_URL = "https://seb.now"
-POSTS_DIR = Path(__file__).parent.parent.parent / "posts"
-FRONTMATTER_FENCE = "---"
 MARKDOWN_EXTENSIONS = ["extra", "sane_lists"]
 
 
@@ -33,45 +34,32 @@ class Post:
         return f"{SITE_URL}/posts/{self.slug}/"
 
 
-def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != FRONTMATTER_FENCE:
-        return {}, text
-    for i, line in enumerate(lines[1:], start=1):
-        if line.strip() == FRONTMATTER_FENCE:
-            fields = {}
-            for field_line in lines[1:i]:
-                if ":" not in field_line:
-                    continue
-                key, _, value = field_line.partition(":")
-                fields[key.strip()] = value.strip()
-            body = "\n".join(lines[i + 1 :]).strip()
-            return fields, body
-    return {}, text
-
-
-def _slug_from_filename(path: Path) -> str:
-    return path.stem
-
-
-def load_post(path: Path) -> Post:
-    fields, body = _parse_frontmatter(path.read_text())
-    slug = fields.get("slug") or _slug_from_filename(path)
+def post_from_link(link: Link) -> Post:
+    assert link.slug is not None
+    assert link.body_markdown is not None
     return Post(
-        slug=slug,
-        title=fields.get("title", slug),
-        date=fields.get("date", ""),
-        description=fields.get("description", ""),
-        image=fields.get("image") or None,
-        body_html=markdown.markdown(body, extensions=MARKDOWN_EXTENSIONS),
+        slug=link.slug,
+        title=link.title,
+        date=link.created_at.date().isoformat(),
+        description=link.description or "",
+        image=link.image_url,
+        body_html=markdown.markdown(link.body_markdown, extensions=MARKDOWN_EXTENSIONS),
     )
 
 
-def load_posts(posts_dir: Path = POSTS_DIR) -> list[Post]:
-    if not posts_dir.is_dir():
-        return []
-    posts = [load_post(path) for path in sorted(posts_dir.glob("*.md"))]
-    return sorted(posts, key=lambda post: post.date, reverse=True)
+def load_posts() -> list[Post]:
+    client = get_unauthenticated_client()
+    response = (
+        client.table(Link.__tablename__)
+        .select("*")
+        .eq("origin", "local")
+        .not_.is_("slug", "null")
+        .not_.is_("body_markdown", "null")
+        .order("created_at", desc=True)
+        .execute()
+    )
+    links = [Link.model_validate(row) for row in response.data]
+    return [post_from_link(link) for link in links]
 
 
 def render_post(post: Post) -> str:

@@ -1,29 +1,28 @@
-from pathlib import Path
+from datetime import datetime, timezone
+from uuid import uuid4
 
-from seb_now.posts import load_post, load_posts, render_post
-
-POST_FIXTURE = """---
-title: A Test Post
-date: 2026-01-05
-description: A short description.
-image: https://example.com/cover.jpg
----
-# Heading
-
-Some *body* text with a [link](https://example.com).
-"""
+from seb_now.domain.models import Link
+from seb_now.posts import post_from_link, render_post
 
 
-def _write(tmp_path: Path, name: str, content: str) -> Path:
-    path = tmp_path / name
-    path.write_text(content)
-    return path
+def _link(**overrides: object) -> Link:
+    fields = {
+        "id": uuid4(),
+        "url": "https://seb.now/posts/a-test-post/",
+        "title": "A Test Post",
+        "description": "A short description.",
+        "origin": "local",
+        "slug": "a-test-post",
+        "image_url": "https://example.com/cover.jpg",
+        "body_markdown": "# Heading\n\nSome *body* text with a [link](https://example.com).",
+        "created_at": datetime(2026, 1, 5, tzinfo=timezone.utc),
+    }
+    fields.update(overrides)
+    return Link.model_validate(fields)
 
 
-def test_load_post_parses_frontmatter_and_renders_markdown(tmp_path: Path) -> None:
-    path = _write(tmp_path, "a-test-post.md", POST_FIXTURE)
-
-    post = load_post(path)
+def test_post_from_link_renders_markdown_body() -> None:
+    post = post_from_link(_link())
 
     assert post.slug == "a-test-post"
     assert post.title == "A Test Post"
@@ -35,39 +34,21 @@ def test_load_post_parses_frontmatter_and_renders_markdown(tmp_path: Path) -> No
     assert '<a href="https://example.com">link</a>' in post.body_html
 
 
-def test_load_post_defaults_slug_to_filename_and_title_to_slug(tmp_path: Path) -> None:
-    path = _write(tmp_path, "untitled.md", "---\ndate: 2026-01-01\n---\nHi.")
+def test_post_from_link_defaults_description_to_empty_and_image_to_none() -> None:
+    post = post_from_link(_link(description=None, image_url=None))
 
-    post = load_post(path)
-
-    assert post.slug == "untitled"
-    assert post.title == "untitled"
+    assert post.description == ""
+    assert post.image is None
 
 
-def test_post_url_is_under_posts_path(tmp_path: Path) -> None:
-    path = _write(tmp_path, "a-test-post.md", POST_FIXTURE)
-
-    post = load_post(path)
+def test_post_url_is_under_posts_path() -> None:
+    post = post_from_link(_link())
 
     assert post.url == "https://seb.now/posts/a-test-post/"
 
 
-def test_load_posts_sorts_newest_first(tmp_path: Path) -> None:
-    _write(tmp_path, "older.md", "---\ntitle: Older\ndate: 2026-01-01\n---\nBody.")
-    _write(tmp_path, "newer.md", "---\ntitle: Newer\ndate: 2026-02-01\n---\nBody.")
-
-    posts = load_posts(tmp_path)
-
-    assert [post.slug for post in posts] == ["newer", "older"]
-
-
-def test_load_posts_on_missing_directory_returns_empty(tmp_path: Path) -> None:
-    assert load_posts(tmp_path / "does-not-exist") == []
-
-
-def test_render_post_includes_title_og_tags_and_body(tmp_path: Path) -> None:
-    path = _write(tmp_path, "a-test-post.md", POST_FIXTURE)
-    post = load_post(path)
+def test_render_post_includes_title_og_tags_and_body() -> None:
+    post = post_from_link(_link())
 
     html = render_post(post)
 
@@ -76,3 +57,11 @@ def test_render_post_includes_title_og_tags_and_body(tmp_path: Path) -> None:
     assert 'property="og:image" content="https://example.com/cover.jpg"' in html
     assert "<h1>Heading</h1>" in html
     assert 'href="https://seb.now/"' in html
+
+
+def test_render_post_omits_og_image_tag_when_no_image() -> None:
+    post = post_from_link(_link(image_url=None))
+
+    html = render_post(post)
+
+    assert "og:image" not in html

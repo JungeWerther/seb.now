@@ -21,4 +21,6 @@ class Link(BaseModel):
     fediverse_post_uri: str | None = None
     thread_url: str | None = None
     image_url: str | None = None
+    slug: str | None = None
+    body_markdown: str | None = None
     created_at: datetime
