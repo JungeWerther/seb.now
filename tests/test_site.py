@@ -75,6 +75,35 @@ def test_render_includes_swipeable_article_with_link_id_and_domain() -> None:
     assert '<span class="domain">reuters</span>' in html
 
 
+def test_render_shows_cover_image_above_domain_and_title_when_present() -> None:
+    with_cover = Article(
+        id="a1",
+        title="Has cover",
+        url="https://example.com/a",
+        domain="example.com",
+        source_type=SourceType.DIRECT_LINK,
+        cluster_id=0,
+        image_url="https://example.com/cover.jpg",
+    )
+    without_cover = Article(
+        id="a2",
+        title="No cover",
+        url="https://example.com/b",
+        domain="example.com",
+        source_type=SourceType.DIRECT_LINK,
+        cluster_id=0,
+    )
+
+    html = render([with_cover, without_cover])
+
+    assert '<img class="cover" src="https://example.com/cover.jpg" alt="" loading="lazy">' in html
+    assert html.count('class="cover"') == 1
+    # the cover image comes before the domain/title in the same article
+    cover_index = html.index('<img class="cover"')
+    domain_index = html.index('<span class="domain">example.com</span>', cover_index)
+    assert cover_index < domain_index
+
+
 def test_render_includes_settings_icon() -> None:
     html = render([])
 

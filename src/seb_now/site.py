@@ -91,8 +91,8 @@ def build_articles(feed: Sequence[dict[str, str]]) -> list[Article]:
 
 def _render_article(article: Article) -> str:
     link_id = escape(article.id)
-    thumb = (
-        f'<img class="thumb" src="{escape(article.image_url)}" alt="" loading="lazy">'
+    cover = (
+        f'<img class="cover" src="{escape(article.image_url)}" alt="" loading="lazy">'
         if article.image_url
         else ""
     )
@@ -115,9 +115,9 @@ def _render_article(article: Article) -> str:
         f"</span>"
         f"</div>"
         f'<div class="swipe-content">'
+        f"{cover}"
         f'<span class="domain">{escape(article.domain)}</span>'
         f'<div class="article-row">'
-        f"{thumb}"
         f'<a href="{escape(article.url)}" target="_blank" rel="noopener noreferrer">{escape(article.title)}</a>'
         f'<span class="score">0</span>'
         f'<span class="cluster">cluster {article.cluster_id}</span>'
