@@ -23,6 +23,7 @@ from seb_now.clustering import TopicClusterer
 from seb_now.constants import BAG_OF_WORDS_SIMILARITY_THRESHOLD, SourceType
 from seb_now.auth import get_unauthenticated_client
 from seb_now.domain.models import Link
+from seb_now.posts import load_posts, write_posts
 from seb_now.source_type import classify_source, display_domain
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -145,6 +146,10 @@ def main() -> None:
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(html)
     print(f"wrote {OUTPUT_PATH}")
+
+    posts = load_posts()
+    write_posts(posts, OUTPUT_PATH.parent)
+    print(f"wrote {len(posts)} post(s) under {OUTPUT_PATH.parent / 'posts'}")
 
 
 if __name__ == "__main__":

@@ -35,7 +35,7 @@ write goes through RLS as an authenticated (including anonymous) user.
 The one exception is `service_role` inside the three ingestion Edge
 Functions (see below) — server-side only, never shipped to a client.
 
-**Ingestion — three Edge Functions, each on its own `pg_cron` schedule,
+**Ingestion — four Edge Functions, each on its own `pg_cron` schedule,
 all inside the `seb-now` project itself** (unlike the DO deploy trigger,
 these don't need the personal CRM project or its vault secret, since
 they call their own project's own functions):
@@ -58,6 +58,41 @@ they call their own project's own functions):
   (`techcrunch.com/feed/`), top 20 items, extracted with a small regex
   (not a full XML parser — the feed's `<item>`/`<title>`/`<link>` shape
   is stable and simple enough that a parser dependency isn't worth it).
+- `local-post-ingest` (`*/15 * * * *` — tighter than the other three
+  since it's owner-initiated content someone might want to see show up
+  promptly, and it's a single cheap GitHub API call) — lists
+  `posts/*.md` in this repo via GitHub's public contents API
+  (`api.github.com/repos/JungeWerther/seb.now/contents/posts?ref=main`,
+  no auth, just a required `User-Agent` header) and upserts each into
+  `links` as `origin: 'local'`, `onConflict: 'url'`, `url:
+  https://seb.now/posts/<slug>/`.
+
+**Blog posts** are how "your own submission" (the `origin: 'local'`
+value that's existed in the schema since the start, previously unused)
+actually gets authored: a Markdown file under `posts/` with a frontmatter
+block (`title`, `date`, `description`, optional `image`, optional `slug`
+override — defaults to the filename), pushed to `main`. Two independent
+things happen to it, deliberately decoupled (no server-side auth or write
+endpoint either needs):
+
+- `site.py` (`src/seb_now/posts.py`) renders it to a standalone static
+  page at build time — `dist/posts/<slug>/index.html`, with its own
+  `og:title`/`og:description`/`og:image` tags (so if a post is ever
+  itself shared into the fediverse, `fediverse-ingest`'s own preview-image
+  scraping picks it up the same way it would any other site).
+  Frontmatter is a flat `key: value` block, not real YAML — a full YAML
+  parser would only add a dependency for syntax this format never uses.
+  Markdown-to-HTML uses the `markdown` package (`extra` + `sane_lists`
+  extensions) rather than a hand-rolled parser, unlike the ingest
+  functions' regex extractors — correctly handling nested lists, code
+  fences, etc. isn't "simple regex-shaped" the way RSS's flat
+  `<item>`/`<title>`/`<link>` tags are.
+- `local-post-ingest` (above) independently notices the same file via
+  GitHub's API and upserts the matching `links` row, so the post shows
+  up in the feed like any other link - voteable, greyable-on-visit,
+  eligible for a thumbnail. The two are not triggered by each other;
+  a post's static page can exist slightly before or after its feed
+  entry, for up to ~15 minutes.
 
 `fediverse-ingest` also populates `links.image_url`: Mastodon's own
 `status.card.image` when a card exists, else `fediverse-ingest` peeks at
