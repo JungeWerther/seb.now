@@ -100,6 +100,7 @@ def test_render_includes_live_search_bar() -> None:
     assert 'id="search-empty"' in html
     assert "setupSearch" in html
     assert 'id="search-bar"' in html
+    assert 'id="search-dock"' in html
 
 
 def test_render_injects_supabase_config() -> None:
