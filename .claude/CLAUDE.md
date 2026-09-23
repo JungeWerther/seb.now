@@ -139,6 +139,31 @@ A second Supabase project on this account, `trading.swiechers.nl`
 free a free-tier project slot for `seb-now` — unrelated to this app, but
 worth knowing before assuming it's still active.
 
+**ActivityPub proxy (scaffolding, not live yet).** `fediverse-ingest`
+above only ever *reads* from the fediverse (Mastodon's public REST API).
+Becoming a followable ActivityPub actor at `@seb@seb.now` needs the
+opposite direction too — but WebFinger resolution for that handle
+requires `GET https://seb.now/.well-known/webfinger` to be answered by
+something at that exact host, which a static site can't do on its own.
+`functions/` is a DigitalOcean Functions project (a `functions`-type
+App Platform component, free under DO's per-team 90,000 GiB-second/month
+allowance) added to the app spec purely to give `seb.now` real endpoints
+at that host: `/.well-known/webfinger`, `/ap/actor`, `/ap/inbox`,
+routed there via new `ingress.rules` entries (`/.well-known` needs an
+explicit `rewrite` to `/wellknown/webfinger`, since `.` isn't a valid
+DO Functions package name; `/ap` maps to package `ap` directly since its
+sub-paths already are valid function names). Each function is a thin
+proxy — it forwards the request to the `activitypub` Supabase Edge
+Function and relays the response back unchanged, keeping the actual
+protocol logic in one runtime rather than split across two. That
+Supabase function is currently a stub (501 on every known path) — real
+ActivityPub behavior (actor identity, HTTP Signatures, a followers
+table, outbound delivery, likely via Fedify) is unbuilt. The `inbox`
+function's `web: true` action auto-parses the JSON body into params
+rather than exposing it raw, which loses the byte-for-byte fidelity
+real signature verification needs — fine for a stub, but switch to
+`web: raw` when inbox processing becomes real.
+
 ## Review-comment workflow
 
 When the user leaves review comments on an open PR, address them in a loop:
