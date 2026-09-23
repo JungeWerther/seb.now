@@ -63,7 +63,8 @@ def load_posts() -> list[Post]:
 
 
 def render_post(post: Post) -> str:
-    image_tag = f'<meta property="og:image" content="{escape(post.image)}">' if post.image else ""
+    og_image_tag = f'<meta property="og:image" content="{escape(post.image)}">' if post.image else ""
+    cover_tag = f'<img class="cover" src="{escape(post.image)}" alt="" loading="lazy">' if post.image else ""
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -75,7 +76,7 @@ def render_post(post: Post) -> str:
   <meta property="og:title" content="{escape(post.title)}">
   <meta property="og:description" content="{escape(post.description)}">
   <meta property="og:url" content="{escape(post.url)}">
-  {image_tag}
+  {og_image_tag}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap" rel="stylesheet">
@@ -100,6 +101,14 @@ def render_post(post: Post) -> str:
     }}
     a.back {{ color: var(--positive); text-decoration: none; font-size: 0.9rem; }}
     a.back:hover {{ text-decoration: underline; }}
+    .cover {{
+      width: 100%;
+      max-height: 220px;
+      object-fit: cover;
+      border-radius: 14px;
+      display: block;
+      margin: 1rem 0;
+    }}
     .byline {{ color: gray; font-size: 0.85rem; margin: 0.3rem 0 2rem; }}
     h1 {{ margin-bottom: 0.3rem; font-family: 'Bricolage Grotesque', sans-serif; }}
     article img {{ max-width: 100%; border-radius: 6px; }}
@@ -109,6 +118,7 @@ def render_post(post: Post) -> str:
 </head>
 <body>
   <a class="back" href="{SITE_URL}/">&larr; seb.now</a>
+  {cover_tag}
   <h1>{escape(post.title)}</h1>
   <p class="byline">{escape(post.date)}</p>
   <article>

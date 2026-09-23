@@ -59,9 +59,21 @@ def test_render_post_includes_title_og_tags_and_body() -> None:
     assert 'href="https://seb.now/"' in html
 
 
-def test_render_post_omits_og_image_tag_when_no_image() -> None:
+def test_render_post_shows_cover_image_above_title_when_present() -> None:
+    post = post_from_link(_link())
+
+    html = render_post(post)
+
+    assert '<img class="cover" src="https://example.com/cover.jpg" alt="" loading="lazy">' in html
+    cover_index = html.index('<img class="cover"')
+    title_index = html.index("<h1>A Test Post</h1>")
+    assert cover_index < title_index
+
+
+def test_render_post_omits_cover_and_og_image_when_no_image() -> None:
     post = post_from_link(_link(image_url=None))
 
     html = render_post(post)
 
     assert "og:image" not in html
+    assert 'class="cover"' not in html
