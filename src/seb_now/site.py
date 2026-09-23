@@ -55,7 +55,7 @@ def _vocab(titles: Sequence[str]) -> list[str]:
 
 def load_feed() -> list[dict[str, str]]:
     client = get_unauthenticated_client()
-    response = client.table(Link.__tablename__).select("*").order("created_at").execute()
+    response = client.table(Link.__tablename__).select("*").order("created_at", desc=True).execute()
     links = [Link.model_validate(row) for row in response.data]
     return [
         {"id": str(link.id), "title": link.title, "url": link.url, "image_url": link.image_url or ""}
