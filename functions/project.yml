@@ -12,17 +12,17 @@ packages:
       - name: webfinger
         binary: false
         main: main
-        runtime: "nodejs:20"
+        runtime: "nodejs:22"
         web: true
   - name: ap
     functions:
       - name: actor
         binary: false
         main: main
-        runtime: "nodejs:20"
+        runtime: "nodejs:22"
         web: true
       - name: inbox
         binary: false
         main: main
-        runtime: "nodejs:20"
+        runtime: "nodejs:22"
         web: true
