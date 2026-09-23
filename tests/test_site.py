@@ -92,6 +92,16 @@ def test_render_includes_svg_wordmark() -> None:
     assert ">now<" in html
 
 
+def test_render_includes_live_search_bar() -> None:
+    html = render([])
+
+    assert 'id="search-input"' in html
+    assert 'type="search"' in html
+    assert 'id="search-empty"' in html
+    assert "setupSearch" in html
+    assert 'id="search-bar"' in html
+
+
 def test_render_injects_supabase_config() -> None:
     html = render([], supabase_url="https://example.supabase.co", supabase_anon_key="test-anon-key")
 

@@ -36,17 +36,40 @@
       background: var(--bg);
       color: var(--fg);
     }
-    header {
+    .topbar {
       position: sticky;
       top: 0;
       z-index: 10;
       background: var(--bg);
+    }
+    header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 1rem 0;
-      margin-bottom: 1.5rem;
+      padding: 1rem 0 0.5rem;
     }
+    #search-bar { padding-bottom: 0.9rem; }
+    #search-input {
+      width: 100%;
+      box-sizing: border-box;
+      font: inherit;
+      padding: 0.5rem 0.8rem;
+      border: 1px solid rgba(128, 128, 128, 0.35);
+      border-radius: 8px;
+      background: transparent;
+      color: inherit;
+    }
+    #search-input:focus { outline: none; border-color: var(--positive); }
+    #search-input::placeholder { color: gray; }
+    #search-input::-webkit-search-cancel-button { cursor: pointer; }
+    #search-empty {
+      display: none;
+      color: gray;
+      font-size: 0.85rem;
+      text-align: center;
+      padding: 2.5rem 0;
+    }
+    #search-empty.visible { display: block; }
     h1.brand { margin: 0; line-height: 0; }
     h1.brand .wordmark { height: 26px; width: auto; display: block; }
     #settings-btn {
@@ -199,22 +222,27 @@
   </style>
 </head>
 <body>
-  <header>
-    <button id="settings-btn" aria-label="Settings">
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <rect width="18" height="18" x="3" y="3" rx="2"/>
-        <path d="M9 3v18"/>
-        <path d="m14 9 3 3-3 3"/>
-      </svg>
-    </button>
-    <h1 class="brand">
-      <svg class="wordmark" viewBox="0 0 172 34" role="img" aria-label="seb.now" xmlns="http://www.w3.org/2000/svg">
-        <text x="172" y="25" text-anchor="end" font-family="'Bricolage Grotesque', sans-serif" font-size="27" font-weight="700">
-          <tspan fill="var(--fg)">seb</tspan><tspan fill="var(--positive)"><animate attributeName="opacity" values="1;0.35;1" dur="2.4s" repeatCount="indefinite"/>.</tspan><tspan fill="var(--fg)" font-weight="400" opacity="0.85">now</tspan>
-        </text>
-      </svg>
-    </h1>
-  </header>
+  <div class="topbar">
+    <header>
+      <button id="settings-btn" aria-label="Settings">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect width="18" height="18" x="3" y="3" rx="2"/>
+          <path d="M9 3v18"/>
+          <path d="m14 9 3 3-3 3"/>
+        </svg>
+      </button>
+      <h1 class="brand">
+        <svg class="wordmark" viewBox="0 0 172 34" role="img" aria-label="seb.now" xmlns="http://www.w3.org/2000/svg">
+          <text x="172" y="25" text-anchor="end" font-family="'Bricolage Grotesque', sans-serif" font-size="27" font-weight="700">
+            <tspan fill="var(--fg)">seb</tspan><tspan fill="var(--positive)"><animate attributeName="opacity" values="1;0.35;1" dur="2.4s" repeatCount="indefinite"/>.</tspan><tspan fill="var(--fg)" font-weight="400" opacity="0.85">now</tspan>
+          </text>
+        </svg>
+      </h1>
+    </header>
+    <div id="search-bar">
+      <input id="search-input" type="search" placeholder="Filter articles…" aria-label="Filter articles" autocomplete="off">
+    </div>
+  </div>
   <div id="toast-container"></div>
   <div id="settings-panel">
     <label for="handle-input">Your handle</label>
@@ -224,6 +252,7 @@
       <span id="settings-status"></span>
     </div>
   </div>
+  <p id="search-empty">No matching articles.</p>
   <!--ARTICLES-->
   <script type="module">
     import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -506,8 +535,30 @@
       });
     }
 
+    function setupSearch() {
+      const input = document.getElementById("search-input");
+      const empty = document.getElementById("search-empty");
+
+      input.addEventListener("input", () => {
+        const query = input.value.trim().toLowerCase();
+        const items = [...document.querySelectorAll("li.article")];
+        let visibleCount = 0;
+
+        for (const li of items) {
+          const title = li.querySelector(".article-row a")?.textContent ?? "";
+          const domain = li.querySelector(".domain")?.textContent ?? "";
+          const matches = !query || `${title} ${domain}`.toLowerCase().includes(query);
+          li.style.display = matches ? "" : "none";
+          if (matches) visibleCount++;
+        }
+
+        empty.classList.toggle("visible", query.length > 0 && visibleCount === 0);
+      });
+    }
+
     setupVoting();
     setupSettings();
+    setupSearch();
   </script>
 </body>
 </html>
