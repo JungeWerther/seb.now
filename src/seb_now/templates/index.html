@@ -73,12 +73,12 @@
       pointer-events: none;
       will-change: transform;
     }
-    #search-bar { width: 100%; max-width: 480px; pointer-events: auto; }
+    #search-bar { position: relative; width: 100%; max-width: 480px; pointer-events: auto; }
     #search-input {
       width: 100%;
       box-sizing: border-box;
       font: inherit;
-      padding: 0.8rem 1.2rem;
+      padding: 0.8rem 2.4rem 0.8rem 1.2rem;
       border: 1px solid var(--positive);
       border-radius: 999px;
       background: var(--bg);
@@ -90,7 +90,26 @@
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18), 0 0 0 3px var(--positive-soft);
     }
     #search-input::placeholder { color: gray; }
-    #search-input::-webkit-search-cancel-button { cursor: pointer; }
+    #search-input::-webkit-search-cancel-button { display: none; }
+    #search-clear {
+      display: none;
+      position: absolute;
+      right: 0.5rem;
+      top: 50%;
+      transform: translateY(-50%);
+      align-items: center;
+      justify-content: center;
+      width: 1.6rem;
+      height: 1.6rem;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background: none;
+      color: gray;
+      cursor: pointer;
+    }
+    #search-clear:hover { color: var(--fg); }
+    #search-clear.visible { display: flex; }
     #search-empty {
       display: none;
       color: gray;
@@ -283,6 +302,12 @@
   <div id="search-dock">
     <div id="search-bar">
       <input id="search-input" type="search" placeholder="Filter articles…" aria-label="Filter articles" autocomplete="off">
+      <button type="button" id="search-clear" aria-label="Clear search">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M18 6 6 18"/>
+          <path d="m6 6 12 12"/>
+        </svg>
+      </button>
     </div>
   </div>
   <script type="module">
@@ -571,6 +596,7 @@
     function setupSearch() {
       const input = document.getElementById("search-input");
       const empty = document.getElementById("search-empty");
+      const clearBtn = document.getElementById("search-clear");
 
       function applyFilter() {
         const query = input.value.trim().toLowerCase();
@@ -586,6 +612,7 @@
         }
 
         empty.classList.toggle("visible", query.length > 0 && visibleCount === 0);
+        clearBtn.classList.toggle("visible", input.value.length > 0);
       }
 
       input.addEventListener("input", () => {
@@ -596,6 +623,17 @@
           // private browsing / storage disabled - filtering still works, just isn't remembered
         }
         applyFilter();
+      });
+
+      clearBtn.addEventListener("click", () => {
+        input.value = "";
+        try {
+          localStorage.removeItem(SEARCH_QUERY_STORAGE_KEY);
+        } catch {
+          // ignore
+        }
+        applyFilter();
+        input.focus();
       });
 
       try {

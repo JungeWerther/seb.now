@@ -103,6 +103,13 @@ def test_render_includes_live_search_bar() -> None:
     assert 'id="search-dock"' in html
 
 
+def test_render_includes_search_clear_button() -> None:
+    html = render([])
+
+    assert 'id="search-clear"' in html
+    assert 'aria-label="Clear search"' in html
+
+
 def test_render_pins_fixed_bars_to_visual_viewport() -> None:
     html = render([])
 
