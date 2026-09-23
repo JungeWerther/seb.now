@@ -6,24 +6,32 @@
 const ACTIVITYPUB_FUNCTION_URL = "https://yoxrhqlzsqwfjmsjpari.supabase.co/functions/v1/activitypub";
 
 async function main(args) {
-  const http = args.http || {};
-  let body = http.body || "";
-  if (http.isBase64Encoded) {
-    body = Buffer.from(body, "base64").toString("utf8");
+  try {
+    const http = args.http || {};
+    let body = http.body || "";
+    if (http.isBase64Encoded) {
+      body = Buffer.from(body, "base64").toString("utf8");
+    }
+
+    const res = await fetch(`${ACTIVITYPUB_FUNCTION_URL}/ap/inbox`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    const responseBody = await res.text();
+
+    return {
+      statusCode: res.status,
+      headers: { "Content-Type": res.headers.get("content-type") || "application/json" },
+      body: responseBody,
+    };
+  } catch (e) {
+    return {
+      statusCode: 500,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ debug_error: String(e), debug_stack: e && e.stack, debug_args: args }),
+    };
   }
-
-  const res = await fetch(`${ACTIVITYPUB_FUNCTION_URL}/ap/inbox`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body,
-  });
-  const responseBody = await res.text();
-
-  return {
-    statusCode: res.status,
-    headers: { "Content-Type": res.headers.get("content-type") || "application/json" },
-    body: responseBody,
-  };
 }
 
 exports.main = main;
