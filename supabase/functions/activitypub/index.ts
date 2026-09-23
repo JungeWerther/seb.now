@@ -191,8 +191,13 @@ function handleWebfinger(req: Request): Response {
         { rel: "http://webfinger.net/rel/profile-page", type: "text/html", href: `https://${DOMAIN}/` },
       ],
     },
+    // Spec-correct would be application/jrd+json, but DO's OpenWhisk-based
+    // functions gateway 400s "+json" suffixed content types under web: raw
+    // (Messages.httpContentTypeError) even though the body is otherwise
+    // fine - plain application/json is what actually gets through. Most
+    // WebFinger clients are lenient about the exact type here.
     200,
-    "application/jrd+json",
+    "application/json",
   );
 }
 
@@ -210,8 +215,12 @@ async function handleActor(): Promise<Response> {
       inbox: INBOX_URL,
       publicKey: { id: KEY_ID, owner: ACTOR_ID, publicKeyPem },
     },
+    // Same DO gateway quirk as WebFinger above - application/activity+json
+    // 400s under web: raw, plain application/json doesn't. Real senders
+    // (Mastodon included) negotiate on Accept, not a strict response
+    // Content-Type check, so this doesn't break federation.
     200,
-    "application/activity+json",
+    "application/json",
   );
 }
 
