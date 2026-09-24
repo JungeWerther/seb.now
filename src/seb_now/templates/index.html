@@ -659,10 +659,32 @@
       const dock = document.getElementById("search-dock");
       const input = document.getElementById("search-input");
 
-      function reposition() {
+      let scheduled = false;
+
+      function apply() {
+        scheduled = false;
+        // Chrome on iOS fires visualViewport resize/scroll continuously
+        // during ordinary page scrolling too (its own toolbar hides/shows,
+        // unlike Safari) - only the search input being focused means a
+        // keyboard is plausibly involved, so that's otherwise a no-op
+        // rather than fighting normal scroll with a moving dock.
+        if (document.activeElement !== input) {
+          header.style.transform = "";
+          dock.style.transform = "";
+          return;
+        }
         header.style.transform = vv.offsetTop ? `translateY(${vv.offsetTop}px)` : "";
         const bottomGap = window.innerHeight - (vv.height + vv.offsetTop);
         dock.style.transform = bottomGap > 0 ? `translateY(${-bottomGap}px)` : "";
+      }
+
+      // Batch rapid-fire scroll/resize events into one style write per
+      // frame - reading layout metrics and writing transforms on every
+      // single event causes visible jank on iOS.
+      function reposition() {
+        if (scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(apply);
       }
 
       vv.addEventListener("resize", reposition);
