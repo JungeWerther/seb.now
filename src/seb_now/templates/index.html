@@ -183,8 +183,8 @@
       font-weight: 600;
     }
     .swipe-bg .tint svg { flex-shrink: 0; }
-    .swipe-bg .tint-down { background: var(--negative-soft); color: var(--negative); justify-content: flex-end; }
-    .swipe-bg .tint-up { background: var(--positive-soft); color: var(--positive); justify-content: flex-start; }
+    .swipe-bg .tint-down { background: var(--negative-soft); color: var(--negative); justify-content: flex-start; }
+    .swipe-bg .tint-up { background: var(--positive-soft); color: var(--positive); justify-content: flex-end; }
     .swipe-content {
       position: relative;
       background: var(--bg);
@@ -467,13 +467,13 @@
         content.style.transform = `translateX(${dx}px)`;
         const progress = Math.min(Math.abs(dx) / SWIPE_COMMIT_THRESHOLD_PX, 1);
         if (dx < 0) {
-          // left = downvote + hide
-          tintDown.style.opacity = progress;
-          tintUp.style.opacity = 0;
-        } else {
-          // right = upvote
+          // left = upvote
           tintUp.style.opacity = progress;
           tintDown.style.opacity = 0;
+        } else {
+          // right = downvote + hide
+          tintDown.style.opacity = progress;
+          tintUp.style.opacity = 0;
         }
       }
 
@@ -482,9 +482,18 @@
         dragging = false;
 
         if (dx <= -SWIPE_COMMIT_THRESHOLD_PX) {
-          // left = downvote + hide
+          // left = upvote
+          reset();
+          li.classList.add("upvoted");
+          content.classList.add("flash-positive");
+          content.addEventListener("animationend", () => content.classList.remove("flash-positive"), { once: true });
+          await castVote(session, linkId, 1);
+          const scores = await loadScores([linkId]);
+          renderScore(li, scores[linkId] || 0);
+        } else if (dx >= SWIPE_COMMIT_THRESHOLD_PX) {
+          // right = downvote + hide
           content.style.transition = "transform 0.2s ease-in";
-          content.style.transform = "translateX(-120%)";
+          content.style.transform = "translateX(120%)";
           await castVote(session, linkId, -1);
           li.style.transition = "max-height 0.2s ease-in, opacity 0.2s ease-in";
           li.style.maxHeight = li.offsetHeight + "px";
@@ -493,15 +502,6 @@
             li.style.opacity = "0";
           });
           showUndoToast(li, session, linkId);
-        } else if (dx >= SWIPE_COMMIT_THRESHOLD_PX) {
-          // right = upvote
-          reset();
-          li.classList.add("upvoted");
-          content.classList.add("flash-positive");
-          content.addEventListener("animationend", () => content.classList.remove("flash-positive"), { once: true });
-          await castVote(session, linkId, 1);
-          const scores = await loadScores([linkId]);
-          renderScore(li, scores[linkId] || 0);
         } else {
           reset();
         }
