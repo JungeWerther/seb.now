@@ -78,3 +78,7 @@ SKIPGRAM_LEARNING_RATE = 0.05
 SKIPGRAM_LAW_CHECK_TOLERANCE = 1e-4
 SKIPGRAM_SIMILARITY_THRESHOLD = 0.3
 SKIPGRAM_NEAREST_WORDS_TOP_K = 4
+
+# sanitize.py — safe_http_url
+# Schemes a feed/post URL may use when rendered into an href or src.
+SAFE_URL_SCHEMES: frozenset[str] = frozenset({"http", "https"})

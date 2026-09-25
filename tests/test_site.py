@@ -1,3 +1,8 @@
+from uuid import uuid4
+
+import pytest
+
+from seb_now import site
 from seb_now.constants import SourceType
 from seb_now.site import Article, build_articles, render
 
@@ -160,3 +165,30 @@ def test_render_injects_supabase_config() -> None:
     assert "test-anon-key" in html
     assert "__SUPABASE_URL__" not in html
     assert "__SUPABASE_ANON_KEY__" not in html
+
+
+def test_load_feed_drops_non_http_links(monkeypatch: pytest.MonkeyPatch) -> None:
+    rows = [
+        {"id": str(uuid4()), "url": "javascript:alert(1)", "title": "evil", "origin": "feed",
+         "created_at": "2026-01-01T00:00:00+00:00"},
+        {"id": str(uuid4()), "url": "https://example.com", "title": "ok", "origin": "feed",
+         "image_url": "javascript:alert(1)", "created_at": "2026-01-01T00:00:00+00:00"},
+    ]
+
+    class _Query:
+        def select(self, *_: object) -> "_Query":
+            return self
+
+        def order(self, *_: object, **__: object) -> "_Query":
+            return self
+
+        def execute(self) -> object:
+            return type("R", (), {"data": rows})()
+
+    client = type("C", (), {"table": lambda self, _name: _Query()})()
+    monkeypatch.setattr(site, "get_unauthenticated_client", lambda: client)
+
+    feed = site.load_feed()
+
+    assert [item["title"] for item in feed] == ["ok"]
+    assert feed[0]["image_url"] == ""

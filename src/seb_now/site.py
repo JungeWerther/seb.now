@@ -24,6 +24,7 @@ from seb_now.constants import BAG_OF_WORDS_SIMILARITY_THRESHOLD, SourceType
 from seb_now.auth import get_unauthenticated_client
 from seb_now.domain.models import Link
 from seb_now.posts import load_posts, write_posts
+from seb_now.sanitize import safe_http_url
 from seb_now.source_type import classify_source, display_domain
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -58,8 +59,9 @@ def load_feed() -> list[dict[str, str]]:
     response = client.table(Link.__tablename__).select("*").order("created_at", desc=True).execute()
     links = [Link.model_validate(row) for row in response.data]
     return [
-        {"id": str(link.id), "title": link.title, "url": link.url, "image_url": link.image_url or ""}
+        {"id": str(link.id), "title": link.title, "url": url, "image_url": safe_http_url(link.image_url) or ""}
         for link in links
+        if (url := safe_http_url(link.url))
     ]
 
 

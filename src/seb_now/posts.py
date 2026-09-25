@@ -11,10 +11,9 @@ from html import escape
 from pathlib import Path
 from typing import Sequence
 
-import markdown
-
 from seb_now.auth import get_unauthenticated_client
 from seb_now.domain.models import Link
+from seb_now.sanitize import render_markdown, safe_http_url
 
 SITE_URL = "https://seb.now"
 MARKDOWN_EXTENSIONS = ["extra", "sane_lists"]
@@ -42,8 +41,8 @@ def post_from_link(link: Link) -> Post:
         title=link.title,
         date=link.created_at.date().isoformat(),
         description=link.description or "",
-        image=link.image_url,
-        body_html=markdown.markdown(link.body_markdown, extensions=MARKDOWN_EXTENSIONS),
+        image=safe_http_url(link.image_url),
+        body_html=render_markdown(link.body_markdown, MARKDOWN_EXTENSIONS),
     )
 
 

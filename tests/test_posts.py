@@ -31,7 +31,7 @@ def test_post_from_link_renders_markdown_body() -> None:
     assert post.image == "https://example.com/cover.jpg"
     assert "<h1>Heading</h1>" in post.body_html
     assert "<em>body</em>" in post.body_html
-    assert '<a href="https://example.com">link</a>' in post.body_html
+    assert '<a href="https://example.com" rel="noopener noreferrer">link</a>' in post.body_html
 
 
 def test_post_from_link_defaults_description_to_empty_and_image_to_none() -> None:
