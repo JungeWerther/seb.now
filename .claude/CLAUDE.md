@@ -199,7 +199,8 @@ names a `<dialog class="overlay">` (`data-overlay`) opened with `showModal()`
 — floating over the feed, closed by its ✕, a backdrop click or Escape — with
 an optional loader in `OVERLAY_LOADERS`. **My Taste** (`#taste-overlay`)
 lists the signed-in user's leaf topics from `user_topic_preferences`, ranked
-by the Beta mean `alpha / (alpha + beta)` and drawn as a liked/disliked bar.
+by the Beta mean `alpha / (alpha + beta)`, with the view's `upvotes`/`downvotes`
+counts and a green/red bar split by the `likes`/`dislikes` weights.
 **My Profile** (`#profile-overlay`) edits `profiles.handle`, the name shown on
 replies.
 
