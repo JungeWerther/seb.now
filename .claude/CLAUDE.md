@@ -111,7 +111,11 @@ fetch leaves `image_url` out of the upsert so an earlier cover is kept.
 `hn-ingest` does the same for each story's linked page (not Ask HN threads),
 but since those are arbitrary sites it only takes a declared preview —
 `og:image`, else `twitter:image` — never a first-`<img>` guess, so pages
-without one stay imageless. Because covers are hotlinked from third-party
+without one stay imageless. YouTube doesn't serve `og:image` to those
+data-centre fetches, so a `links` trigger (`links_fill_youtube_thumbnail`,
+via `public.youtube_video_id(url)`) fills any YouTube video link saved
+without an image with its `hqdefault.jpg` thumbnail, whichever ingest wrote
+it. Because covers are hotlinked from third-party
 sites, the page script removes any `.cover-link` whose image fails to load. Each article row has a
 left favicon column (`FAVICON_URL_TEMPLATE`, DuckDuckGo's icon service,
 falling back to the host's first letter); the domain, title row and — when
