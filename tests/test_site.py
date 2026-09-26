@@ -1,3 +1,5 @@
+import re
+
 from seb_now.constants import ARTICLE_TOPIC_CHIPS, FAVICON_URL_TEMPLATE, SourceType
 from seb_now.site import Article, _top_topic_names, build_articles, render
 
@@ -160,6 +162,45 @@ def test_render_shows_topic_chips_and_omits_them_when_untagged() -> None:
     ) in html
     assert html.count('<span class="topics">') == 1
     assert "cluster" not in html
+
+
+def test_render_gives_each_article_a_reply_button_and_empty_reply_list() -> None:
+    article = Article(
+        id="a1",
+        title="Wire story",
+        url="https://www.reuters.com/a",
+        domain="reuters",
+        source_type=SourceType.MAINSTREAM_MEDIA,
+    )
+
+    html = render([article])
+
+    assert '<button type="button" class="reply-btn" aria-label="Reply">' in html
+    assert '<ol class="replies" hidden></ol>' in html
+    assert html.index('class="reply-btn"') < html.index('class="replies"')
+
+
+def test_render_includes_reply_composer_in_the_dock() -> None:
+    html = render([])
+
+    dock = html[html.index('id="search-dock"') :]
+    assert 'id="reply-composer" hidden' in dock
+    assert 'id="reply-input"' in dock
+    assert 'id="reply-send"' in dock
+    assert 'id="reply-cancel"' in dock
+    assert "setupReplies" in html
+
+
+def test_template_never_assigns_non_literal_html() -> None:
+    # Replies are untrusted user text; they must reach the DOM via textContent.
+    # Any innerHTML/outerHTML/insertAdjacentHTML fed by a non-literal is an XSS
+    # vector, so only single-quoted/double-quoted string literals are allowed.
+    html = render([])
+    script = html[html.index('<script type="module">') :]
+    for match in re.finditer(r"\.(innerHTML|outerHTML)\s*=\s*(.)", script):
+        assert match.group(2) in "'\"", f"non-literal {match.group(1)} assignment: {script[match.start():match.start() + 80]}"
+    assert "insertAdjacentHTML" not in script
+    assert "document.write" not in script
 
 
 def test_render_includes_settings_icon() -> None:

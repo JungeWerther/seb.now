@@ -151,6 +151,28 @@ and renders the top `ARTICLE_TOPIC_CHIPS` (by `p`) leaf-topic names as
 chips side by side, right-aligned on the domain line (vertically centred
 with it and the favicon); untagged links show none.
 
+**Replies.** `public.replies` (`link_id`, `author_id` → `profiles`,
+`body`, `created_at`): publicly readable; any signed-in user (anonymous
+sessions included, same as votes) can insert/delete only their own
+(`auth.uid() = author_id`), and there's no update policy. The DB checks
+bound the body to 1–500 non-blank chars (the page's `REPLY_MAX_LENGTH`
+mirrors this) and reject control characters except newline/tab. Bodies
+are stored exactly as typed — **XSS safety comes from output encoding,
+not input stripping**: the client only ever puts reply text (and
+handles) into the DOM via `textContent`, and anything server-rendered
+must go through `html.escape`. `tests/test_site.py` fails if the page
+script assigns `innerHTML`/`outerHTML` from anything but a string
+literal, or uses `insertAdjacentHTML`/`document.write`. Each post has a
+round reply button (bottom right of the post box) that swaps the search
+bar for a reply composer in the same dock; replies are loaded
+client-side and listed under the post. No moderation or rate limiting
+yet — anyone with an anonymous session can post.
+
+The card's swipe handler only takes pointer capture once the pointer has
+moved `SWIPE_CAPTURE_SLOP_PX`, and never starts on a `<button>` —
+capturing on `pointerdown` retargets a plain tap's `click` to the `<li>`,
+so buttons inside the card would never receive it.
+
 **Open privacy question (deferred until there are real users):**
 `votes` is publicly readable (the page shows net scores), so any user's
 topic profile is derivable by anyone from `votes` ⋈ `link_topics`.

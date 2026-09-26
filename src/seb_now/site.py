@@ -149,7 +149,17 @@ def _render_article(article: Article) -> str:
         f'<span class="score">0</span>'
         f"</div>"
         f"{cover}"
+        f'<div class="post-footer">'
+        f'<span class="reply-count" hidden></span>'
+        f'<button type="button" class="reply-btn" aria-label="Reply">'
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" '
+        f'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        f'<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>'
+        f"</svg>"
+        f"</button>"
         f"</div>"
+        f"</div>"
+        f'<ol class="replies" hidden></ol>'
         f"</div>"
         f"</div>"
         f"</li>"

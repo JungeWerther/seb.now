@@ -112,6 +112,78 @@
     }
     #search-clear:hover { background: rgba(128, 128, 128, 0.3); color: var(--fg); }
     #search-clear.visible { display: flex; }
+    #search-bar[hidden], #reply-composer[hidden] { display: none; }
+    #reply-composer {
+      position: relative;
+      width: 100%;
+      max-width: 480px;
+      pointer-events: auto;
+      box-sizing: border-box;
+      padding: 0.55rem 0.55rem 0.55rem 1.1rem;
+      border: 1px solid var(--positive);
+      border-radius: 22px;
+      background: var(--bg);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+    }
+    #reply-context {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding-right: 2rem;
+      font-size: 0.7rem;
+      color: gray;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    #reply-context-title { overflow: hidden; text-overflow: ellipsis; color: var(--fg); opacity: 0.75; }
+    #reply-cancel {
+      position: absolute;
+      top: 0.45rem;
+      right: 0.55rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.5rem;
+      height: 1.5rem;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background: rgba(128, 128, 128, 0.18);
+      color: gray;
+      cursor: pointer;
+    }
+    .composer-row { display: flex; align-items: flex-end; gap: 0.5rem; margin-top: 0.3rem; }
+    #reply-input {
+      flex: 1;
+      min-width: 0;
+      max-height: 30vh;
+      resize: none;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      line-height: 1.4;
+      padding: 0.3rem 0;
+    }
+    #reply-input::placeholder { color: gray; }
+    #reply-send {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.2rem;
+      height: 2.2rem;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background: var(--positive);
+      color: var(--bg);
+      cursor: pointer;
+    }
+    #reply-send:disabled { opacity: 0.4; cursor: default; }
+    #reply-remaining { font-size: 0.7rem; color: gray; align-self: center; }
+    #reply-remaining.over { color: var(--negative); }
     #search-empty {
       display: none;
       color: gray;
@@ -246,6 +318,41 @@
       border-radius: 14px;
       background: var(--post-bg);
     }
+    .swipe-content .post-footer {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 0.4rem;
+      margin-top: 0.5rem;
+    }
+    .swipe-content .reply-count { font-size: 0.75rem; color: gray; font-variant-numeric: tabular-nums; }
+    .swipe-content .reply-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 2rem;
+      height: 2rem;
+      padding: 0;
+      border: 1px solid rgba(128, 128, 128, 0.35);
+      border-radius: 50%;
+      background: var(--bg);
+      color: gray;
+      cursor: pointer;
+    }
+    .swipe-content .reply-btn:hover { color: var(--fg); border-color: rgba(128, 128, 128, 0.6); }
+    li.article.replying .reply-btn { color: var(--positive); border-color: var(--positive); }
+    .swipe-content .replies {
+      list-style: none;
+      margin: 0.5rem 0 0;
+      padding: 0 0 0 0.75rem;
+      border-left: 2px solid rgba(128, 128, 128, 0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+    .swipe-content .replies[hidden] { display: none; }
+    .reply-author { display: block; font-size: 0.7rem; color: gray; }
+    .reply-body { margin: 0; font-size: 0.9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
     .swipe-content .cover-link { display: block; margin: 0.6rem 0 0; }
     .swipe-content .cover {
       width: 100%;
@@ -385,12 +492,32 @@
         </svg>
       </button>
     </div>
+    <div id="reply-composer" hidden>
+      <div id="reply-context"><span>Replying to</span><span id="reply-context-title"></span></div>
+      <div class="composer-row">
+        <textarea id="reply-input" rows="1" placeholder="Write a reply…" aria-label="Write a reply"></textarea>
+        <span id="reply-remaining" hidden></span>
+        <button type="button" id="reply-send" aria-label="Send reply" disabled>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m5 12 7-7 7 7"/>
+            <path d="M12 19V5"/>
+          </svg>
+        </button>
+      </div>
+      <button type="button" id="reply-cancel" aria-label="Cancel reply">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M18 6 6 18"/>
+          <path d="m6 6 12 12"/>
+        </svg>
+      </button>
+    </div>
   </div>
   <script type="module">
     import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
     const supabase = createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__);
     const SWIPE_COMMIT_THRESHOLD_PX = 90;
+    const SWIPE_CAPTURE_SLOP_PX = 6;
 
     async function ensureSession() {
       const { data: { session } } = await supabase.auth.getSession();
@@ -469,6 +596,20 @@
 
     const TOAST_DURATION_MS = 3000;
 
+    function showToast(message) {
+      const container = document.getElementById("toast-container");
+      const toast = document.createElement("div");
+      toast.className = "toast";
+      const text = document.createElement("span");
+      text.textContent = message;
+      toast.appendChild(text);
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.add("leaving");
+        toast.addEventListener("animationend", () => toast.remove(), { once: true });
+      }, TOAST_DURATION_MS);
+    }
+
     function showUndoToast(li, session, linkId) {
       const container = document.getElementById("toast-container");
       const toast = document.createElement("div");
@@ -530,15 +671,22 @@
       }
 
       function onDown(e) {
+        if (e.target.closest("button")) return;
         startX = e.clientX;
         dragging = true;
         content.style.transition = "none";
-        li.setPointerCapture(e.pointerId);
       }
 
+      // Capturing on pointerdown would retarget a plain tap's click to the
+      // <li>, so links/buttons inside never receive it - capture only once
+      // the pointer has actually moved far enough to be a swipe.
       function onMove(e) {
         if (!dragging || startX === null) return;
         dx = e.clientX - startX;
+        if (!li.hasPointerCapture(e.pointerId)) {
+          if (Math.abs(dx) < SWIPE_CAPTURE_SLOP_PX) return;
+          li.setPointerCapture(e.pointerId);
+        }
         content.style.transform = `translateX(${dx}px)`;
         const progress = Math.min(Math.abs(dx) / SWIPE_COMMIT_THRESHOLD_PX, 1);
         if (dx < 0) {
@@ -669,6 +817,155 @@
       });
     }
 
+    // Must match the replies_body_length check in the replies migration.
+    const REPLY_MAX_LENGTH = 500;
+    const REPLY_REMAINING_WARN_AT = 50;
+    const REPLY_SELECT = "id, link_id, body, created_at, profiles(handle)";
+
+    // Reply bodies are untrusted user text: they only ever reach the DOM
+    // through textContent, never innerHTML, so markup in them stays inert.
+    function renderReply(li, reply) {
+      const list = li.querySelector(".replies");
+      const item = document.createElement("li");
+      item.className = "reply";
+      const author = document.createElement("span");
+      author.className = "reply-author";
+      author.textContent = reply.profiles?.handle || "anonymous";
+      const body = document.createElement("p");
+      body.className = "reply-body";
+      body.textContent = reply.body;
+      item.append(author, body);
+      list.appendChild(item);
+      list.hidden = false;
+    }
+
+    function setReplyCount(li, count) {
+      const badge = li.querySelector(".reply-count");
+      badge.textContent = String(count);
+      badge.hidden = count === 0;
+      li.dataset.replyCount = String(count);
+    }
+
+    async function loadReplies(items) {
+      const byId = new Map(items.map((li) => [li.dataset.linkId, li]));
+      if (byId.size === 0) return;
+      const { data, error } = await supabase
+        .from("replies")
+        .select(REPLY_SELECT)
+        .in("link_id", [...byId.keys()])
+        .order("created_at");
+      if (error) {
+        console.error("failed to load replies", error);
+        return;
+      }
+      const counts = new Map();
+      for (const reply of data) {
+        const li = byId.get(reply.link_id);
+        if (!li) continue;
+        renderReply(li, reply);
+        counts.set(li, (counts.get(li) || 0) + 1);
+      }
+      for (const [li, count] of counts) setReplyCount(li, count);
+    }
+
+    function setupReplies() {
+      const searchBar = document.getElementById("search-bar");
+      const composer = document.getElementById("reply-composer");
+      const contextTitle = document.getElementById("reply-context-title");
+      const input = document.getElementById("reply-input");
+      const sendBtn = document.getElementById("reply-send");
+      const cancelBtn = document.getElementById("reply-cancel");
+      const remaining = document.getElementById("reply-remaining");
+      let target = null;
+      let sending = false;
+
+      function autoGrow() {
+        input.style.height = "auto";
+        input.style.height = `${input.scrollHeight}px`;
+      }
+
+      function refresh() {
+        const length = input.value.trim().length;
+        const left = REPLY_MAX_LENGTH - input.value.length;
+        remaining.hidden = left > REPLY_REMAINING_WARN_AT;
+        remaining.textContent = String(left);
+        remaining.classList.toggle("over", left < 0);
+        sendBtn.disabled = sending || length === 0 || left < 0;
+        autoGrow();
+      }
+
+      function open(li) {
+        if (target && target !== li) target.classList.remove("replying");
+        target = li;
+        li.classList.add("replying");
+        contextTitle.textContent = li.querySelector(".article-row a")?.textContent ?? "";
+        searchBar.hidden = true;
+        composer.hidden = false;
+        refresh();
+        input.focus();
+      }
+
+      function close() {
+        target?.classList.remove("replying");
+        target = null;
+        input.value = "";
+        composer.hidden = true;
+        searchBar.hidden = false;
+        input.blur();
+      }
+
+      async function send() {
+        const body = input.value.trim();
+        if (!target || sending || !body || input.value.length > REPLY_MAX_LENGTH) return;
+        sending = true;
+        refresh();
+        const li = target;
+        const session = await ensureSession();
+        if (!session) {
+          sending = false;
+          refresh();
+          showToast("Couldn't sign you in to reply");
+          return;
+        }
+        const { data, error } = await supabase
+          .from("replies")
+          .insert({ link_id: li.dataset.linkId, author_id: session.user.id, body })
+          .select(REPLY_SELECT)
+          .single();
+        sending = false;
+        if (error) {
+          console.error("reply failed", error);
+          refresh();
+          showToast("Couldn't post your reply");
+          return;
+        }
+        renderReply(li, data);
+        setReplyCount(li, Number(li.dataset.replyCount || 0) + 1);
+        close();
+        showToast("Reply posted");
+      }
+
+      for (const li of document.querySelectorAll("li.article")) {
+        li.querySelector(".reply-btn")?.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (target === li) close();
+          else open(li);
+        });
+      }
+      input.addEventListener("input", refresh);
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") close();
+        else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          send();
+        }
+      });
+      sendBtn.addEventListener("click", send);
+      cancelBtn.addEventListener("click", close);
+
+      loadReplies([...document.querySelectorAll("li.article")]);
+    }
+
     const SEARCH_QUERY_STORAGE_KEY = "seb-now-search-query";
 
     function setupSearch() {
@@ -735,6 +1032,7 @@
       const header = document.querySelector("header");
       const dock = document.getElementById("search-dock");
       const input = document.getElementById("search-input");
+      const replyInput = document.getElementById("reply-input");
 
       let scheduled = false;
 
@@ -742,10 +1040,10 @@
         scheduled = false;
         // Chrome on iOS fires visualViewport resize/scroll continuously
         // during ordinary page scrolling too (its own toolbar hides/shows,
-        // unlike Safari) - only the search input being focused means a
-        // keyboard is plausibly involved, so that's otherwise a no-op
+        // unlike Safari) - only a focused dock field (search or reply)
+        // means a keyboard is plausibly involved, so that's otherwise a no-op
         // rather than fighting normal scroll with a moving dock.
-        if (document.activeElement !== input) {
+        if (!dock.contains(document.activeElement)) {
           header.style.transform = "";
           dock.style.transform = "";
           return;
@@ -771,11 +1069,14 @@
       // so also re-check shortly after focus/blur on the input itself.
       input.addEventListener("focus", () => setTimeout(reposition, 350));
       input.addEventListener("blur", () => setTimeout(reposition, 350));
+      replyInput.addEventListener("focus", () => setTimeout(reposition, 350));
+      replyInput.addEventListener("blur", () => setTimeout(reposition, 350));
     }
 
     setupVoting();
     setupSettings();
     setupSearch();
+    setupReplies();
     setupViewportPinning();
   </script>
 </body>
