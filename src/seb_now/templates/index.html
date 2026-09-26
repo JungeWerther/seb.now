@@ -18,16 +18,15 @@
       --negative: #c96a6a;
       --negative-soft: #f8e6e6;
       --sheen: rgba(255, 255, 255, 0.5);
-      /* The header's icon glyph (15px square) sits one gutter from the top,
-         bottom and left edges. The feed's favicon column shares its centre,
-         so the page itself is inset by the gutter less half the size
-         difference between favicon and glyph. */
+      /* Page edge margin, shared by the page, header and search dock. The
+         header's icon glyph (15px square) sits one gutter from the top,
+         bottom and left edges, so its left edge lines up with the feed's
+         favicon column below. */
       --gutter: 25px;
       --favicon-size: 26px;
       --header-icon-glyph: 15px;
       --header-icon-inset: 2.5px;
       --header-height: calc(2 * var(--gutter) + var(--header-icon-glyph));
-      --page-pad: calc(var(--gutter) - (var(--favicon-size) - var(--header-icon-glyph)) / 2);
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -43,9 +42,9 @@
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      max-width: calc(720px + var(--favicon-size) - var(--header-icon-glyph));
+      max-width: 720px;
       margin: 0 auto;
-      padding: calc(var(--header-height) + 1.5rem) var(--page-pad) 6rem;
+      padding: calc(var(--header-height) + 1.5rem) var(--gutter) 6rem;
       line-height: 1.5;
       background: var(--bg);
       color: var(--fg);
@@ -266,6 +265,7 @@
       border-radius: 14px;
       touch-action: pan-y;
     }
+    html.swiping { overscroll-behavior: none; }
     .swipe-bg { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; }
     .swipe-bg .tint {
       position: absolute;
@@ -771,6 +771,7 @@
       let startX = null;
       let startY = null;
       let slopAt = null;
+      let claimed = false;
       // Scroll mode: this gesture is the feed being scrolled by the page.
       let scrolling = false;
       let lastY = 0;
@@ -833,7 +834,16 @@
         if (armed) navigator.vibrate?.(SWIPE_ARMED_VIBRATE_MS);
       }
 
+      // Claimed: past the slop and heading sideways, i.e. pending or dragging.
+      // From then on the browser must not scroll, overscroll or
+      // pull-to-refresh with the gesture.
+      function setClaimed(value) {
+        claimed = value;
+        document.documentElement.classList.toggle("swiping", value);
+      }
+
       function endDrag() {
+        setClaimed(false);
         dragging = false;
         startX = null;
         startY = null;
@@ -865,13 +875,16 @@
       // Capturing on pointerdown would retarget a plain tap's click to the
       // swipe area, so links/buttons inside never receive it - capture only
       // once the pointer has actually moved far enough to be a swipe.
-      // A vertical-dominant gesture is already the browser's pan (it sends
-      // pointercancel), so only a sideways-leaning one needs scrolling here.
+      // An unclaimed vertical-dominant gesture is already the browser's pan
+      // (it sends pointercancel); a sideways-leaning one, or one whose
+      // earlier moves were claimed, gets no native scroll and is scrolled here.
       function startScroll(e, dx, dy) {
+        const browserScrolls = !claimed && Math.abs(dy) > Math.abs(dx);
         dragging = false;
         startX = null;
         startY = null;
-        if (e.pointerType !== "touch" || Math.abs(dy) > Math.abs(dx)) return;
+        setClaimed(false);
+        if (e.pointerType !== "touch" || browserScrolls) return;
         scrolling = true;
         window.scrollBy(0, -dy);
         lastY = e.clientY;
@@ -912,6 +925,7 @@
             startScroll(e, dx, dy);
             return;
           }
+          if (!claimed) setClaimed(true);
           if (e.timeStamp - slopAt < SWIPE_START_DECIDE_MS) return;
           area.setPointerCapture(e.pointerId);
           li.classList.add("dragging");
@@ -960,15 +974,14 @@
 
       area.addEventListener("pointerdown", onDown);
       area.addEventListener("pointermove", onMove);
-      // Once a card drag is under way, keep the browser from turning the
-      // rest of the gesture into a page scroll (which would fire
-      // pointercancel and drop the card) however steeply the finger then
-      // moves down. Vertical-first gestures never reach "dragging", so they
-      // still scroll.
+      // Once a swipe is claimed (including the decide delay before the card
+      // moves), keep the browser from turning the rest of the gesture into a
+      // page scroll or pull-to-refresh, however steeply the finger then moves
+      // down. Vertical/upward starts are never claimed, so they still scroll.
       area.addEventListener(
         "touchmove",
         (e) => {
-          if (dragging && li.classList.contains("dragging")) e.preventDefault();
+          if ((claimed || scrolling) && e.cancelable) e.preventDefault();
         },
         { passive: false },
       );

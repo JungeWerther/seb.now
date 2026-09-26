@@ -188,9 +188,11 @@ sideways one is picked up `SWIPE_START_DECIDE_MS` after crossing the slop
 longer than that before moving), re-checking the heading then. A
 sideways-leaning scroll gets no native scrolling under `pan-y`, so the page
 scrolls itself with the finger and flings on release
-(`SCROLL_FLING_DECAY_MS`); vertical-dominant ones are left to the browser. Once
-it has, a non-passive `touchmove` handler blocks scrolling for the rest
-of the gesture so the browser can't cancel it mid-drag. Pointer events
+(`SCROLL_FLING_DECAY_MS`); vertical-dominant ones are left to the browser. From
+the moment a sideways gesture crosses the slop (the decide delay included)
+it is *claimed*: `touchmove` is `preventDefault`ed and `html.swiping` sets
+`overscroll-behavior: none`, so neither scrolling nor pull-to-refresh can
+take it over however far down the finger goes. Pointer events
 only update the finger's target position; a single rAF loop eases the
 drawn card toward it (exponential follow, `SWIPE_SMOOTHING_MS` time
 constant, frame-rate independent) so uneven event delivery can't make it
