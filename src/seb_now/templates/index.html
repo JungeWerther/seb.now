@@ -219,13 +219,16 @@
     }
     #search-empty.visible { display: block; }
     h1.brand { position: relative; margin: 0; line-height: 0; }
-    h1.brand .wordmark { height: 26px; width: auto; display: block; }
+    /* The viewBox is trimmed to the Bricolage glyphs so the tagline can centre
+       on them; overflow stays visible for a wider fallback font. */
+    h1.brand .wordmark { height: 26px; width: auto; display: block; overflow: visible; }
     /* Hangs below the wordmark without moving it, so the wordmark stays
        centred with the menu icon. */
     h1.brand .tagline {
       position: absolute;
       top: calc(100% - 2px);
-      right: 0;
+      left: 50%;
+      transform: translateX(-50%);
       font-family: var(--brand-font);
       font-size: 0.7rem;
       font-weight: 500;
@@ -709,7 +712,7 @@
         </ul>
       </div>
       <h1 class="brand">
-        <svg class="wordmark" viewBox="0 0 172 34" role="img" aria-label="seb.now" xmlns="http://www.w3.org/2000/svg">
+        <svg class="wordmark" viewBox="64.5 0 107 34" role="img" aria-label="seb.now" xmlns="http://www.w3.org/2000/svg">
           <text x="172" y="25" text-anchor="end" font-family="'Bricolage Grotesque', sans-serif" font-size="27" font-weight="700">
             <tspan fill="var(--fg)">seb</tspan><tspan fill="var(--positive)"><animate attributeName="opacity" values="1;0.35;1" dur="2.4s" repeatCount="indefinite"/>.</tspan><tspan fill="var(--fg)" font-weight="400" opacity="0.85">now</tspan>
           </text>
