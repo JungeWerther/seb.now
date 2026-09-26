@@ -49,7 +49,7 @@ SUPABASE_JS_MODULE_URL_PLACEHOLDER = "__SUPABASE_JS_MODULE_URL__"
 CSP_PLACEHOLDER = "__CONTENT_SECURITY_POLICY__"
 PAGE_SCRIPT_PATTERN = re.compile(r'<script type="module">(.*?)</script>', re.DOTALL)
 
-FEED_COLUMNS = "id, title, url, image_url, created_at"
+FEED_COLUMNS = "id, title, url, image_url, author, created_at"
 
 
 @dataclass(frozen=True)
@@ -69,6 +69,7 @@ class FeedItem(TypedDict):
     title: str
     url: str
     image_url: NotRequired[str]
+    author: NotRequired[str]
     topics: NotRequired[list[str]]
     created_at: NotRequired[str]
 
@@ -112,6 +113,7 @@ def load_feed() -> list[FeedItem]:
                 "title": row["title"],
                 "url": url,
                 "image_url": safe_http_url(row["image_url"]) or "",
+                "author": row.get("author") or "",
                 "topics": _top_topic_names(row[LinkTopic.__tablename__]),
                 # Kept as PostgREST's own string so the page's pagination
                 # cursor round-trips it exactly (microseconds included).
@@ -121,13 +123,22 @@ def load_feed() -> list[FeedItem]:
     return feed
 
 
+def domain_with_author(domain: str, author: str) -> str:
+    """The domain line: a handle joins the domain ("youtube@Channel5YouTube"),
+    a display name follows it ("youtube · Name"). Same as the page script's
+    domainWithAuthor."""
+    if not author:
+        return domain
+    return f"{domain}{author}" if author.startswith("@") else f"{domain} · {author}"
+
+
 def build_articles(feed: Sequence[FeedItem]) -> list[Article]:
     return [
         Article(
             id=item["id"],
             title=item["title"],
             url=item["url"],
-            domain=display_domain(item["url"]),
+            domain=domain_with_author(display_domain(item["url"]), item.get("author", "")),
             source_type=classify_source(item["url"]),
             topics=tuple(item.get("topics", ())),
             image_url=item.get("image_url") or None,

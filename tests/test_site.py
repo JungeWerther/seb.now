@@ -453,3 +453,21 @@ def test_my_algorithm_has_sliders_saved_as_overrides_and_a_reset() -> None:
     assert 'from("topic_overrides")' in html
     assert 'slider.setAttribute("role", "slider")' in html
     assert 'id="taste-clear-icon"' in html
+
+
+def test_domain_line_joins_a_handle_and_follows_with_a_name() -> None:
+    from seb_now.site import domain_with_author
+
+    assert domain_with_author("youtube", "@Channel5YouTube") == "youtube@Channel5YouTube"
+    assert domain_with_author("youtube", "Some Channel") == "youtube · Some Channel"
+    assert domain_with_author("techcrunch", "") == "techcrunch"
+
+
+def test_render_shows_the_author_on_the_domain_line() -> None:
+    articles = build_articles(
+        [{"id": "a", "title": "Iran", "url": "https://www.youtube.com/watch?v=YSLWEsv-8MM", "author": "@Channel5YouTube"}]
+    )
+
+    html = render(articles)
+
+    assert '<span class="domain">youtube@Channel5YouTube</span>' in _article_list(html)

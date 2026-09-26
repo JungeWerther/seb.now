@@ -1308,7 +1308,7 @@
     const FEED_PAGE_SIZE = __FEED_PAGE_SIZE__;
     const ARTICLE_TOPIC_CHIPS = __ARTICLE_TOPIC_CHIPS__;
     const FAVICON_URL_TEMPLATE = __FAVICON_URL_TEMPLATE__;
-    const FEED_SELECT = "id, title, url, image_url, created_at, link_topics(p, topics(name))";
+    const FEED_SELECT = "id, title, url, image_url, author, created_at, link_topics(p, topics(name))";
     // Fetch the next page once the end of the list is this close to view.
     const FEED_PREFETCH_MARGIN_PX = 1200;
 
@@ -1349,6 +1349,12 @@
         .map((lt) => lt.topics.name);
     }
 
+    // Same as site.py's domain_with_author.
+    function domainWithAuthor(domain, author) {
+      if (!author) return domain;
+      return author.startsWith("@") ? `${domain}${author}` : `${domain} · ${author}`;
+    }
+
     function isHttpUrl(url) {
       try {
         return ["http:", "https:"].includes(new URL(url).protocol);
@@ -1368,7 +1374,10 @@
       const favicon = li.querySelector(".favicon");
       favicon.dataset.letter = host.slice(0, 1).toUpperCase();
       favicon.querySelector("img").src = FAVICON_URL_TEMPLATE.replace("{host}", host);
-      li.querySelector(".domain").textContent = host.includes(".") ? host.slice(0, host.lastIndexOf(".")) : host;
+      li.querySelector(".domain").textContent = domainWithAuthor(
+        host.includes(".") ? host.slice(0, host.lastIndexOf(".")) : host,
+        row.author,
+      );
       const topics = li.querySelector(".topics");
       const names = topTopicNames(row.link_topics || []);
       if (names.length > 0) {
