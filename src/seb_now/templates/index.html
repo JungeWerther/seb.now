@@ -18,15 +18,16 @@
       --negative: #c96a6a;
       --negative-soft: #f8e6e6;
       --sheen: rgba(255, 255, 255, 0.5);
-      /* Page edge margin, shared by the page, header and search dock. The
-         header's icon glyph (15px square) sits one gutter from the top,
-         bottom and left edges, so its left edge lines up with the feed's
-         favicon column below. */
+      /* The header's icon glyph (15px square) sits one gutter from the top,
+         bottom and left edges. The feed's favicon column shares its centre,
+         so the page itself is inset by the gutter less half the size
+         difference between favicon and glyph. */
       --gutter: 25px;
       --favicon-size: 26px;
       --header-icon-glyph: 15px;
       --header-icon-inset: 2.5px;
       --header-height: calc(2 * var(--gutter) + var(--header-icon-glyph));
+      --page-pad: calc(var(--gutter) - (var(--favicon-size) - var(--header-icon-glyph)) / 2);
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -42,9 +43,9 @@
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      max-width: 720px;
+      max-width: calc(720px + var(--favicon-size) - var(--header-icon-glyph));
       margin: 0 auto;
-      padding: calc(var(--header-height) + 1.5rem) var(--gutter) 6rem;
+      padding: calc(var(--header-height) + 1.5rem) var(--page-pad) 6rem;
       line-height: 1.5;
       background: var(--bg);
       color: var(--fg);
