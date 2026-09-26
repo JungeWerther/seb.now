@@ -96,8 +96,10 @@ safe to ignore, or delete by hand from the Supabase dashboard.
 `fediverse-ingest` also populates `links.image_url`: Mastodon's own
 `status.card.image` when a card exists, else `fediverse-ingest` peeks at
 the target page itself (5s timeout) for `og:image`, falling back to the
-page's first `<img>`. HN/TechCrunch links leave `image_url` null - their
-ingest functions don't peek at target pages. Each article row has a
+page's first `<img>`. `techcrunch-ingest` fetches each article page (5s
+timeout) for its `og:image`, since the RSS feed carries no images; a failed
+fetch leaves `image_url` out of the upsert so an earlier cover is kept. HN
+links leave `image_url` null — `hn-ingest` doesn't peek at target pages. Each article row has a
 left favicon column (`FAVICON_URL_TEMPLATE`, DuckDuckGo's icon service,
 falling back to the host's first letter); the domain, title row and — when
 `image_url` is set — a clickable 16:9 cover image share the indented

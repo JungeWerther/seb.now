@@ -7,6 +7,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // this Deno edge runtime for a shape this simple.
 const FEED_URL = "https://techcrunch.com/feed/";
 const ITEMS_LIMIT = 20;
+const IMAGE_FETCH_TIMEOUT_MS = 5000;
 
 function decodeEntities(s: string): string {
   return s
@@ -26,6 +27,21 @@ function extractTag(block: string, tag: string): string | null {
   return match ? decodeEntities(match[1]) : null;
 }
 
+// The feed carries no images, so read each article's og:image cover.
+async function scrapeCoverImage(pageUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(pageUrl, { signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS) });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const ogImage =
+      html.match(/<meta[^>]+(?:property|name)=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ??
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']og:image["']/i)?.[1];
+    return ogImage ? new URL(decodeEntities(ogImage), pageUrl).toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 Deno.serve(async (_req: Request) => {
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -39,19 +55,20 @@ Deno.serve(async (_req: Request) => {
   let upserted = 0;
   const errors: unknown[] = [];
 
-  for (const block of itemBlocks.slice(0, ITEMS_LIMIT)) {
-    const title = extractTag(block, "title");
-    const link = extractTag(block, "link");
-    if (!title || !link) continue;
+  const items = itemBlocks.slice(0, ITEMS_LIMIT)
+    .map((block) => ({ title: extractTag(block, "title"), link: extractTag(block, "link") }))
+    .filter((item): item is { title: string; link: string } => !!item.title && !!item.link);
+  const images = await Promise.all(items.map((item) => scrapeCoverImage(item.link)));
 
-    const { error } = await supabase
-      .from("links")
-      .upsert({ url: link, title, origin: "feed", submitted_by: null }, { onConflict: "url" });
+  for (const [i, { title, link }] of items.entries()) {
+    // Omitted rather than null when the scrape fails, so a flaky fetch keeps an earlier image.
+    const row = { url: link, title, origin: "feed", submitted_by: null, ...(images[i] ? { image_url: images[i] } : {}) };
+    const { error } = await supabase.from("links").upsert(row, { onConflict: "url" });
     if (error) errors.push({ link, error: error.message });
     else upserted++;
   }
 
-  return new Response(JSON.stringify({ fetched: itemBlocks.length, upserted, errors }, null, 2), {
+  return new Response(JSON.stringify({ fetched: itemBlocks.length, upserted, withImage: images.filter(Boolean).length, errors }, null, 2), {
     headers: { "Content-Type": "application/json" },
   });
 });
