@@ -368,45 +368,69 @@
     }
     #handle-save:disabled { opacity: 0.5; cursor: default; }
     #profile-status { font-size: 0.8rem; color: gray; min-height: 1.2em; margin: 0.4rem 0 0; }
-    #taste-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1.4rem; }
-    .taste-row { display: grid; grid-template-columns: 1fr auto; gap: 0.5rem 0.75rem; font-size: 0.85rem; }
+    #taste-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
+    .taste-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.3rem 0.75rem; font-size: 0.85rem; }
     .taste-custom { margin-left: 0.4rem; font-size: 0.7rem; color: gray; }
     .taste-votes { display: flex; gap: 0.6rem; font-size: 0.75rem; font-variant-numeric: tabular-nums; }
     .taste-up { color: var(--positive); }
     .taste-down { color: var(--negative); }
-    /* The slider's track is green up to the thumb and red after it, so the
-       split is the topic's score. */
+    /* A hand-rolled slider (not <input type=range>, which some mobile
+       browsers let the page's scrolling steal mid-drag). The track is green
+       up to the thumb and red after it, so the split is the topic's score.
+       The hit area is taller than the track; pan-y leaves vertical swipes to
+       scroll the list. */
+    .taste-control { grid-column: 1 / -1; display: flex; align-items: center; gap: 0.5rem; }
     .taste-slider {
       --pct: 50%;
-      grid-column: 1 / -1;
-      -webkit-appearance: none;
-      appearance: none;
-      width: 100%;
-      height: 6px;
-      margin: 0.35rem 0;
-      border-radius: 3px;
-      background: linear-gradient(to right, var(--positive) var(--pct), var(--negative) var(--pct));
+      flex: 1;
+      position: relative;
+      height: 20px;
       cursor: pointer;
       touch-action: pan-y;
+      -webkit-user-select: none;
+      user-select: none;
     }
-    .taste-slider:focus-visible { outline: 2px solid var(--positive-soft); outline-offset: 4px; }
-    .taste-slider::-webkit-slider-thumb {
-      -webkit-appearance: none;
+    .taste-slider:focus-visible { outline: 2px solid var(--positive-soft); outline-offset: 2px; border-radius: 4px; }
+    .taste-track {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      height: 4px;
+      margin-top: -2px;
+      border-radius: 2px;
+      background: linear-gradient(to right, var(--positive) var(--pct), var(--negative) var(--pct));
+    }
+    .taste-thumb {
+      position: absolute;
+      top: 50%;
+      left: var(--pct);
+      width: 14px;
+      height: 14px;
+      margin: -7px 0 0 -7px;
+      border-radius: 50%;
+      background: var(--bg);
+      border: 2px solid var(--fg);
+      box-sizing: border-box;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    }
+    .taste-slider.dragging .taste-thumb { transform: scale(1.15); }
+    .taste-clear {
+      display: flex;
       width: 22px;
       height: 22px;
+      padding: 0;
+      align-items: center;
+      justify-content: center;
+      border: none;
       border-radius: 50%;
-      background: var(--bg);
-      border: 2px solid var(--fg);
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+      background: none;
+      color: gray;
+      cursor: pointer;
     }
-    .taste-slider::-moz-range-thumb {
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      background: var(--bg);
-      border: 2px solid var(--fg);
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
-    }
+    .taste-clear:hover { color: var(--fg); background: var(--post-bg); }
+    .taste-clear svg { width: 16px; height: 16px; }
+    .taste-clear[hidden] { display: flex; visibility: hidden; }
     #taste-reset {
       display: none;
       margin: 1.5rem auto 0;
@@ -736,7 +760,8 @@
     <p class="taste-lead">Green topics are more likely to appear in your feed</p>
     <p id="taste-status"></p>
     <ol id="taste-list"></ol>
-    <button id="taste-reset">Reset to default</button>
+    <button id="taste-reset">Reset all to default</button>
+    <template id="taste-clear-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></template>
   </dialog>
   <dialog id="profile-overlay" class="overlay" aria-labelledby="profile-title">
     <div class="overlay-head">
@@ -1569,6 +1594,9 @@
 
     // Set once My Algorithm changes an override, so closing it re-ranks the feed.
     let tasteChanged = false;
+    // Keyboard nudges save once the keys have been still this long.
+    const TASTE_KEY_SAVE_DELAY_MS = 400;
+    const clearIcon = document.getElementById("taste-clear-icon");
 
     async function loadTaste() {
       const status = document.getElementById("taste-status");
@@ -1639,35 +1667,119 @@
         score.className = "taste-score";
         votes.append(score, up, down);
 
-        const slider = document.createElement("input");
-        slider.type = "range";
+        const defaultScore = pref.alpha / (pref.alpha + pref.beta);
+        const slider = document.createElement("div");
         slider.className = "taste-slider";
-        slider.min = "0";
-        slider.max = "100";
-        slider.value = String(Math.round(scoreOf(pref) * 100));
+        slider.tabIndex = 0;
+        slider.setAttribute("role", "slider");
+        slider.setAttribute("aria-valuemin", "0");
+        slider.setAttribute("aria-valuemax", "100");
         slider.setAttribute("aria-label", `${name.firstChild.textContent} score`);
-        const show = () => {
-          slider.style.setProperty("--pct", `${slider.value}%`);
-          score.textContent = `score ${(slider.value / 100).toFixed(2)}`;
+        const track = document.createElement("span");
+        track.className = "taste-track";
+        const thumb = document.createElement("span");
+        thumb.className = "taste-thumb";
+        slider.append(track, thumb);
+
+        const clear = document.createElement("button");
+        clear.className = "taste-clear";
+        clear.setAttribute("aria-label", `Reset ${name.firstChild.textContent} to default`);
+        clear.append(clearIcon.content.cloneNode(true));
+
+        let value = Math.round(scoreOf(pref) * 100);
+        const show = (next) => {
+          value = Math.max(0, Math.min(100, Math.round(next)));
+          slider.style.setProperty("--pct", `${value}%`);
+          slider.setAttribute("aria-valuenow", String(value));
+          score.textContent = `score ${(value / 100).toFixed(2)}`;
         };
-        show();
-        slider.addEventListener("input", show);
-        slider.addEventListener("change", async () => {
+        const setCustom = (isCustom) => {
+          custom.hidden = !isCustom;
+          clear.hidden = !isCustom;
+          if (isCustom) overrides.set(pref.topic_id, value / 100);
+          else overrides.delete(pref.topic_id);
+          reset.classList.toggle("visible", overrides.size > 0);
+        };
+        show(value);
+        setCustom(overrides.has(pref.topic_id));
+
+        const save = async () => {
           const { error: saveError } = await client
             .from("topic_overrides")
             .upsert(
-              { user_id: session.user.id, topic_id: pref.topic_id, score: slider.value / 100, updated_at: new Date().toISOString() },
+              { user_id: session.user.id, topic_id: pref.topic_id, score: value / 100, updated_at: new Date().toISOString() },
               { onConflict: "user_id,topic_id" },
             );
           if (saveError) {
             status.textContent = "Couldn't save that change.";
             return;
           }
+          status.textContent = "";
           tasteChanged = true;
-          custom.hidden = false;
-          reset.classList.add("visible");
+          setCustom(true);
+        };
+
+        const valueAt = (clientX) => {
+          const rect = slider.getBoundingClientRect();
+          return ((clientX - rect.left) / rect.width) * 100;
+        };
+        let dragStart = null;
+        slider.addEventListener("pointerdown", (event) => {
+          if (event.button !== 0) return;
+          dragStart = value;
+          slider.setPointerCapture(event.pointerId);
+          slider.classList.add("dragging");
+          show(valueAt(event.clientX));
         });
-        row.append(name, votes, slider);
+        slider.addEventListener("pointermove", (event) => {
+          if (dragStart !== null) show(valueAt(event.clientX));
+        });
+        slider.addEventListener("pointerup", () => {
+          if (dragStart === null) return;
+          const changed = value !== dragStart;
+          dragStart = null;
+          slider.classList.remove("dragging");
+          if (changed) save();
+        });
+        // The browser took the gesture as a vertical scroll: put the thumb back.
+        slider.addEventListener("pointercancel", () => {
+          if (dragStart === null) return;
+          show(dragStart);
+          dragStart = null;
+          slider.classList.remove("dragging");
+        });
+        const KEY_STEPS = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, PageDown: -10, PageUp: 10 };
+        let keySave = null;
+        slider.addEventListener("keydown", (event) => {
+          const next =
+            event.key === "Home" ? 0 : event.key === "End" ? 100 : event.key in KEY_STEPS ? value + KEY_STEPS[event.key] : null;
+          if (next === null) return;
+          event.preventDefault();
+          show(next);
+          clearTimeout(keySave);
+          keySave = setTimeout(save, TASTE_KEY_SAVE_DELAY_MS);
+        });
+
+        clear.addEventListener("click", async () => {
+          const { error: clearError } = await client
+            .from("topic_overrides")
+            .delete()
+            .eq("user_id", session.user.id)
+            .eq("topic_id", pref.topic_id);
+          if (clearError) {
+            status.textContent = "Couldn't reset that topic.";
+            return;
+          }
+          status.textContent = "";
+          tasteChanged = true;
+          show(defaultScore * 100);
+          setCustom(false);
+        });
+
+        const control = document.createElement("div");
+        control.className = "taste-control";
+        control.append(slider, clear);
+        row.append(name, votes, control);
         list.append(row);
       }
     }

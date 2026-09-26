@@ -318,7 +318,8 @@ def test_render_carries_each_articles_created_at_for_the_pagination_cursor() -> 
 def test_render_includes_article_template_with_a_cover_and_topic_chip_to_fill() -> None:
     html = render([])
 
-    template = html[html.index('<template id="article-template">') : html.index("</template>")]
+    start = html.index('<template id="article-template">')
+    template = html[start : html.index("</template>", start)]
     assert template.count('li class="article"') == 1
     assert 'class="cover-link"' in template
     assert '<span class="topic">' in template
@@ -450,4 +451,5 @@ def test_my_algorithm_has_sliders_saved_as_overrides_and_a_reset() -> None:
 
     assert 'id="taste-reset"' in html
     assert 'from("topic_overrides")' in html
-    assert 'slider.type = "range"' in html
+    assert 'slider.setAttribute("role", "slider")' in html
+    assert 'id="taste-clear-icon"' in html

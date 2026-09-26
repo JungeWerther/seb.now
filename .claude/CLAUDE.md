@@ -216,11 +216,15 @@ an optional loader in `OVERLAY_LOADERS`. **My Algorithm** (`#taste-overlay`)
 lists the signed-in user's leaf topics from `user_topic_preferences`, ranked
 by the Beta mean `alpha / (alpha + beta)`, with the view's `upvotes`/`downvotes`
 counts, the score itself (the formula's output, two decimals) and a
-green/red slider whose split is the score. Dragging a slider saves the
-user's own score for that topic to `public.topic_overrides` (private to its
-owner by RLS), which `ranked_feed` uses in place of the vote-derived score;
-"Reset to default" deletes the user's overrides, and closing the overlay
-after a change re-ranks the feed. Above the list a code block shows the feed's ranking formula (see "Feed
+green/red slider whose split is the score. The slider is hand-rolled on
+pointer events (`role="slider"`, arrow/Page/Home/End keys), not `<input
+type="range">`, which Firefox for Android kept snapping back mid-drag; it's
+`touch-action: pan-y` and puts the thumb back on `pointercancel`, so a
+vertical swipe still scrolls the list. Releasing a drag saves the user's own
+score for that topic to `public.topic_overrides` (private to its owner by
+RLS), which `ranked_feed` uses in place of the vote-derived score; a custom
+topic gets an ✕ that deletes just its override, "Reset all to default"
+deletes them all, and closing the overlay after a change re-ranks the feed. Above the list a code block shows the feed's ranking formula (see "Feed
 pagination, ranking and search"), so keep it in sync with `ranked_feed`.
 **My Profile** (`#profile-overlay`) edits `profiles.handle`, the name shown on
 replies.
