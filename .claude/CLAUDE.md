@@ -134,11 +134,15 @@ in `public.link_topics` as fuzzy `p ∈ (0, 1]`, typically 1–3 per link;
 decision model, planned, not yet automated — so new ingested links
 currently arrive untagged). Both tables are public-read, service_role-write.
 
-The intended recommender (not built yet): a user's preference is
-derived, not stored — per topic, `α = 1 + Σ p` over their upvoted links
-and `β = 1 + Σ p` over their downvoted ones (a view over `votes` ⋈
-`link_topics`, rolled up to ancestors for cold start). The client
-Thompson-samples `θ ~ Beta(α, β)` per topic and ranks links by `Σ θ·p`.
+A user's preference is derived, not stored: the
+`public.user_topic_preferences` view (`security_invoker`, so RLS on
+`votes`/`link_topics` applies) gives per `(voter_id, topic_id)` the
+`likes`/`dislikes` sums of `p` over their up/downvoted links and
+`alpha = 1 + likes`, `beta = 1 + dislikes`. Each vote also counts toward
+every ancestor of the labelled topic (`ai.agents` feeds `ai`), so a
+never-voted leaf can fall back to its parent. No time decay yet. Not
+built yet: the client Thompson-sampling `θ ~ Beta(alpha, beta)` per
+topic and ranking links by `Σ θ·p`.
 The older word-count `TopicClusterer` in `site.py` is unrelated and
 will be superseded by this.
 
