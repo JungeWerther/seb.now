@@ -665,8 +665,11 @@
       <p class="overlay-title" id="taste-title">My Algorithm</p>
       <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     </div>
-    <pre class="taste-formula"><code>posts.orderBy((likes, dislikes) =&gt;
-  (1+likes) / (2+likes+dislikes))</code></pre>
+    <pre class="taste-formula"><code>posts.orderBy(post =&gt;
+  taste(post, likes.mine, dislikes.mine)
+  * (1+likes.all)
+  / (2+likes.all+dislikes.all)
+  * 0.5 ** (post.ageHours / 24))</code></pre>
     <p class="taste-lead">Green topics are more likely to appear in your feed</p>
     <p id="taste-status"></p>
     <ol id="taste-list"></ol>
@@ -1225,10 +1228,21 @@
     const feedSentinel = document.getElementById("feed-sentinel");
     const searchEmpty = document.getElementById("search-empty");
 
-    // The list shows one feed at a time: the default one, or the results
-    // for `query`. `generation` bumps whenever it's swapped, so a request
-    // still in flight for the previous feed is dropped when it lands.
-    const feed = { query: "", cursor: null, done: false, loading: false, generation: 0 };
+    // The list shows one feed at a time: the default one, ranked by the
+    // ranked_feed function, or the results for `query`, newest first.
+    // `generation` bumps whenever it's swapped, so a request still in flight
+    // for the previous feed is dropped when it lands.
+    const feed = {
+      query: "",
+      chronological: false,
+      asOf: null,
+      offset: 0,
+      cursor: null,
+      seen: new Set(),
+      done: false,
+      loading: false,
+      generation: 0,
+    };
 
     // Same as source_type.py's _registrable_domain, which renders the
     // pre-built articles.
@@ -1307,11 +1321,10 @@
       return text.replace(/[\\%_]/g, (c) => `\\${c}`);
     }
 
-    async function fetchLinks({ query = "", before = null, after = null }) {
+    async function fetchLinks({ query = "", before = null }) {
       let request = (await supabaseReady).from("links").select(FEED_SELECT);
       if (query) request = request.ilike("search_text", `%${escapeLike(query.toLowerCase())}%`);
       if (before) request = request.or(keyset("lt", before));
-      if (after) request = request.or(keyset("gt", after));
       const { data, error } = await request
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
@@ -1321,6 +1334,45 @@
         return null;
       }
       return data;
+    }
+
+    // One page of ranked_feed, then those links by id in rank order. `count`
+    // is how many ranks came back, which decides whether there's more.
+    async function fetchRanked(asOf, offset) {
+      const client = await supabaseReady;
+      // ranked_feed reads the caller's own votes, so wait for the session.
+      await pendingSession;
+      const { data: ranks, error } = await client.rpc("ranked_feed", {
+        as_of: asOf,
+        page_offset: offset,
+        page_size: FEED_PAGE_SIZE,
+      });
+      if (error) {
+        console.error("failed to rank feed", error);
+        return null;
+      }
+      if (ranks.length === 0) return { rows: [], count: 0 };
+      const ids = ranks.map((r) => r.link_id);
+      const { data: rows, error: linksError } = await client.from("links").select(FEED_SELECT).in("id", ids);
+      if (linksError) {
+        console.error("failed to load feed", linksError);
+        return null;
+      }
+      const position = new Map(ids.map((id, i) => [id, i]));
+      rows.sort((a, b) => position.get(a.id) - position.get(b.id));
+      return { rows, count: ranks.length };
+    }
+
+    async function fetchPage() {
+      if (feed.query || feed.chronological) {
+        const rows = await fetchLinks({ query: feed.query, before: feed.cursor });
+        if (!rows) return null;
+        if (rows.length > 0) feed.cursor = { createdAt: rows.at(-1).created_at, id: rows.at(-1).id };
+        return { rows, count: rows.length };
+      }
+      const page = await fetchRanked(feed.asOf, feed.offset);
+      if (page) feed.offset += page.count;
+      return page;
     }
 
     function renderRows(rows) {
@@ -1336,18 +1388,25 @@
       return feedSentinel.getBoundingClientRect().top < window.innerHeight + FEED_PREFETCH_MARGIN_PX;
     }
 
-    async function loadMore() {
+    // `replace` swaps out whatever is listed (the pre-rendered links) only
+    // once the page has arrived, so the list never flashes empty. Resolves
+    // false if the page failed to load.
+    async function loadMore({ replace = false } = {}) {
       if (feed.loading || feed.done) return;
       feed.loading = true;
       const generation = feed.generation;
-      const rows = await fetchLinks({ query: feed.query, before: feed.cursor });
+      const page = await fetchPage();
       if (generation !== feed.generation) return;
       feed.loading = false;
-      if (!rows) return;
-      if (rows.length < FEED_PAGE_SIZE) feed.done = true;
-      if (rows.length > 0) feed.cursor = { createdAt: rows.at(-1).created_at, id: rows.at(-1).id };
+      if (!page) return false;
+      if (page.count < FEED_PAGE_SIZE) feed.done = true;
+      // Ranks can shift between pages as votes come in, so a link may come
+      // back twice.
+      const rows = page.rows.filter((row) => !feed.seen.has(row.id));
+      for (const row of rows) feed.seen.add(row.id);
       const items = renderRows(rows);
-      articleList.append(...items);
+      if (replace) articleList.replaceChildren(...items);
+      else articleList.append(...items);
       await hydrateArticles(items);
       if (generation !== feed.generation) return;
       updateSearchEmpty();
@@ -1356,31 +1415,24 @@
       if (!feed.done && sentinelNearViewport()) loadMore();
     }
 
-    function showFeed(query) {
+    function resetFeed(query) {
       feed.generation++;
       feed.query = query;
+      feed.chronological = false;
+      // Ranks are computed as of this moment for every page of this feed.
+      feed.asOf = new Date().toISOString();
+      feed.offset = 0;
       feed.cursor = null;
+      feed.seen = new Set();
       feed.done = false;
       feed.loading = false;
+    }
+
+    function showFeed(query) {
+      resetFeed(query);
       articleList.replaceChildren();
       updateSearchEmpty();
       loadMore();
-    }
-
-    // The pre-rendered page is from the last build; links ingested since
-    // then go on top. If there are a full page or more of them, the build is
-    // too stale to extend, so start the feed over instead.
-    async function prependNewer(top) {
-      const generation = feed.generation;
-      const rows = await fetchLinks({ after: top });
-      if (!rows || rows.length === 0 || generation !== feed.generation) return;
-      if (rows.length === FEED_PAGE_SIZE) {
-        showFeed("");
-        return;
-      }
-      const items = renderRows(rows);
-      articleList.prepend(...items);
-      await hydrateArticles(items);
     }
 
     function setupFeed(initialQuery) {
@@ -1399,16 +1451,21 @@
         showFeed(initialQuery);
         return;
       }
+      // The build pre-renders the newest links for a fast first paint; the
+      // ranked feed replaces them once its first page arrives. If ranking
+      // fails, keep them and carry on newest-first.
       const prerendered = [...articleList.querySelectorAll("li.article")];
-      if (prerendered.length === 0) {
-        showFeed("");
-        return;
-      }
-      feed.cursor = cursorOf(prerendered.at(-1));
-      hydrateArticles(prerendered).then(() => {
-        if (!feed.done && sentinelNearViewport()) loadMore();
+      resetFeed("");
+      const generation = feed.generation;
+      loadMore({ replace: true }).then((ok) => {
+        if (ok !== false || generation !== feed.generation || prerendered.length === 0) return;
+        feed.chronological = true;
+        feed.cursor = cursorOf(prerendered.at(-1));
+        for (const li of prerendered) feed.seen.add(li.dataset.linkId);
+        hydrateArticles(prerendered).then(() => {
+          if (!feed.done && sentinelNearViewport()) loadMore();
+        });
       });
-      prependNewer(cursorOf(prerendered[0]));
     }
 
     function setupMenu() {
