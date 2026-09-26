@@ -163,10 +163,20 @@
     #settings-status { font-size: 0.8rem; color: gray; }
     ul.articles { list-style: none; padding: 0; margin: 0; }
     li.article {
+      --favicon-size: 26px;
+      --card-gap: 0.7rem;
       position: relative;
       overflow: hidden;
-      border-bottom: 1px solid rgba(128, 128, 128, 0.25);
       touch-action: pan-y;
+    }
+    li.article::after {
+      content: "";
+      position: absolute;
+      left: calc(var(--favicon-size) + var(--card-gap));
+      right: 0;
+      bottom: 0;
+      height: 1px;
+      background: rgba(128, 128, 128, 0.25);
     }
     li.article.upvoted { box-shadow: inset 3px 0 0 var(--positive); }
     .swipe-bg { position: absolute; inset: 0; }
@@ -191,12 +201,12 @@
       padding: 0.6rem 0;
       display: flex;
       align-items: flex-start;
-      gap: 0.7rem;
+      gap: var(--card-gap);
     }
     .swipe-content .favicon {
       position: relative;
-      flex: 0 0 26px;
-      height: 26px;
+      flex: 0 0 var(--favicon-size);
+      height: var(--favicon-size);
       margin-top: 0.15rem;
       border-radius: 50%;
       background: rgba(128, 128, 128, 0.18);
@@ -210,9 +220,9 @@
     .swipe-content .favicon::before { content: attr(data-letter); position: absolute; }
     .swipe-content .favicon img {
       position: relative;
-      width: 18px;
-      height: 18px;
-      border-radius: 3px;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
       background: var(--bg);
     }
     .swipe-content .card-body {
