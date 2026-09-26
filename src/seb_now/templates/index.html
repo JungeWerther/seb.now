@@ -237,6 +237,7 @@
       white-space: nowrap;
       color: gray;
     }
+    .tagline-word { display: inline-block; }
     .menu { position: relative; display: flex; }
     #menu-btn {
       background: none;
@@ -717,7 +718,7 @@
             <tspan fill="var(--fg)">seb</tspan><tspan fill="var(--positive)"><animate attributeName="opacity" values="1;0.35;1" dur="2.4s" repeatCount="indefinite"/>.</tspan><tspan fill="var(--fg)" font-weight="400" opacity="0.85">now</tspan>
           </text>
         </svg>
-        <span class="tagline">own your feed</span>
+        <span class="tagline"><span class="tagline-word">your</span> <span class="tagline-word">own</span> feed</span>
       </h1>
     </div>
   </header>
@@ -1987,6 +1988,47 @@
       replyInput.addEventListener("blur", () => setTimeout(reposition, 350));
     }
 
+    // The tagline loads as "your own feed" and, a moment later, swaps its
+    // first two words: "your" dips down a semicircle into second place while
+    // "own" glides left over it, leaving "own your feed".
+    const TAGLINE_SWAP_DELAY_MS = 700;
+    const TAGLINE_ARC_MS = 900;
+    const TAGLINE_GLIDE_DELAY_MS = 200;
+    const TAGLINE_GLIDE_MS = 550;
+    const TAGLINE_ARC_STEPS = 24;
+
+    async function swapTagline() {
+      const tagline = document.querySelector(".tagline");
+      const [your, own] = tagline.querySelectorAll(".tagline-word");
+      await document.fonts.ready;
+      await new Promise((resolve) => setTimeout(resolve, TAGLINE_SWAP_DELAY_MS));
+      const yourStart = your.getBoundingClientRect().left;
+      const ownStart = own.getBoundingClientRect().left;
+      const slot = document.createTextNode("");
+      own.replaceWith(slot);
+      your.replaceWith(own);
+      slot.replaceWith(your);
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+      // Play the swap backwards from the words' old places to their new ones.
+      const yourShift = yourStart - your.getBoundingClientRect().left;
+      const ownShift = ownStart - own.getBoundingClientRect().left;
+      const radius = Math.abs(yourShift) / 2;
+      const arc = [];
+      for (let i = 0; i <= TAGLINE_ARC_STEPS; i++) {
+        const angle = (Math.PI * i) / TAGLINE_ARC_STEPS;
+        const x = (yourShift * (1 + Math.cos(angle))) / 2;
+        const y = radius * Math.sin(angle);
+        arc.push({ transform: `translate(${x}px, ${y}px)` });
+      }
+      your.animate(arc, { duration: TAGLINE_ARC_MS, easing: "ease-in-out", fill: "backwards" });
+      own.animate(
+        [{ transform: `translateX(${ownShift}px)` }, { transform: "none" }],
+        { duration: TAGLINE_GLIDE_MS, delay: TAGLINE_GLIDE_DELAY_MS, easing: "ease-in-out", fill: "backwards" },
+      );
+    }
+
+    swapTagline();
     setupFeed(savedSearchQuery().trim());
     setupMenu();
     setupTaste();
