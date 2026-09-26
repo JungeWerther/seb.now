@@ -19,7 +19,8 @@ FEED_FIXTURE = [
 
 def _article_list(html: str) -> str:
     """The pre-rendered <ul class="articles">, without the #article-template copy."""
-    return html[html.index('<ul class="articles">') : html.index("</ul>")]
+    start = html.index('<ul class="articles">')
+    return html[start : html.index("</ul>", start)]
 
 
 def test_build_articles_classifies_source_type() -> None:
@@ -232,11 +233,14 @@ def test_swipe_area_wraps_only_the_post_box() -> None:
     assert html.index('<ol class="replies"') > html.index('class="reply-btn"')
 
 
-def test_render_includes_settings_icon() -> None:
+def test_render_includes_menu_with_taste_bubble() -> None:
     html = render([])
 
-    assert 'id="settings-btn"' in html
-    assert 'id="settings-panel"' in html
+    assert 'id="menu-btn"' in html
+    menu = html[html.index('<ul id="menu-bubbles">') : html.index("</ul>", html.index('<ul id="menu-bubbles">'))]
+    assert 'data-panel="taste-panel"' in menu
+    assert "My Taste" in menu
+    assert 'id="taste-panel"' in html
 
 
 def test_render_includes_svg_wordmark() -> None:
