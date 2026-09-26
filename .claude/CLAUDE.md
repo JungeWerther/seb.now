@@ -98,8 +98,12 @@ safe to ignore, or delete by hand from the Supabase dashboard.
 the target page itself (5s timeout) for `og:image`, falling back to the
 page's first `<img>`. `techcrunch-ingest` fetches each article page (5s
 timeout) for its `og:image`, since the RSS feed carries no images; a failed
-fetch leaves `image_url` out of the upsert so an earlier cover is kept. HN
-links leave `image_url` null — `hn-ingest` doesn't peek at target pages. Each article row has a
+fetch leaves `image_url` out of the upsert so an earlier cover is kept.
+`hn-ingest` does the same for each story's linked page (not Ask HN threads),
+but since those are arbitrary sites it only takes a declared preview —
+`og:image`, else `twitter:image` — never a first-`<img>` guess, so pages
+without one stay imageless. Because covers are hotlinked from third-party
+sites, the page script removes any `.cover-link` whose image fails to load. Each article row has a
 left favicon column (`FAVICON_URL_TEMPLATE`, DuckDuckGo's icon service,
 falling back to the host's first letter); the domain, title row and — when
 `image_url` is set — a clickable 16:9 cover image share the indented

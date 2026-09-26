@@ -578,6 +578,17 @@
     const supabaseReady = import("https://esm.sh/@supabase/supabase-js@2").then(({ createClient }) =>
       createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__),
     );
+
+    // Covers point at arbitrary third-party sites, so drop one that fails to
+    // load rather than leave an empty frame. Module scripts run after parsing,
+    // so covers that already failed are swept up here too.
+    const dropBrokenCover = (img) => img.closest(".cover-link")?.remove();
+    document.addEventListener("error", (e) => {
+      if (e.target instanceof HTMLImageElement && e.target.classList.contains("cover")) dropBrokenCover(e.target);
+    }, true);
+    for (const img of document.querySelectorAll("img.cover")) {
+      if (img.complete && img.naturalWidth === 0) dropBrokenCover(img);
+    }
     const SWIPE_COMMIT_THRESHOLD_PX = 110;
     const SWIPE_CAPTURE_SLOP_PX = 6;
     // Steepest upward heading a gesture may start with and still become a swipe.
