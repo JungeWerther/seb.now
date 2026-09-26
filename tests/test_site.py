@@ -250,6 +250,7 @@ def test_render_includes_svg_wordmark() -> None:
 
     assert '<h1 class="brand">' in html
     assert '<svg class="wordmark"' in html
+    assert '<span class="tagline">own your feed</span>' in html
     assert 'aria-label="seb.now"' in html
     assert ">seb<" in html
     assert ">now<" in html
