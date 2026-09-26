@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import pytest
+
+from seb_now import posts
 from seb_now.domain.models import Link
 from seb_now.posts import post_from_link, render_post
 
@@ -31,7 +34,7 @@ def test_post_from_link_renders_markdown_body() -> None:
     assert post.image == "https://example.com/cover.jpg"
     assert "<h1>Heading</h1>" in post.body_html
     assert "<em>body</em>" in post.body_html
-    assert '<a href="https://example.com">link</a>' in post.body_html
+    assert '<a href="https://example.com" rel="noopener noreferrer">link</a>' in post.body_html
 
 
 def test_post_from_link_defaults_description_to_empty_and_image_to_none() -> None:
@@ -77,3 +80,39 @@ def test_render_post_omits_cover_and_og_image_when_no_image() -> None:
 
     assert "og:image" not in html
     assert 'class="cover"' not in html
+
+
+def test_render_post_forbids_all_script_via_csp() -> None:
+    html = render_post(post_from_link(_link()))
+
+    assert '<meta http-equiv="Content-Security-Policy" content="default-src &#x27;none&#x27;; script-src &#x27;none&#x27;;' in html
+
+
+def test_render_post_strips_script_from_markdown_body() -> None:
+    post = post_from_link(_link(body_markdown='hi <script>alert(1)</script> <a href="javascript:alert(1)">x</a>'))
+
+    assert "<script" not in post.body_html
+    assert "javascript:" not in post.body_html
+
+
+def test_load_posts_skips_slugs_that_are_not_plain_path_segments(monkeypatch: pytest.MonkeyPatch) -> None:
+    rows = [
+        _link(slug="../../evil").model_dump(mode="json"),
+        _link(slug="fine-post").model_dump(mode="json"),
+    ]
+
+    class _Query:
+        def __getattr__(self, _name: str) -> object:
+            return lambda *_a, **_k: self
+
+        @property
+        def not_(self) -> "_Query":
+            return self
+
+        def execute(self) -> object:
+            return type("R", (), {"data": rows})()
+
+    client = type("C", (), {"table": lambda self, _name: _Query()})()
+    monkeypatch.setattr(posts, "get_unauthenticated_client", lambda: client)
+
+    assert [post.slug for post in posts.load_posts()] == ["fine-post"]

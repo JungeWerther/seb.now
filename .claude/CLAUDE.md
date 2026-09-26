@@ -176,6 +176,23 @@ stay page-sized. Search is server-side: a debounced `ilike` on
 without `www.`) with a `pg_trgm` GIN index, paged the same way as the feed.
 Supabase Realtime isn't involved — it pushes row changes, it doesn't query.
 
+**XSS defences (`src/seb_now/sanitize.py`).** Every string from the DB is
+untrusted, even `links` rows (only `service_role` writes them, but ingest
+copies URLs and titles from arbitrary sites). Layers, all of which must hold:
+text goes through `html.escape` server-side and `textContent` client-side;
+`href`/`src` URLs must be `http(s)` (`safe_http_url` at build time, which
+drops a link whose url isn't; `isHttpUrl` in the page script); blog-post
+markdown is sanitized with `nh3` after rendering; values injected into the
+inline script go through `script_json` (escapes `<`/`>`/`&`, so a value can't
+close the `<script>`); post slugs must match `POST_SLUG_PATTERN` since they
+become file paths. The backstop is a `<meta>` Content-Security-Policy:
+`index.html` allows only its own inline module script, by a SHA-256 hash that
+`site.py` computes over the final rendered script, plus the pinned
+`SUPABASE_JS_MODULE_URL` origin; post pages allow no script at all. So
+inline event handlers (`onerror=` etc.) can't be used in markup — image
+error handling is one capture-phase listener in the page script — and bumping
+supabase-js means changing `SUPABASE_JS_MODULE_URL`, not the template.
+
 **Replies.** `public.replies` (`link_id`, `author_id` → `profiles`,
 `body`, `created_at`): publicly readable; any signed-in user (anonymous
 sessions included, same as votes) can insert/delete only their own
