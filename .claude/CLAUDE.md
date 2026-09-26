@@ -157,6 +157,25 @@ and renders the top `ARTICLE_TOPIC_CHIPS` (by `p`) leaf-topic names as
 chips side by side, right-aligned on the domain line (vertically centred
 with it and the favicon); untagged links show none.
 
+**Feed pagination and search.** The build pre-renders only the newest
+`FEED_PAGE_SIZE` links (constants.py, injected into the page script along
+with `ARTICLE_TOPIC_CHIPS`/`FAVICON_URL_TEMPLATE`); the page script fetches
+the rest from `links` as you scroll (infinite scroll via an
+`IntersectionObserver` on `#feed-sentinel`, no page numbers), keyset-paged on
+`(created_at desc, id desc)` — `id` breaks ties because one ingest upsert
+stamps all its rows with the same `now()`. On load it also prepends links
+ingested since the build (or restarts the feed if there are a full page of
+them), so new links show up without a redeploy; blog post pages still need
+one. Client-fetched articles are built by cloning `<template
+id="article-template">`, which `site.py` renders with the same
+`_render_article` as the pre-rendered ones, so there's one copy of the markup
+(filled via `textContent`/attributes, never `innerHTML`). Per-article vote,
+visit and reply queries run per page, so their `.in("link_id", ...)` lists
+stay page-sized. Search is server-side: a debounced `ilike` on
+`links.search_text`, a stored generated column (lowercased title + host
+without `www.`) with a `pg_trgm` GIN index, paged the same way as the feed.
+Supabase Realtime isn't involved — it pushes row changes, it doesn't query.
+
 **Replies.** `public.replies` (`link_id`, `author_id` → `profiles`,
 `body`, `created_at`): publicly readable; any signed-in user (anonymous
 sessions included, same as votes) can insert/delete only their own

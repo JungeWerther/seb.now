@@ -543,7 +543,7 @@
   <!--ARTICLES-->
   <div id="search-dock">
     <div id="search-bar">
-      <input id="search-input" type="search" placeholder="Filter articles…" aria-label="Filter articles" autocomplete="off">
+      <input id="search-input" type="search" placeholder="Search articles…" aria-label="Search articles" autocomplete="off">
       <button type="button" id="search-clear" aria-label="Clear search">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M18 6 6 18"/>
@@ -1024,51 +1024,243 @@
       });
     }
 
-    async function setupVoting() {
-      const items = [...document.querySelectorAll("li.article")];
-      if (items.length === 0) return;
+    const pendingSession = ensureSession();
 
+    // Wires up articles just added to the list: swipe, replies, and the
+    // viewer's own votes (their downvoted links are dropped). Scores and
+    // visited state load in the background after this resolves.
+    async function hydrateArticles(items) {
+      if (items.length === 0) return;
       // Swiping works straight away; a vote cast before the session exists
       // waits for it.
-      const pendingSession = ensureSession();
       for (const li of items) setupSwipe(li, pendingSession);
+      loadReplies(items);
 
       const session = await pendingSession;
+      let visible = items;
       if (session) {
-        const linkIds = items.map((li) => li.dataset.linkId);
-        const own = await loadOwnVotes(linkIds, session.user.id);
+        const own = await loadOwnVotes(items.map((li) => li.dataset.linkId), session.user.id);
+        visible = [];
         for (const li of items) {
           const value = own[li.dataset.linkId];
           if (value === -1) {
             li.remove();
-          } else if (value === 1) {
-            li.classList.add("upvoted");
+            continue;
           }
+          if (value === 1) li.classList.add("upvoted");
+          visible.push(li);
         }
       }
+      if (visible.length > 0) decorateArticles(visible, session);
+    }
 
-      const visible = [...document.querySelectorAll("li.article")];
-      const visibleIds = visible.map((li) => li.dataset.linkId);
-      if (visibleIds.length > 0) {
-        const scores = await loadScores(visibleIds);
-        for (const li of visible) renderScore(li, scores[li.dataset.linkId] || 0);
+    async function decorateArticles(items, session) {
+      const linkIds = items.map((li) => li.dataset.linkId);
+      const scores = await loadScores(linkIds);
+      for (const li of items) renderScore(li, scores[li.dataset.linkId] || 0);
+      if (!session) return;
+      const visited = await loadVisited(linkIds, session.user.id);
+      for (const li of items) {
+        if (visited.has(li.dataset.linkId)) li.querySelector(".article-row a").classList.add("visited");
       }
+    }
 
-      if (session && visibleIds.length > 0) {
-        const visited = await loadVisited(visibleIds, session.user.id);
-        for (const li of visible) {
-          const link = li.querySelector(".article-row a");
-          const linkId = li.dataset.linkId;
-          if (visited.has(linkId)) link.classList.add("visited");
-          const onOpen = () => {
-            link.classList.add("visited");
-            markVisited(session, linkId);
-          };
-          link.addEventListener("click", onOpen);
-          li.querySelector(".cover-link")?.addEventListener("click", onOpen);
-        }
+    const FEED_PAGE_SIZE = __FEED_PAGE_SIZE__;
+    const ARTICLE_TOPIC_CHIPS = __ARTICLE_TOPIC_CHIPS__;
+    const FAVICON_URL_TEMPLATE = __FAVICON_URL_TEMPLATE__;
+    const FEED_SELECT = "id, title, url, image_url, created_at, link_topics(p, topics(name))";
+    // Fetch the next page once the end of the list is this close to view.
+    const FEED_PREFETCH_MARGIN_PX = 1200;
+
+    const articleList = document.querySelector("ul.articles");
+    const articleTemplate = document.getElementById("article-template");
+    const feedSentinel = document.getElementById("feed-sentinel");
+    const searchEmpty = document.getElementById("search-empty");
+
+    // The list shows one feed at a time: the default one, or the results
+    // for `query`. `generation` bumps whenever it's swapped, so a request
+    // still in flight for the previous feed is dropped when it lands.
+    const feed = { query: "", cursor: null, done: false, loading: false, generation: 0 };
+
+    // Same as source_type.py's _registrable_domain, which renders the
+    // pre-built articles.
+    function registrableHost(url) {
+      const host = new URL(url).hostname.toLowerCase();
+      return host.startsWith("www.") ? host.slice(4) : host;
+    }
+
+    // Same order as site.py's _top_topic_names.
+    function topTopicNames(linkTopics) {
+      return linkTopics
+        .filter((lt) => lt.topics)
+        .sort((a, b) => b.p - a.p || (a.topics.name < b.topics.name ? -1 : a.topics.name > b.topics.name ? 1 : 0))
+        .slice(0, ARTICLE_TOPIC_CHIPS)
+        .map((lt) => lt.topics.name);
+    }
+
+    // cloneNode, not importNode: the clone stays in the template's inert
+    // document until inserted, so its placeholder images never load.
+    function renderArticle(row) {
+      let host;
+      try {
+        if (!/^https?:$/.test(new URL(row.url).protocol)) return null;
+        host = registrableHost(row.url);
+      } catch {
+        return null;
       }
+      const li = articleTemplate.content.querySelector("li.article").cloneNode(true);
+      li.dataset.linkId = row.id;
+      li.dataset.createdAt = row.created_at;
+      const favicon = li.querySelector(".favicon");
+      favicon.dataset.letter = host.slice(0, 1).toUpperCase();
+      favicon.querySelector("img").src = FAVICON_URL_TEMPLATE.replace("{host}", host);
+      li.querySelector(".domain").textContent = host.includes(".") ? host.slice(0, host.lastIndexOf(".")) : host;
+      const topics = li.querySelector(".topics");
+      const names = topTopicNames(row.link_topics || []);
+      if (names.length > 0) {
+        const chip = topics.querySelector(".topic");
+        topics.replaceChildren(
+          ...names.map((name) => {
+            const el = chip.cloneNode();
+            el.textContent = name;
+            return el;
+          }),
+        );
+      } else {
+        topics.remove();
+      }
+      const link = li.querySelector(".article-row a");
+      link.href = row.url;
+      link.textContent = row.title;
+      const cover = li.querySelector(".cover-link");
+      if (row.image_url) {
+        cover.href = row.url;
+        cover.querySelector("img").src = row.image_url;
+      } else {
+        cover.remove();
+      }
+      return li;
+    }
 
+    function cursorOf(li) {
+      return { createdAt: li.dataset.createdAt, id: li.dataset.linkId };
+    }
+
+    // Keyset on (created_at, id): one ingest upsert stamps all its rows with
+    // the same created_at, so id breaks the tie.
+    function keyset(op, cursor) {
+      return `created_at.${op}."${cursor.createdAt}",and(created_at.eq."${cursor.createdAt}",id.${op}.${cursor.id})`;
+    }
+
+    function escapeLike(text) {
+      return text.replace(/[\\%_]/g, (c) => `\\${c}`);
+    }
+
+    async function fetchLinks({ query = "", before = null, after = null }) {
+      let request = (await supabaseReady).from("links").select(FEED_SELECT);
+      if (query) request = request.ilike("search_text", `%${escapeLike(query.toLowerCase())}%`);
+      if (before) request = request.or(keyset("lt", before));
+      if (after) request = request.or(keyset("gt", after));
+      const { data, error } = await request
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(FEED_PAGE_SIZE);
+      if (error) {
+        console.error("failed to load feed", error);
+        return null;
+      }
+      return data;
+    }
+
+    function renderRows(rows) {
+      return rows.map(renderArticle).filter(Boolean);
+    }
+
+    function updateSearchEmpty() {
+      const nothing = feed.done && !articleList.querySelector("li.article");
+      searchEmpty.classList.toggle("visible", feed.query.length > 0 && nothing);
+    }
+
+    function sentinelNearViewport() {
+      return feedSentinel.getBoundingClientRect().top < window.innerHeight + FEED_PREFETCH_MARGIN_PX;
+    }
+
+    async function loadMore() {
+      if (feed.loading || feed.done) return;
+      feed.loading = true;
+      const generation = feed.generation;
+      const rows = await fetchLinks({ query: feed.query, before: feed.cursor });
+      if (generation !== feed.generation) return;
+      feed.loading = false;
+      if (!rows) return;
+      if (rows.length < FEED_PAGE_SIZE) feed.done = true;
+      if (rows.length > 0) feed.cursor = { createdAt: rows.at(-1).created_at, id: rows.at(-1).id };
+      const items = renderRows(rows);
+      articleList.append(...items);
+      await hydrateArticles(items);
+      if (generation !== feed.generation) return;
+      updateSearchEmpty();
+      // Downvoted links are dropped, so a page can come up short of filling
+      // the screen; the observer won't fire again if the sentinel never left.
+      if (!feed.done && sentinelNearViewport()) loadMore();
+    }
+
+    function showFeed(query) {
+      feed.generation++;
+      feed.query = query;
+      feed.cursor = null;
+      feed.done = false;
+      feed.loading = false;
+      articleList.replaceChildren();
+      updateSearchEmpty();
+      loadMore();
+    }
+
+    // The pre-rendered page is from the last build; links ingested since
+    // then go on top. If there are a full page or more of them, the build is
+    // too stale to extend, so start the feed over instead.
+    async function prependNewer(top) {
+      const generation = feed.generation;
+      const rows = await fetchLinks({ after: top });
+      if (!rows || rows.length === 0 || generation !== feed.generation) return;
+      if (rows.length === FEED_PAGE_SIZE) {
+        showFeed("");
+        return;
+      }
+      const items = renderRows(rows);
+      articleList.prepend(...items);
+      await hydrateArticles(items);
+    }
+
+    function setupFeed(initialQuery) {
+      articleList.addEventListener("click", (e) => {
+        const opened = e.target.closest(".article-row a, .cover-link");
+        if (!opened) return;
+        const li = opened.closest("li.article");
+        li.querySelector(".article-row a").classList.add("visited");
+        pendingSession.then((session) => markVisited(session, li.dataset.linkId));
+      });
+      new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) loadMore();
+      }, { rootMargin: `0px 0px ${FEED_PREFETCH_MARGIN_PX}px 0px` }).observe(feedSentinel);
+
+      if (initialQuery) {
+        showFeed(initialQuery);
+        return;
+      }
+      const prerendered = [...articleList.querySelectorAll("li.article")];
+      if (prerendered.length === 0) {
+        showFeed("");
+        return;
+      }
+      feed.cursor = cursorOf(prerendered.at(-1));
+      // Links only ever get older relative to the build, so a short
+      // pre-rendered page means there's nothing further down.
+      feed.done = prerendered.length < FEED_PAGE_SIZE;
+      hydrateArticles(prerendered).then(() => {
+        if (!feed.done && sentinelNearViewport()) loadMore();
+      });
+      prependNewer(cursorOf(prerendered[0]));
     }
 
     async function setupSettings() {
@@ -1230,13 +1422,14 @@
         showToast("Reply posted");
       }
 
-      for (const li of document.querySelectorAll("li.article")) {
-        li.querySelector(".reply-btn")?.addEventListener("click", (e) => {
-          e.stopPropagation();
-          if (target === li) close();
-          else open(li);
-        });
-      }
+      articleList.addEventListener("click", (e) => {
+        const btn = e.target.closest(".reply-btn");
+        if (!btn) return;
+        e.stopPropagation();
+        const li = btn.closest("li.article");
+        if (target === li) close();
+        else open(li);
+      });
       input.addEventListener("input", refresh);
       input.addEventListener("keydown", (e) => {
         if (e.key === "Escape") close();
@@ -1247,32 +1440,29 @@
       });
       sendBtn.addEventListener("click", send);
       cancelBtn.addEventListener("click", close);
-
-      loadReplies([...document.querySelectorAll("li.article")]);
     }
 
     const SEARCH_QUERY_STORAGE_KEY = "seb-now-search-query";
+    // Wait for typing to pause before querying the server.
+    const SEARCH_DEBOUNCE_MS = 250;
+
+    function savedSearchQuery() {
+      try {
+        return localStorage.getItem(SEARCH_QUERY_STORAGE_KEY) || "";
+      } catch {
+        return "";
+      }
+    }
 
     function setupSearch() {
       const input = document.getElementById("search-input");
-      const empty = document.getElementById("search-empty");
       const clearBtn = document.getElementById("search-clear");
+      let timer = null;
 
-      function applyFilter() {
-        const query = input.value.trim().toLowerCase();
-        const items = [...document.querySelectorAll("li.article")];
-        let visibleCount = 0;
-
-        for (const li of items) {
-          const title = li.querySelector(".article-row a")?.textContent ?? "";
-          const domain = li.querySelector(".domain")?.textContent ?? "";
-          const matches = !query || `${title} ${domain}`.toLowerCase().includes(query);
-          li.style.display = matches ? "" : "none";
-          if (matches) visibleCount++;
-        }
-
-        empty.classList.toggle("visible", query.length > 0 && visibleCount === 0);
-        clearBtn.classList.toggle("visible", input.value.length > 0);
+      function search() {
+        clearTimeout(timer);
+        const query = input.value.trim();
+        if (query !== feed.query) showFeed(query);
       }
 
       input.addEventListener("input", () => {
@@ -1280,9 +1470,14 @@
           if (input.value) localStorage.setItem(SEARCH_QUERY_STORAGE_KEY, input.value);
           else localStorage.removeItem(SEARCH_QUERY_STORAGE_KEY);
         } catch {
-          // private browsing / storage disabled - filtering still works, just isn't remembered
+          // private browsing / storage disabled - search still works, just isn't remembered
         }
-        applyFilter();
+        clearBtn.classList.toggle("visible", input.value.length > 0);
+        clearTimeout(timer);
+        timer = setTimeout(search, SEARCH_DEBOUNCE_MS);
+      });
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") search();
       });
 
       clearBtn.addEventListener("click", () => {
@@ -1292,17 +1487,13 @@
         } catch {
           // ignore
         }
-        applyFilter();
+        clearBtn.classList.remove("visible");
+        search();
         input.focus();
       });
 
-      try {
-        const savedQuery = localStorage.getItem(SEARCH_QUERY_STORAGE_KEY);
-        if (savedQuery) input.value = savedQuery;
-      } catch {
-        // ignore - nothing to restore
-      }
-      applyFilter();
+      input.value = savedSearchQuery();
+      clearBtn.classList.toggle("visible", input.value.length > 0);
     }
 
     // iOS/Android nudge the whole layout viewport up to keep a focused
@@ -1358,7 +1549,7 @@
       replyInput.addEventListener("blur", () => setTimeout(reposition, 350));
     }
 
-    setupVoting();
+    setupFeed(savedSearchQuery().trim());
     setupSettings();
     setupSearch();
     setupReplies();
