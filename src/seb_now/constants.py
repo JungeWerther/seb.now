@@ -55,6 +55,10 @@ YOUTUBE_DOMAINS: frozenset[str] = frozenset({"youtube.com", "youtu.be"})
 
 # site.py — topic chips shown per article, highest-p first
 ARTICLE_TOPIC_CHIPS = 2
+# site.py — per-source favicon in each article's left column; {host} is the
+# link's host without "www.". DuckDuckGo's service, not Google's, so a
+# visitor's browser doesn't report every source it renders to Google.
+FAVICON_URL_TEMPLATE = "https://icons.duckduckgo.com/ip3/{host}.ico"
 
 # examples/real_embedding_check.py
 REAL_EMBEDDING_LAW_CHECK_TOLERANCE = 1e-4

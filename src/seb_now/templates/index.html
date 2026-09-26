@@ -190,6 +190,35 @@
       background: var(--bg);
       padding: 0.6rem 0;
       display: flex;
+      align-items: flex-start;
+      gap: 0.7rem;
+    }
+    .swipe-content .favicon {
+      position: relative;
+      flex: 0 0 26px;
+      height: 26px;
+      margin-top: 0.15rem;
+      border-radius: 50%;
+      background: rgba(128, 128, 128, 0.18);
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: gray;
+    }
+    .swipe-content .favicon::before { content: attr(data-letter); position: absolute; }
+    .swipe-content .favicon img {
+      position: relative;
+      width: 18px;
+      height: 18px;
+      border-radius: 3px;
+      background: var(--bg);
+    }
+    .swipe-content .card-body {
+      flex: 1;
+      min-width: 0;
+      display: flex;
       flex-direction: column;
       gap: 0.15rem;
     }
@@ -198,13 +227,15 @@
       from { background-color: var(--positive-soft); }
       to { background-color: var(--bg); }
     }
+    .swipe-content .cover-link { display: block; margin: 0.45rem 0 0.15rem; }
     .swipe-content .cover {
       width: 100%;
-      max-height: 220px;
+      aspect-ratio: 16 / 9;
+      max-height: 180px;
       object-fit: cover;
       border-radius: 14px;
-      margin-bottom: 0.5rem;
       display: block;
+      -webkit-user-drag: none;
     }
     .swipe-content .domain {
       font-size: 0.7rem;
@@ -212,7 +243,7 @@
       text-align: left;
     }
     .article-row { display: flex; align-items: center; gap: 0.6rem; }
-    .article-row a { flex: 1; text-decoration: none; color: inherit; }
+    .article-row a { flex: 1; min-width: 0; overflow-wrap: anywhere; text-decoration: none; color: inherit; }
     .article-row a:hover { text-decoration: underline; }
     .article-row a.visited { color: gray; }
     .article-row .score {
@@ -566,10 +597,12 @@
           const link = li.querySelector(".article-row a");
           const linkId = li.dataset.linkId;
           if (visited.has(linkId)) link.classList.add("visited");
-          link.addEventListener("click", () => {
+          const onOpen = () => {
             link.classList.add("visited");
             markVisited(session, linkId);
-          });
+          };
+          link.addEventListener("click", onOpen);
+          li.querySelector(".cover-link")?.addEventListener("click", onOpen);
         }
       }
 

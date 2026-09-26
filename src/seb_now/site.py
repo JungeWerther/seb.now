@@ -17,11 +17,11 @@ from html import escape
 from pathlib import Path
 from typing import NotRequired, Sequence, TypedDict
 
-from seb_now.constants import ARTICLE_TOPIC_CHIPS, SourceType
+from seb_now.constants import ARTICLE_TOPIC_CHIPS, FAVICON_URL_TEMPLATE, SourceType
 from seb_now.auth import get_unauthenticated_client
 from seb_now.domain.models import Link, LinkTopic, Topic
 from seb_now.posts import load_posts, write_posts
-from seb_now.source_type import classify_source, display_domain
+from seb_now.source_type import classify_source, display_domain, favicon_host
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 TEMPLATE_PATH = TEMPLATES_DIR / "index.html"
@@ -96,8 +96,16 @@ def build_articles(feed: Sequence[FeedItem]) -> list[Article]:
 
 def _render_article(article: Article) -> str:
     link_id = escape(article.id)
+    url = escape(article.url)
+    host = favicon_host(article.url)
+    favicon = (
+        f'<span class="favicon" data-letter="{escape(host[:1].upper())}" aria-hidden="true">'
+        f'<img src="{escape(FAVICON_URL_TEMPLATE.format(host=host))}" alt="" loading="lazy" '
+        f'onerror="this.remove()"></span>'
+    )
     cover = (
-        f'<img class="cover" src="{escape(article.image_url)}" alt="" loading="lazy">'
+        f'<a class="cover-link" href="{url}" target="_blank" rel="noopener noreferrer" tabindex="-1">'
+        f'<img class="cover" src="{escape(article.image_url)}" alt="" loading="lazy"></a>'
         if article.image_url
         else ""
     )
@@ -129,12 +137,15 @@ def _render_article(article: Article) -> str:
         f"</span>"
         f"</div>"
         f'<div class="swipe-content">'
-        f"{cover}"
+        f"{favicon}"
+        f'<div class="card-body">'
         f'<span class="domain">{escape(article.domain)}</span>'
         f'<div class="article-row">'
-        f'<a href="{escape(article.url)}" target="_blank" rel="noopener noreferrer">{escape(article.title)}</a>'
+        f'<a href="{url}" target="_blank" rel="noopener noreferrer">{escape(article.title)}</a>'
         f'<span class="score">0</span>'
         f"{topics}"
+        f"</div>"
+        f"{cover}"
         f"</div>"
         f"</div>"
         f"</li>"

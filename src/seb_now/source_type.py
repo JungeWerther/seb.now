@@ -20,6 +20,11 @@ def _registrable_domain(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+def favicon_host(url: str) -> str:
+    """Host to fetch a favicon for: lowercased, no www., no port or userinfo."""
+    return _registrable_domain(url)
+
+
 def display_domain(url: str) -> str:
     """Domain for on-page display: no scheme, no www., no TLD suffix."""
     domain = _registrable_domain(url)

@@ -97,8 +97,11 @@ safe to ignore, or delete by hand from the Supabase dashboard.
 `status.card.image` when a card exists, else `fediverse-ingest` peeks at
 the target page itself (5s timeout) for `og:image`, falling back to the
 page's first `<img>`. HN/TechCrunch links leave `image_url` null - their
-ingest functions don't peek at target pages. `site.py` renders a 36px
-thumbnail next to the title when `image_url` is set.
+ingest functions don't peek at target pages. Each article row has a
+left favicon column (`FAVICON_URL_TEMPLATE`, DuckDuckGo's icon service,
+falling back to the host's first letter); the domain, title row and — when
+`image_url` is set — a clickable 16:9 cover image share the indented
+column to its right, cover below the title.
 
 Both upsert into `links` as `origin: 'feed'`, `onConflict: 'url'` (falling
 back to the HN item's own discussion-page URL when a story has no

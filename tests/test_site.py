@@ -1,4 +1,4 @@
-from seb_now.constants import ARTICLE_TOPIC_CHIPS, SourceType
+from seb_now.constants import ARTICLE_TOPIC_CHIPS, FAVICON_URL_TEMPLATE, SourceType
 from seb_now.site import Article, _top_topic_names, build_articles, render
 
 FEED_FIXTURE = [
@@ -72,12 +72,12 @@ def test_render_includes_swipeable_article_with_link_id_and_domain() -> None:
     assert '<span class="domain">reuters</span>' in html
 
 
-def test_render_shows_cover_image_above_domain_and_title_when_present() -> None:
+def test_render_shows_clickable_cover_image_below_title_when_present() -> None:
     with_cover = Article(
         id="a1",
         title="Has cover",
         url="https://example.com/a",
-        domain="example.com",
+        domain="example",
         source_type=SourceType.DIRECT_LINK,
         image_url="https://example.com/cover.jpg",
     )
@@ -85,19 +85,36 @@ def test_render_shows_cover_image_above_domain_and_title_when_present() -> None:
         id="a2",
         title="No cover",
         url="https://example.com/b",
-        domain="example.com",
+        domain="example",
         source_type=SourceType.DIRECT_LINK,
     )
 
     html = render([with_cover, without_cover])
 
-    assert '<img class="cover" src="https://example.com/cover.jpg" alt="" loading="lazy">' in html
+    assert (
+        '<a class="cover-link" href="https://example.com/a" target="_blank" rel="noopener noreferrer" '
+        'tabindex="-1"><img class="cover" src="https://example.com/cover.jpg" alt="" loading="lazy"></a>'
+    ) in html
     assert html.count('class="cover"') == 1
-    # the cover image comes before the domain/title in the same article
-    cover_index = html.index('<img class="cover"')
-    domain_index = html.index('<span class="domain">example.com</span>', cover_index)
-    assert cover_index < domain_index
+    title_index = html.index(">Has cover</a>")
+    cover_index = html.index('<a class="cover-link"')
+    assert title_index < cover_index
 
+
+def test_render_shows_favicon_column_with_letter_fallback() -> None:
+    article = Article(
+        id="a1",
+        title="Wire story",
+        url="https://www.reuters.com/a",
+        domain="reuters",
+        source_type=SourceType.MAINSTREAM_MEDIA,
+    )
+
+    html = render([article])
+
+    favicon_url = FAVICON_URL_TEMPLATE.format(host="reuters.com")
+    assert f'<span class="favicon" data-letter="R" aria-hidden="true"><img src="{favicon_url}"' in html
+    assert html.index('class="favicon"') < html.index('class="card-body"')
 
 def test_build_articles_keeps_feed_topics() -> None:
     feed = [{**FEED_FIXTURE[0], "topics": ["AI models", "Open source"]}, FEED_FIXTURE[1]]
