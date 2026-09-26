@@ -26,6 +26,8 @@
          vertically, so pulling it left by the same 1/6 of the glyph size
          leaves equal space to its left and above it. */
       --brand-font: "Bricolage Grotesque", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --post-pad-x: calc(0.75rem + 1px);
+      --post-pad-y: calc(0.6rem + 1px);
       --gutter: 24px;
       --favicon-size: 26px;
       --header-icon-glyph: 16px;
@@ -248,11 +250,11 @@
       --i: 0;
       display: flex;
       align-items: center;
-      gap: 0.55rem;
+      gap: 0.7rem;
       font: inherit;
       font-family: var(--brand-font);
       font-size: 0.9rem;
-      padding: 0.35rem 1rem 0.35rem 0.35rem;
+      padding: var(--post-pad-y) calc(var(--post-pad-x) + 0.25rem) var(--post-pad-y) var(--post-pad-x);
       white-space: nowrap;
       border: 1px solid rgba(128, 128, 128, 0.2);
       border-radius: 999px;
@@ -359,7 +361,7 @@
     .taste-score { color: gray; }
     .taste-lead { font-weight: 700; font-size: 0.9rem; margin: 0 0 1rem; }
     .taste-formula {
-      margin: 1.25rem 0 0;
+      margin: 0 0 1.25rem;
       padding: 0.6rem 0.75rem;
       border-radius: 8px;
       background: var(--post-bg);
@@ -379,7 +381,6 @@
     li.article.dragging .post { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18); will-change: transform; }
     li.article.upvoted { box-shadow: inset 3px 0 0 var(--positive); }
     .post-swipe {
-      --post-pad-x: calc(0.75rem + 1px);
       position: relative;
       overflow: hidden;
       margin: calc(0.3rem + 6px) 0 0 calc(-1 * var(--post-pad-x));
@@ -490,7 +491,7 @@
     }
     .swipe-content .post {
       position: relative;
-      padding: calc(0.6rem + 1px) var(--post-pad-x);
+      padding: var(--post-pad-y) var(--post-pad-x);
       border-radius: 14px;
       background: var(--post-bg);
     }
@@ -665,10 +666,10 @@
       <p class="overlay-title" id="taste-title">My Algorithm</p>
       <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     </div>
+    <pre class="taste-formula"><code>score = (1+likes) / (2+likes+dislikes)</code></pre>
     <p class="taste-lead">Green topics are more likely to appear in your feed</p>
     <p id="taste-status"></p>
     <ol id="taste-list"></ol>
-    <pre class="taste-formula"><code>score = (1+likes) / (2+likes+dislikes)</code></pre>
   </dialog>
   <dialog id="profile-overlay" class="overlay" aria-labelledby="profile-title">
     <div class="overlay-head">
