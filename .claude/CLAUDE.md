@@ -65,8 +65,11 @@ they call their own project's own functions):
   with a canonical `watch?v=` url, `image_url` set to the video's
   `hqdefault.jpg` (letterboxed 4:3, which the 16:9 cover crop trims exactly),
   and `created_at` set to the upload date rather than ingest time, so a
-  channel's backlog doesn't all rank as fresh. Deployed with `verify_jwt` on;
-  its cron sends the same anon-key bearer as the others.
+  channel's backlog doesn't all rank as fresh. Each run then fills
+  `links.author` with the uploading channel's `@handle` (from YouTube's oEmbed,
+  which answers data-centre requests) for up to `AUTHOR_SWEEP_LIMIT` YouTube
+  links still without one, whichever ingest added them. Deployed with
+  `verify_jwt` on; its cron sends the same anon-key bearer as the others.
 
 **Blog posts** are how "your own submission" (the `origin: 'local'`
 value that's existed in the schema since the start) actually gets
@@ -120,7 +123,10 @@ sites, the page script removes any `.cover-link` whose image fails to load. Each
 left favicon column (`FAVICON_URL_TEMPLATE`, DuckDuckGo's icon service,
 falling back to the host's first letter); the domain, title row and — when
 `image_url` is set — a clickable 16:9 cover image share the indented
-column to its right, cover below the title.
+column to its right, cover below the title. The domain line also carries
+`links.author` when set (`domain_with_author` in `site.py`, `domainWithAuthor`
+in the page script): a handle joins the domain (`youtube@Channel5YouTube`), a
+display name follows it (`youtube · Name`).
 
 Both upsert into `links` as `origin: 'feed'`, `onConflict: 'url'` (falling
 back to the HN item's own discussion-page URL when a story has no

@@ -12,6 +12,30 @@ const WATCH_URL = "https://www.youtube.com/watch?v=";
 // 4:3 with letterbox bars on 16:9 videos; the page's 16:9 cover crop removes
 // them exactly. Unlike maxresdefault, it exists for every video.
 const THUMBNAIL_URL = (id: string) => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+// oEmbed answers data-centre requests (unlike the watch page's og tags) and
+// names the uploading channel, which becomes links.author.
+const OEMBED_URL = "https://www.youtube.com/oembed?format=json&url=";
+const OEMBED_TIMEOUT_MS = 5000;
+// YouTube links from any ingest (e.g. Hacker News) still without an author,
+// looked up per run.
+const AUTHOR_SWEEP_LIMIT = 50;
+const VIDEO_ID = /^https?:\/\/(?:[a-z0-9-]+\.)?(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
+
+// The channel's "@handle" from its URL, else its display name.
+async function channelOf(videoUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(OEMBED_URL + encodeURIComponent(videoUrl), {
+      signal: AbortSignal.timeout(OEMBED_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const { author_url, author_name } = await res.json();
+    const handle = typeof author_url === "string" ? author_url.match(/\/(@[^/?#]+)/)?.[1] : undefined;
+    const author = handle ? decodeURIComponent(handle) : typeof author_name === "string" ? author_name.trim() : "";
+    return author ? author.slice(0, 100) : null;
+  } catch {
+    return null;
+  }
+}
 
 function decodeEntities(s: string): string {
   return s
@@ -75,7 +99,24 @@ Deno.serve(async (_req: Request) => {
     }
   }
 
-  return new Response(JSON.stringify({ fetched, skippedShorts, upserted, errors }, null, 2), {
+  const { data: authorless, error: sweepError } = await supabase
+    .from("links")
+    .select("id, url")
+    .is("author", null)
+    .ilike("url", "%youtu%")
+    .order("created_at", { ascending: false })
+    .limit(AUTHOR_SWEEP_LIMIT);
+  if (sweepError) errors.push({ sweep: sweepError.message });
+  let authored = 0;
+  for (const { id, url } of (authorless ?? []).filter((row) => VIDEO_ID.test(row.url))) {
+    const author = await channelOf(url);
+    if (!author) continue;
+    const { error } = await supabase.from("links").update({ author }).eq("id", id);
+    if (error) errors.push({ id, error: error.message });
+    else authored++;
+  }
+
+  return new Response(JSON.stringify({ fetched, skippedShorts, upserted, authored, errors }, null, 2), {
     headers: { "Content-Type": "application/json" },
   });
 });
