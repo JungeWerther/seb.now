@@ -233,14 +233,16 @@ def test_swipe_area_wraps_only_the_post_box() -> None:
     assert html.index('<ol class="replies"') > html.index('class="reply-btn"')
 
 
-def test_render_includes_menu_with_taste_bubble() -> None:
+def test_render_includes_menu_bubbles_and_their_overlays() -> None:
     html = render([])
 
     assert 'id="menu-btn"' in html
-    menu = html[html.index('<ul id="menu-bubbles">') : html.index("</ul>", html.index('<ul id="menu-bubbles">'))]
-    assert 'data-panel="taste-panel"' in menu
-    assert "My Taste" in menu
-    assert 'id="taste-panel"' in html
+    start = html.index('<ul id="menu-bubbles">')
+    menu = html[start : html.index("</ul>", start)]
+    for overlay, label in (("taste-overlay", "My Taste"), ("profile-overlay", "My Profile")):
+        assert f'data-overlay="{overlay}"' in menu
+        assert label in menu
+        assert f'<dialog id="{overlay}" class="overlay"' in html
 
 
 def test_render_includes_svg_wordmark() -> None:
