@@ -148,7 +148,8 @@ built yet: the client Thompson-sampling `θ ~ Beta(alpha, beta)` per
 topic and ranking links by `Σ θ·p`.
 `site.py` embeds each link's `link_topics` in the build-time feed query
 and renders the top `ARTICLE_TOPIC_CHIPS` (by `p`) leaf-topic names as
-stacked chips on the right of each article row; untagged links show none.
+chips side by side, right-aligned on the domain line (vertically centred
+with it and the favicon); untagged links show none.
 
 **Open privacy question (deferred until there are real users):**
 `votes` is publicly readable (the page shows net scores), so any user's
