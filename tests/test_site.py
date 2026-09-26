@@ -431,3 +431,11 @@ def test_page_script_only_links_http_urls() -> None:
     script = _page_script(html)
     assert "if (!isHttpUrl(row.url)) return null;" in script
     assert "isHttpUrl(row.image_url)" in script
+
+
+def test_page_script_ranks_the_default_feed_and_shows_the_formula() -> None:
+    html = render([])
+
+    assert 'rpc("ranked_feed"' in html
+    assert "posts.orderBy(post =&gt;" in html
+    assert "0.5 ** (post.ageHours / 24)" in html

@@ -157,24 +157,39 @@ and renders the top `ARTICLE_TOPIC_CHIPS` (by `p`) leaf-topic names as
 chips side by side, right-aligned on the domain line (vertically centred
 with it and the favicon); untagged links show none.
 
-**Feed pagination and search.** The build pre-renders only the newest
+**Feed pagination, ranking and search.** The build pre-renders only the newest
 `FEED_PAGE_SIZE` links (constants.py, injected into the page script along
-with `ARTICLE_TOPIC_CHIPS`/`FAVICON_URL_TEMPLATE`); the page script fetches
-the rest from `links` as you scroll (infinite scroll via an
-`IntersectionObserver` on `#feed-sentinel`, no page numbers), keyset-paged on
-`(created_at desc, id desc)` — `id` breaks ties because one ingest upsert
-stamps all its rows with the same `now()`. On load it also prepends links
-ingested since the build (or restarts the feed if there are a full page of
-them), so new links show up without a redeploy; blog post pages still need
-one. Client-fetched articles are built by cloning `<template
-id="article-template">`, which `site.py` renders with the same
-`_render_article` as the pre-rendered ones, so there's one copy of the markup
-(filled via `textContent`/attributes, never `innerHTML`). Per-article vote,
-visit and reply queries run per page, so their `.in("link_id", ...)` lists
-stay page-sized. Search is server-side: a debounced `ilike` on
+with `ARTICLE_TOPIC_CHIPS`/`FAVICON_URL_TEMPLATE`) for a fast first paint; the
+page script then replaces them with the **ranked feed** once its first page
+arrives, and fetches further pages as you scroll (infinite scroll via an
+`IntersectionObserver` on `#feed-sentinel`, no page numbers). Ranking is the
+`public.ranked_feed(as_of, page_offset, page_size)` SQL function (security
+invoker, so `auth.uid()` is the viewer):
+`rank = taste * (1 + ups) / (2 + ups + downs) * 0.5 ^ (age_hours / 24)` —
+`taste` is the viewer's p-weighted mean `user_topic_preferences` score over the
+link's topics (a never-voted topic falls back to its parent, then 0.5;
+untagged links are 0.5), `ups`/`downs` are everyone's votes on the link, and
+freshness halves every 24h. It returns `(link_id, rank)` pages; the client
+then loads those links by id with `FEED_SELECT` and sorts them into rank order.
+Pages are offset-based against an `as_of` fixed when the feed starts, so ages
+don't shift between pages; votes can still move a link between pages, so the
+client skips ids it has already shown. If `ranked_feed` fails, the pre-rendered
+links stay and the feed carries on newest-first. It ranks every link on each
+call — fine at hundreds of links, needs a precomputed score or a recency cut-off
+before tens of thousands. The My Algorithm overlay shows this formula as a
+`posts.orderBy(...)` snippet; keep the two in sync.
+
+Search is server-side and newest-first: a debounced `ilike` on
 `links.search_text`, a stored generated column (lowercased title + host
-without `www.`) with a `pg_trgm` GIN index, paged the same way as the feed.
-Supabase Realtime isn't involved — it pushes row changes, it doesn't query.
+without `www.`) with a `pg_trgm` GIN index, keyset-paged on
+`(created_at desc, id desc)` — `id` breaks ties because one ingest upsert
+stamps all its rows with the same `now()`. Client-fetched articles are built by
+cloning `<template id="article-template">`, which `site.py` renders with the
+same `_render_article` as the pre-rendered ones, so there's one copy of the
+markup (filled via `textContent`/attributes, never `innerHTML`). Per-article
+vote, visit and reply queries run per page, so their `.in("link_id", ...)`
+lists stay page-sized. Supabase Realtime isn't involved — it pushes row
+changes, it doesn't query.
 
 **XSS defences (`src/seb_now/sanitize.py`).** Every string from the DB is
 untrusted, even `links` rows (only `service_role` writes them, but ingest
@@ -202,8 +217,8 @@ lists the signed-in user's leaf topics from `user_topic_preferences`, ranked
 by the Beta mean `alpha / (alpha + beta)`, with the view's `upvotes`/`downvotes`
 counts, the score itself (the formula's output, two decimals) and a
 green/red bar split by the counts;
-above the list a single code block shows the scoring formula to users, so
-keep it in sync if the view's maths changes.
+above the list a code block shows the feed's ranking formula (see "Feed
+pagination, ranking and search"), so keep it in sync with `ranked_feed`.
 **My Profile** (`#profile-overlay`) edits `profiles.handle`, the name shown on
 replies.
 
