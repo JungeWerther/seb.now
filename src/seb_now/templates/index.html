@@ -22,9 +22,9 @@
       /* The header's icon glyph sits one gutter from the header's top,
          bottom and left edges and shares its centre with the feed's favicon
          column, so the page is inset by the gutter less half the size
-         difference. Its SVG draws an
-         18-unit square inside a 24-unit viewBox, hence the 4/3 box and 1/6
-         inset. */
+         difference. The icon's SVG box is 4/3 of the glyph size and centred
+         vertically, so pulling it left by the same 1/6 of the glyph size
+         leaves equal space to its left and above it. */
       --gutter: 24px;
       --favicon-size: 26px;
       --header-icon-glyph: 16px;
@@ -218,8 +218,7 @@
       cursor: pointer;
       display: flex;
       padding: 0;
-      /* 1px optical correction: at equal measured margins the left one still reads wider. */
-      margin-left: calc(-1 * var(--header-icon-inset) - 1px);
+      margin-left: calc(-1 * var(--header-icon-inset));
       color: inherit;
       opacity: 0.7;
     }
