@@ -170,15 +170,6 @@
       overflow: hidden;
       touch-action: pan-y;
     }
-    li.article::after {
-      content: "";
-      position: absolute;
-      left: calc(var(--favicon-size) + var(--card-gap));
-      right: 0;
-      bottom: 0;
-      height: 1px;
-      background: rgba(128, 128, 128, 0.25);
-    }
     li.article.upvoted { box-shadow: inset 3px 0 0 var(--positive); }
     .swipe-bg { position: absolute; inset: 0; }
     .swipe-bg .tint {
@@ -199,7 +190,7 @@
     .swipe-content {
       position: relative;
       background: var(--bg);
-      padding: 0.6rem 0;
+      padding: 0.6rem 0 1.4rem;
       display: flex;
       align-items: flex-start;
       gap: var(--card-gap);
@@ -226,6 +217,7 @@
       background: var(--bg);
     }
     .swipe-content .card-body {
+      position: relative;
       flex: 1;
       min-width: 0;
       display: flex;
@@ -237,14 +229,28 @@
       from { background-color: var(--positive-soft); }
       to { background-color: var(--bg); }
     }
-    .swipe-content .post { padding: 0.2rem 0 0 0.4rem; }
-    .swipe-content .cover-link { display: block; margin: 0.45rem 0 0.15rem; }
+    .swipe-content .card-body::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: rgba(128, 128, 128, 0.25);
+    }
+    .swipe-content .post {
+      margin-top: 0.3rem;
+      padding: 0.6rem 0.75rem;
+      border-radius: 14px;
+      background: rgba(128, 128, 128, 0.07);
+    }
+    .swipe-content .cover-link { display: block; margin: 0.6rem 0 0; }
     .swipe-content .cover {
       width: 100%;
       aspect-ratio: 16 / 9;
       max-height: 180px;
       object-fit: cover;
-      border-radius: 14px;
+      border-radius: 9px;
       display: block;
       -webkit-user-drag: none;
     }
