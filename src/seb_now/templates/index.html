@@ -1594,9 +1594,121 @@
 
     // Set once My Algorithm changes an override, so closing it re-ranks the feed.
     let tasteChanged = false;
-    // Keyboard nudges save once the keys have been still this long.
-    const TASTE_KEY_SAVE_DELAY_MS = 400;
+    // Slider changes show at once and are written behind: queued per topic
+    // (a score, or null to drop the override) and sent together once the
+    // sliders have been still this long, or straight away when the overlay
+    // closes or the page is hidden.
+    const TASTE_SAVE_DELAY_MS = 800;
+    const pendingOverrides = new Map();
+    let overrideFlushTimer = null;
+    let overrideWrites = Promise.resolve();
     const clearIcon = document.getElementById("taste-clear-icon");
+
+    function tasteSaveFailed() {
+      document.getElementById("taste-status").textContent = "Couldn't save your changes.";
+    }
+
+    function queueOverride(topicId, score) {
+      pendingOverrides.set(topicId, score);
+      tasteChanged = true;
+      clearTimeout(overrideFlushTimer);
+      overrideFlushTimer = setTimeout(flushOverrides, TASTE_SAVE_DELAY_MS);
+    }
+
+    // Writes run one batch at a time, in order, so a later change always lands last.
+    function queueOverrideWrite(write) {
+      overrideWrites = overrideWrites.then(async () => {
+        const session = await pendingSession;
+        if (!session) return;
+        try {
+          await write(await supabaseReady, session.user.id);
+        } catch {
+          tasteSaveFailed();
+        }
+      });
+      return overrideWrites;
+    }
+
+    function flushOverrides() {
+      clearTimeout(overrideFlushTimer);
+      if (pendingOverrides.size === 0) return overrideWrites;
+      const batch = [...pendingOverrides];
+      pendingOverrides.clear();
+      return queueOverrideWrite(async (client, userId) => {
+        const now = new Date().toISOString();
+        const upserts = batch
+          .filter(([, score]) => score !== null)
+          .map(([topic_id, score]) => ({ user_id: userId, topic_id, score, updated_at: now }));
+        const cleared = batch.filter(([, score]) => score === null).map(([topicId]) => topicId);
+        const results = await Promise.all([
+          upserts.length ? client.from("topic_overrides").upsert(upserts, { onConflict: "user_id,topic_id" }) : {},
+          cleared.length
+            ? client.from("topic_overrides").delete().eq("user_id", userId).in("topic_id", cleared)
+            : {},
+        ]);
+        if (results.some((result) => result.error)) tasteSaveFailed();
+      });
+    }
+
+    // Rows of the open My Algorithm list, so "Reset all" can update them in place.
+    let tasteRows = [];
+
+    // A drag on a slider has to start sideways to take it (like swiping a
+    // card): a mostly-vertical touch is the list scrolling and never moves
+    // the thumb. Once taken, the slider follows the pointer wherever it goes
+    // until it's released. A mouse takes it straight away; a tap without
+    // movement sets the value where it lands.
+    function setupSliderDrag(slider, valueAt, show, getValue, commit) {
+      let gesture = null;
+      const end = () => {
+        slider.classList.remove("dragging");
+        gesture = null;
+      };
+      slider.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) return;
+        gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, start: getValue(), claimed: false };
+        if (event.pointerType === "mouse") claim(event);
+      });
+      const claim = (event) => {
+        gesture.claimed = true;
+        slider.setPointerCapture(event.pointerId);
+        slider.classList.add("dragging");
+        show(valueAt(event.clientX));
+      };
+      slider.addEventListener("pointermove", (event) => {
+        if (!gesture || event.pointerId !== gesture.id) return;
+        if (gesture.claimed) {
+          show(valueAt(event.clientX));
+          return;
+        }
+        const dx = event.clientX - gesture.x;
+        const dy = event.clientY - gesture.y;
+        if (Math.hypot(dx, dy) < SWIPE_CAPTURE_SLOP_PX) return;
+        if (Math.abs(dx) > Math.abs(dy)) claim(event);
+        else end();
+      });
+      // Once claimed, the page must not start scrolling under the finger.
+      slider.addEventListener(
+        "touchmove",
+        (event) => {
+          if (gesture?.claimed) event.preventDefault();
+        },
+        { passive: false },
+      );
+      slider.addEventListener("pointerup", (event) => {
+        if (!gesture || event.pointerId !== gesture.id) return;
+        if (!gesture.claimed) show(valueAt(event.clientX));
+        const changed = getValue() !== gesture.start;
+        end();
+        if (changed) commit();
+      });
+      // The browser took the gesture as a scroll: leave the thumb where it was.
+      slider.addEventListener("pointercancel", () => {
+        if (!gesture) return;
+        if (gesture.claimed) show(gesture.start);
+        end();
+      });
+    }
 
     async function loadTaste() {
       const status = document.getElementById("taste-status");
@@ -1604,12 +1716,15 @@
       const reset = document.getElementById("taste-reset");
       status.textContent = "Loading…";
       list.replaceChildren();
+      tasteRows = [];
       reset.classList.remove("visible");
       const session = await pendingSession;
       if (!session) {
         status.textContent = "Couldn't load your taste.";
         return;
       }
+      // Read back what's saved only after any queued changes are.
+      await flushOverrides();
       const client = await supabaseReady;
       const [{ data: prefs, error }, { data: overrideRows, error: overridesError }] = await Promise.all([
         client
@@ -1642,16 +1757,17 @@
       leaves.sort((a, b) => scoreOf(b) - scoreOf(a) || b.upvotes + b.downvotes - a.upvotes - a.downvotes);
 
       status.textContent = "";
-      reset.classList.toggle("visible", overrides.size > 0);
+      const updateReset = () => reset.classList.toggle("visible", overrides.size > 0);
+      updateReset();
       for (const pref of leaves) {
         const row = document.createElement("li");
         row.className = "taste-row";
         const name = document.createElement("span");
         name.textContent = names.get(pref.topic_id) ?? pref.topic_id;
+        const topicName = name.textContent;
         const custom = document.createElement("span");
         custom.className = "taste-custom";
         custom.textContent = "custom";
-        custom.hidden = !overrides.has(pref.topic_id);
         name.append(custom);
         const votes = document.createElement("span");
         votes.className = "taste-votes";
@@ -1674,7 +1790,7 @@
         slider.setAttribute("role", "slider");
         slider.setAttribute("aria-valuemin", "0");
         slider.setAttribute("aria-valuemax", "100");
-        slider.setAttribute("aria-label", `${name.firstChild.textContent} score`);
+        slider.setAttribute("aria-label", `${topicName} score`);
         const track = document.createElement("span");
         track.className = "taste-track";
         const thumb = document.createElement("span");
@@ -1683,7 +1799,7 @@
 
         const clear = document.createElement("button");
         clear.className = "taste-clear";
-        clear.setAttribute("aria-label", `Reset ${name.firstChild.textContent} to default`);
+        clear.setAttribute("aria-label", `Reset ${topicName} to default`);
         clear.append(clearIcon.content.cloneNode(true));
 
         let value = Math.round(scoreOf(pref) * 100);
@@ -1693,88 +1809,45 @@
           slider.setAttribute("aria-valuenow", String(value));
           score.textContent = `score ${(value / 100).toFixed(2)}`;
         };
-        const setCustom = (isCustom) => {
+        const showCustom = (isCustom) => {
           custom.hidden = !isCustom;
           clear.hidden = !isCustom;
           if (isCustom) overrides.set(pref.topic_id, value / 100);
           else overrides.delete(pref.topic_id);
-          reset.classList.toggle("visible", overrides.size > 0);
+          updateReset();
         };
         show(value);
-        setCustom(overrides.has(pref.topic_id));
+        showCustom(overrides.has(pref.topic_id));
 
-        const save = async () => {
-          const { error: saveError } = await client
-            .from("topic_overrides")
-            .upsert(
-              { user_id: session.user.id, topic_id: pref.topic_id, score: value / 100, updated_at: new Date().toISOString() },
-              { onConflict: "user_id,topic_id" },
-            );
-          if (saveError) {
-            status.textContent = "Couldn't save that change.";
-            return;
-          }
-          status.textContent = "";
-          tasteChanged = true;
-          setCustom(true);
+        const commit = () => {
+          showCustom(true);
+          queueOverride(pref.topic_id, value / 100);
         };
-
         const valueAt = (clientX) => {
           const rect = slider.getBoundingClientRect();
           return ((clientX - rect.left) / rect.width) * 100;
         };
-        let dragStart = null;
-        slider.addEventListener("pointerdown", (event) => {
-          if (event.button !== 0) return;
-          dragStart = value;
-          slider.setPointerCapture(event.pointerId);
-          slider.classList.add("dragging");
-          show(valueAt(event.clientX));
-        });
-        slider.addEventListener("pointermove", (event) => {
-          if (dragStart !== null) show(valueAt(event.clientX));
-        });
-        slider.addEventListener("pointerup", () => {
-          if (dragStart === null) return;
-          const changed = value !== dragStart;
-          dragStart = null;
-          slider.classList.remove("dragging");
-          if (changed) save();
-        });
-        // The browser took the gesture as a vertical scroll: put the thumb back.
-        slider.addEventListener("pointercancel", () => {
-          if (dragStart === null) return;
-          show(dragStart);
-          dragStart = null;
-          slider.classList.remove("dragging");
-        });
+        setupSliderDrag(slider, valueAt, show, () => value, commit);
+
         const KEY_STEPS = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, PageDown: -10, PageUp: 10 };
-        let keySave = null;
         slider.addEventListener("keydown", (event) => {
           const next =
             event.key === "Home" ? 0 : event.key === "End" ? 100 : event.key in KEY_STEPS ? value + KEY_STEPS[event.key] : null;
           if (next === null) return;
           event.preventDefault();
           show(next);
-          clearTimeout(keySave);
-          keySave = setTimeout(save, TASTE_KEY_SAVE_DELAY_MS);
+          commit();
         });
 
-        clear.addEventListener("click", async () => {
-          const { error: clearError } = await client
-            .from("topic_overrides")
-            .delete()
-            .eq("user_id", session.user.id)
-            .eq("topic_id", pref.topic_id);
-          if (clearError) {
-            status.textContent = "Couldn't reset that topic.";
-            return;
-          }
-          status.textContent = "";
-          tasteChanged = true;
+        const resetToDefault = () => {
           show(defaultScore * 100);
-          setCustom(false);
+          showCustom(false);
+        };
+        clear.addEventListener("click", () => {
+          resetToDefault();
+          queueOverride(pref.topic_id, null);
         });
+        tasteRows.push({ resetToDefault });
 
         const control = document.createElement("div");
         control.className = "taste-control";
@@ -1786,24 +1859,24 @@
 
     function setupTaste() {
       const overlay = document.getElementById("taste-overlay");
-      document.getElementById("taste-reset").addEventListener("click", async () => {
-        const session = await pendingSession;
-        if (!session) return;
-        const { error } = await (await supabaseReady)
-          .from("topic_overrides")
-          .delete()
-          .eq("user_id", session.user.id);
-        if (error) {
-          document.getElementById("taste-status").textContent = "Couldn't reset.";
-          return;
-        }
+      document.getElementById("taste-reset").addEventListener("click", () => {
+        clearTimeout(overrideFlushTimer);
+        pendingOverrides.clear();
+        for (const row of tasteRows) row.resetToDefault();
         tasteChanged = true;
-        loadTaste();
+        queueOverrideWrite(async (client, userId) => {
+          const { error } = await client.from("topic_overrides").delete().eq("user_id", userId);
+          if (error) tasteSaveFailed();
+        });
       });
-      overlay.addEventListener("close", () => {
+      overlay.addEventListener("close", async () => {
+        await flushOverrides();
         if (!tasteChanged) return;
         tasteChanged = false;
         if (!feed.query) showFeed("");
+      });
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") flushOverrides();
       });
     }
 
