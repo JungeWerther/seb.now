@@ -183,14 +183,14 @@ sideways (`touch-action: pan-y`, so vertical-first gestures scroll) and
 not heading upward. Once the finger has moved `SWIPE_CAPTURE_SLOP_PX`,
 a gesture that is vertical-dominant or climbs steeper than
 `SWIPE_START_MAX_UP_DEG` is a feed scroll and the card never moves; a
-sideways one is picked up `SWIPE_START_DECIDE_MS` after crossing the slop
-(timed from the crossing, not from touchdown, since a finger usually rests
-longer than that before moving), re-checking the heading then. A
+sideways one picks the card up immediately (no delay — a visible lag
+between thumb and card reads as unresponsive). If within
+`SWIPE_START_DECIDE_MS` of crossing the slop it turns to head upward after
+all, the card springs back and the gesture becomes a scroll. A
 sideways-leaning scroll gets no native scrolling under `pan-y`, so the page
 scrolls itself with the finger and flings on release
 (`SCROLL_FLING_DECAY_MS`); vertical-dominant ones are left to the browser. From
-the moment a sideways gesture crosses the slop (the decide delay included)
-it is *claimed*: `touchmove` is `preventDefault`ed and `html.swiping` sets
+the moment a sideways gesture crosses the slop it is *claimed*: `touchmove` is `preventDefault`ed and `html.swiping` sets
 `overscroll-behavior: none`, so neither scrolling nor pull-to-refresh can
 take it over however far down the finger goes. Pointer events
 only update the finger's target position; a single rAF loop eases the
@@ -208,6 +208,13 @@ through it). The handler only takes pointer capture once the pointer has
 moved `SWIPE_CAPTURE_SLOP_PX`, and never starts on a `<button>` —
 capturing on `pointerdown` retargets a plain tap's `click` to the swipe
 area, so links and buttons inside would never receive it.
+
+supabase-js is loaded with a dynamic `import()` (`supabaseReady`), not a
+static import, so the page script — swipe handlers included — runs before
+the library has downloaded; every client call awaits `supabaseReady`.
+Swipe handlers are attached before the anonymous session and the
+own-vote/score/visited queries resolve; `castVote`/`removeVote` take the
+pending session promise and send once it resolves.
 
 **Open privacy question (deferred until there are real users):**
 `votes` is publicly readable (the page shows net scores), so any user's

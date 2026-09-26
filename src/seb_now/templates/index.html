@@ -570,15 +570,18 @@
     </div>
   </div>
   <script type="module">
-    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-    const supabase = createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__);
+    // Loaded without blocking the rest of this script, so swiping and the
+    // other UI work while supabase-js is still downloading.
+    const supabaseReady = import("https://esm.sh/@supabase/supabase-js@2").then(({ createClient }) =>
+      createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__),
+    );
     const SWIPE_COMMIT_THRESHOLD_PX = 110;
     const SWIPE_CAPTURE_SLOP_PX = 6;
     // Steepest upward heading a gesture may start with and still become a swipe.
     const SWIPE_START_MAX_UP_DEG = 15;
-    // How long after crossing SWIPE_CAPTURE_SLOP_PX the card waits before
-    // it starts following, so the gesture's heading can settle first.
+    // For this long after crossing SWIPE_CAPTURE_SLOP_PX a swipe that turns
+    // upward is handed back to scrolling.
     const SWIPE_START_DECIDE_MS = 100;
     // Momentum time constant for a feed scroll the page drives itself.
     const SCROLL_FLING_DECAY_MS = 325;
@@ -596,9 +599,9 @@
     const SWIPE_ARMED_VIBRATE_MS = 8;
 
     async function ensureSession() {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await (await supabaseReady).auth.getSession();
       if (session) return session;
-      const { data, error } = await supabase.auth.signInAnonymously();
+      const { data, error } = await (await supabaseReady).auth.signInAnonymously();
       if (error) {
         console.error("anonymous sign-in failed", error);
         return null;
@@ -607,7 +610,7 @@
     }
 
     async function loadScores(linkIds) {
-      const { data, error } = await supabase.from("votes").select("link_id, value").in("link_id", linkIds);
+      const { data, error } = await (await supabaseReady).from("votes").select("link_id, value").in("link_id", linkIds);
       if (error) {
         console.error("failed to load votes", error);
         return {};
@@ -618,7 +621,7 @@
     }
 
     async function loadOwnVotes(linkIds, userId) {
-      const { data, error } = await supabase
+      const { data, error } = await (await supabaseReady)
         .from("votes")
         .select("link_id, value")
         .eq("voter_id", userId)
@@ -633,7 +636,7 @@
     }
 
     async function loadVisited(linkIds, userId) {
-      const { data, error } = await supabase
+      const { data, error } = await (await supabaseReady)
         .from("link_visits")
         .select("link_id")
         .eq("visitor_id", userId)
@@ -647,7 +650,7 @@
 
     async function markVisited(session, linkId) {
       if (!session) return;
-      const { error } = await supabase
+      const { error } = await (await supabaseReady)
         .from("link_visits")
         .upsert(
           { link_id: linkId, visitor_id: session.user.id },
@@ -656,17 +659,19 @@
       if (error) console.error("mark visited failed", error);
     }
 
-    async function castVote(session, linkId, value) {
+    async function castVote(pendingSession, linkId, value) {
+      const session = await pendingSession;
       if (!session) return;
-      const { error } = await supabase
+      const { error } = await (await supabaseReady)
         .from("votes")
         .upsert({ link_id: linkId, voter_id: session.user.id, value }, { onConflict: "link_id,voter_id" });
       if (error) console.error("vote failed", error);
     }
 
-    async function removeVote(session, linkId) {
+    async function removeVote(pendingSession, linkId) {
+      const session = await pendingSession;
       if (!session) return;
-      const { error } = await supabase.from("votes").delete().eq("link_id", linkId).eq("voter_id", session.user.id);
+      const { error } = await (await supabaseReady).from("votes").delete().eq("link_id", linkId).eq("voter_id", session.user.id);
       if (error) console.error("undo failed", error);
     }
 
@@ -920,21 +925,28 @@
         if (!dragging || startX === null) return;
         const dx = e.clientX - startX;
         const dy = e.clientY - startY;
-        if (!area.hasPointerCapture(e.pointerId)) {
+        // Heading upward (or mostly vertical) when crossing the slop means
+        // the feed is being scrolled and the card never moves. A sideways
+        // start picks the card up at once; if within SWIPE_START_DECIDE_MS it
+        // turns out to head upward after all, the card springs back and the
+        // gesture scrolls instead.
+        const scrollish = Math.abs(dy) > Math.abs(dx) || -dy > Math.abs(dx) * maxStartUpSlope;
+        if (!claimed) {
           if (Math.hypot(dx, dy) < SWIPE_CAPTURE_SLOP_PX) return;
-          // Heading upward (or mostly vertical) when crossing the slop, or
-          // once the decide delay has passed, means the feed is being
-          // scrolled: the card never starts moving.
-          const scrollish = Math.abs(dy) > Math.abs(dx) || -dy > Math.abs(dx) * maxStartUpSlope;
-          if (slopAt === null) slopAt = e.timeStamp;
           if (scrollish) {
             startScroll(e, dx, dy);
             return;
           }
-          if (!claimed) setClaimed(true);
-          if (e.timeStamp - slopAt < SWIPE_START_DECIDE_MS) return;
+          slopAt = e.timeStamp;
+          setClaimed(true);
           area.setPointerCapture(e.pointerId);
           li.classList.add("dragging");
+        } else if (scrollish && e.timeStamp - slopAt < SWIPE_START_DECIDE_MS) {
+          if (area.hasPointerCapture(e.pointerId)) area.releasePointerCapture(e.pointerId);
+          stopFollowing();
+          reset();
+          startScroll(e, dx, dy);
+          return;
         }
         target.dx = dx;
         target.dy = dy;
@@ -1003,7 +1015,12 @@
       const items = [...document.querySelectorAll("li.article")];
       if (items.length === 0) return;
 
-      const session = await ensureSession();
+      // Swiping works straight away; a vote cast before the session exists
+      // waits for it.
+      const pendingSession = ensureSession();
+      for (const li of items) setupSwipe(li, pendingSession);
+
+      const session = await pendingSession;
       if (session) {
         const linkIds = items.map((li) => li.dataset.linkId);
         const own = await loadOwnVotes(linkIds, session.user.id);
@@ -1039,7 +1056,6 @@
         }
       }
 
-      for (const li of visible) setupSwipe(li, session);
     }
 
     async function setupSettings() {
@@ -1054,7 +1070,7 @@
         if (panel.classList.contains("open")) {
           const session = await ensureSession();
           if (session) {
-            const { data } = await supabase.from("profiles").select("handle").eq("id", session.user.id).single();
+            const { data } = await (await supabaseReady).from("profiles").select("handle").eq("id", session.user.id).single();
             input.value = data?.handle ?? "";
           }
         }
@@ -1064,7 +1080,7 @@
         const session = await ensureSession();
         if (!session) return;
         status.textContent = "saving...";
-        const { error } = await supabase
+        const { error } = await (await supabaseReady)
           .from("profiles")
           .update({ handle: input.value.trim() || null })
           .eq("id", session.user.id);
@@ -1105,7 +1121,7 @@
     async function loadReplies(items) {
       const byId = new Map(items.map((li) => [li.dataset.linkId, li]));
       if (byId.size === 0) return;
-      const { data, error } = await supabase
+      const { data, error } = await (await supabaseReady)
         .from("replies")
         .select(REPLY_SELECT)
         .in("link_id", [...byId.keys()])
@@ -1183,7 +1199,7 @@
           showToast("Couldn't sign you in to reply");
           return;
         }
-        const { data, error } = await supabase
+        const { data, error } = await (await supabaseReady)
           .from("replies")
           .insert({ link_id: li.dataset.linkId, author_id: session.user.id, body })
           .select(REPLY_SELECT)
