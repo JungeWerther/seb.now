@@ -69,8 +69,8 @@ Supabase MCP tools, bypassing RLS — there's no public write endpoint or
 user-facing form, matching every other write path here) with `origin:
 'local'`, a `slug`, `title`, `description`, optional `image_url`, and
 `body_markdown` set, then triggering a DO redeploy so the static build
-picks it up (a DB-only change doesn't itself trigger a rebuild — only a
-push to `main` or an explicit `do-api` deployment call does).
+picks it up (neither a DB-only change nor a push to `main` triggers a
+rebuild — every DO deployment is started manually).
 
 `site.py` (`src/seb_now/posts.py`) queries `links` at build time for
 every `origin: 'local'` row with a non-null `slug`/`body_markdown` and
