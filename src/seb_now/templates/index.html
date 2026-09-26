@@ -353,6 +353,21 @@
     .taste-bar .up { background: var(--positive); }
     .taste-bar .down { background: var(--negative); }
     #taste-status { color: gray; font-size: 0.85rem; margin: 0; }
+    .taste-score { color: gray; }
+    .taste-how { margin-top: 1.25rem; font-size: 0.8rem; color: gray; }
+    .taste-how summary { cursor: pointer; }
+    .taste-how p { margin: 0.6rem 0 0; }
+    .taste-how .formula {
+      margin: 0.6rem 0 0;
+      padding: 0.5rem 0.75rem;
+      border-radius: 8px;
+      background: var(--post-bg);
+      color: var(--fg);
+      font-size: 0.8rem;
+      text-align: center;
+      white-space: nowrap;
+      overflow-x: auto;
+    }
     ul.articles { list-style: none; padding: 0; margin: 0; }
     li.article {
       --card-gap: 0.7rem;
@@ -653,6 +668,12 @@
     </div>
     <p id="taste-status"></p>
     <ol id="taste-list"></ol>
+    <details class="taste-how">
+      <summary>How is this calculated?</summary>
+      <p>Every article is tagged with one to three topics, each with a weight <i>p</i> from 0 to 1 for how much the article is about it. Upvoting adds <i>p</i> to that topic's likes; downvoting adds it to its dislikes.</p>
+      <p class="formula">score = (1 + likes) / (2 + likes + dislikes)</p>
+      <p>The 1 and 2 start every topic at a neutral 50%, so a single vote doesn't read as 100%; the more you vote, the more the score follows your votes. Topics are ranked by score, and the bar shows your plain vote counts. Votes on articles without topics don't count yet.</p>
+    </details>
   </dialog>
   <dialog id="profile-overlay" class="overlay" aria-labelledby="profile-title">
     <div class="overlay-head">
@@ -1481,7 +1502,11 @@
         down.className = "taste-down";
         down.textContent = `▼ ${pref.downvotes}`;
         down.title = `${pref.downvotes} downvoted`;
-        votes.append(up, down);
+        const score = document.createElement("span");
+        score.className = "taste-score";
+        score.textContent = `${Math.round(mean(pref) * 100)}%`;
+        score.title = "score";
+        votes.append(score, up, down);
         const bar = document.createElement("div");
         bar.className = "taste-bar";
         for (const [cls, count] of [["up", pref.upvotes], ["down", pref.downvotes]]) {

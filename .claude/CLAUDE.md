@@ -200,7 +200,9 @@ names a `<dialog class="overlay">` (`data-overlay`) opened with `showModal()`
 an optional loader in `OVERLAY_LOADERS`. **My Taste** (`#taste-overlay`)
 lists the signed-in user's leaf topics from `user_topic_preferences`, ranked
 by the Beta mean `alpha / (alpha + beta)`, with the view's `upvotes`/`downvotes`
-counts and a green/red bar split by those counts.
+counts, the score as a percentage and a green/red bar split by the counts; a
+"How is this calculated?" `<details>` below the list explains the formula to
+users, so keep it in sync if the view's maths changes.
 **My Profile** (`#profile-overlay`) edits `profiles.handle`, the name shown on
 replies.
 
