@@ -13,23 +13,26 @@ longer groups or headers by it - each article shows its own domain instead.
 
 from __future__ import annotations
 
-import json
 import os
+import re
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import NotRequired, Sequence, TypedDict
 
 from seb_now.constants import (
     ARTICLE_TOPIC_CHIPS,
     FAVICON_URL_TEMPLATE,
     FEED_PAGE_SIZE,
+    SUPABASE_JS_MODULE_URL,
     TEMPLATE_ARTICLE_BLANK,
     SourceType,
 )
 from seb_now.auth import get_unauthenticated_client
 from seb_now.domain.models import Link, LinkTopic, Topic
 from seb_now.posts import load_posts, write_posts
+from seb_now.sanitize import content_security_policy, safe_http_url, script_hash, script_json
 from seb_now.source_type import classify_source, display_domain, favicon_host
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -42,6 +45,9 @@ SUPABASE_ANON_KEY_PLACEHOLDER = "__SUPABASE_ANON_KEY__"
 FEED_PAGE_SIZE_PLACEHOLDER = "__FEED_PAGE_SIZE__"
 ARTICLE_TOPIC_CHIPS_PLACEHOLDER = "__ARTICLE_TOPIC_CHIPS__"
 FAVICON_URL_TEMPLATE_PLACEHOLDER = "__FAVICON_URL_TEMPLATE__"
+SUPABASE_JS_MODULE_URL_PLACEHOLDER = "__SUPABASE_JS_MODULE_URL__"
+CSP_PLACEHOLDER = "__CONTENT_SECURITY_POLICY__"
+PAGE_SCRIPT_PATTERN = re.compile(r'<script type="module">(.*?)</script>', re.DOTALL)
 
 FEED_COLUMNS = "id, title, url, image_url, created_at"
 
@@ -97,12 +103,15 @@ def load_feed() -> list[FeedItem]:
     )
     feed: list[FeedItem] = []
     for row in response.data:
+        url = safe_http_url(row["url"])
+        if url is None:
+            continue
         feed.append(
             {
                 "id": row["id"],
                 "title": row["title"],
-                "url": row["url"],
-                "image_url": row["image_url"] or "",
+                "url": url,
+                "image_url": safe_http_url(row["image_url"]) or "",
                 "topics": _top_topic_names(row[LinkTopic.__tablename__]),
                 # Kept as PostgREST's own string so the page's pagination
                 # cursor round-trips it exactly (microseconds included).
@@ -134,8 +143,7 @@ def _render_article(article: Article) -> str:
     host = favicon_host(article.url)
     favicon = (
         f'<span class="favicon" data-letter="{escape(host[:1].upper())}" aria-hidden="true">'
-        f'<img src="{escape(FAVICON_URL_TEMPLATE.format(host=host))}" alt="" loading="lazy" '
-        f'onerror="this.remove()"></span>'
+        f'<img src="{escape(FAVICON_URL_TEMPLATE.format(host=host))}" alt="" loading="lazy"></span>'
     )
     cover = (
         f'<a class="cover-link" href="{url}" target="_blank" rel="noopener noreferrer" tabindex="-1">'
@@ -210,12 +218,28 @@ def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon
         f'    <template id="article-template">\n{_render_article(TEMPLATE_ARTICLE)}\n    </template>'
     )
     html = TEMPLATE_PATH.read_text().replace(ARTICLES_PLACEHOLDER, list_html)
-    html = html.replace(SUPABASE_URL_PLACEHOLDER, json.dumps(supabase_url))
-    html = html.replace(SUPABASE_ANON_KEY_PLACEHOLDER, json.dumps(supabase_anon_key))
-    html = html.replace(FEED_PAGE_SIZE_PLACEHOLDER, json.dumps(FEED_PAGE_SIZE))
-    html = html.replace(ARTICLE_TOPIC_CHIPS_PLACEHOLDER, json.dumps(ARTICLE_TOPIC_CHIPS))
-    html = html.replace(FAVICON_URL_TEMPLATE_PLACEHOLDER, json.dumps(FAVICON_URL_TEMPLATE))
-    return html
+    html = html.replace(SUPABASE_URL_PLACEHOLDER, script_json(supabase_url))
+    html = html.replace(SUPABASE_ANON_KEY_PLACEHOLDER, script_json(supabase_anon_key))
+    html = html.replace(FEED_PAGE_SIZE_PLACEHOLDER, script_json(FEED_PAGE_SIZE))
+    html = html.replace(ARTICLE_TOPIC_CHIPS_PLACEHOLDER, script_json(ARTICLE_TOPIC_CHIPS))
+    html = html.replace(FAVICON_URL_TEMPLATE_PLACEHOLDER, script_json(FAVICON_URL_TEMPLATE))
+    html = html.replace(SUPABASE_JS_MODULE_URL_PLACEHOLDER, script_json(SUPABASE_JS_MODULE_URL))
+    return html.replace(CSP_PLACEHOLDER, escape(_page_csp(html, supabase_url)))
+
+
+def _origin(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+# Only the page's own inline script (by hash) and supabase-js's origin may
+# run script, so markup that slips past escaping still can't execute.
+def _page_csp(html: str, supabase_url: str) -> str:
+    scripts = PAGE_SCRIPT_PATTERN.findall(html)
+    return content_security_policy(
+        script_src=[*(script_hash(script) for script in scripts), _origin(SUPABASE_JS_MODULE_URL)],
+        connect_src=[_origin(supabase_url)] if supabase_url else [],
+    )
 
 
 def main() -> None:

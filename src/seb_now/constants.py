@@ -76,3 +76,18 @@ ATTENTION_BATCH_FIRST = True
 TRAINABLE_EMBED_TRAIN_STEPS = 300
 TRAINABLE_EMBED_LEARNING_RATE = 0.05
 TRAINABLE_EMBED_LAW_CHECK_TOLERANCE = 0.05
+
+# sanitize.py — safe_http_url
+# Schemes a feed/post URL may use when rendered into an href or src.
+SAFE_URL_SCHEMES: frozenset[str] = frozenset({"http", "https"})
+# sanitize.py — is_safe_slug: a post slug becomes a filesystem path and a URL
+# segment, so it's limited to lowercase letters, digits and inner hyphens.
+POST_SLUG_PATTERN = r"[a-z0-9]+(?:-[a-z0-9]+)*"
+
+# site.py — supabase-js, pinned to an exact version since the page's CSP
+# trusts whatever script this origin serves.
+SUPABASE_JS_MODULE_URL = "https://esm.sh/@supabase/supabase-js@2.117.2"
+# site.py / posts.py — Content-Security-Policy origins for the Google Fonts
+# stylesheet and the font files it references.
+GOOGLE_FONTS_STYLESHEET_ORIGIN = "https://fonts.googleapis.com"
+GOOGLE_FONTS_FILE_ORIGIN = "https://fonts.gstatic.com"

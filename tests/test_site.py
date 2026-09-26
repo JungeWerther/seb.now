@@ -1,5 +1,12 @@
+import base64
+import hashlib
 import re
+from html import unescape
+from uuid import uuid4
 
+import pytest
+
+from seb_now import site
 from seb_now.constants import ARTICLE_TOPIC_CHIPS, FAVICON_URL_TEMPLATE, FEED_PAGE_SIZE, SourceType
 from seb_now.site import Article, _top_topic_names, build_articles, render
 
@@ -120,7 +127,7 @@ def test_render_shows_favicon_column_with_letter_fallback() -> None:
     html = render([article])
 
     favicon_url = FAVICON_URL_TEMPLATE.format(host="reuters.com")
-    assert f'<span class="favicon" data-letter="R" aria-hidden="true"><img src="{favicon_url}"' in html
+    assert f'<span class="favicon" data-letter="R" aria-hidden="true"><img src="{favicon_url}" alt="" loading="lazy"></span>' in html
     assert html.index('class="favicon"') < html.index('class="card-body"')
 
 def test_build_articles_keeps_feed_topics() -> None:
@@ -325,3 +332,96 @@ def test_search_queries_the_server_instead_of_filtering_the_page() -> None:
 
     assert '.ilike("search_text"' in html
     assert "IntersectionObserver" in html
+
+
+def _page_script(html: str) -> str:
+    return html[html.index('<script type="module">') + len('<script type="module">') : html.index("</script>")]
+
+
+def test_render_sets_a_csp_that_only_allows_the_page_script_by_hash() -> None:
+    html = render([], supabase_url="https://example.supabase.co", supabase_anon_key="k")
+
+    digest = base64.b64encode(hashlib.sha256(_page_script(html).encode()).digest()).decode()
+    csp = unescape(re.search(r'<meta http-equiv="Content-Security-Policy" content="([^"]*)">', html).group(1))
+    directives = dict(d.strip().split(" ", 1) for d in csp.split(";"))
+    assert directives["script-src"].split() == [f"'sha256-{digest}'", "https://esm.sh"]
+    assert directives["connect-src"] == "https://example.supabase.co"
+    assert directives["default-src"] == "'none'"
+
+
+def test_render_uses_no_inline_event_handlers() -> None:
+    article = Article(
+        id="a1",
+        title="Wire story",
+        url="https://www.reuters.com/a",
+        domain="reuters",
+        source_type=SourceType.MAINSTREAM_MEDIA,
+    )
+
+    html = render([article])
+
+    assert not re.search(r"\son[a-z]+=", html)
+
+
+def test_render_escapes_config_so_it_cannot_close_the_script() -> None:
+    html = render([], supabase_url="https://x.example/</script><script>alert(1)</script>", supabase_anon_key="k")
+
+    assert html.count("</script>") == 1
+    assert "\\u003c/script\\u003e" in _page_script(html)
+
+
+def test_render_escapes_markup_in_titles_and_topics() -> None:
+    article = Article(
+        id='a1"><script>alert(1)</script>',
+        title="<img src=x onerror=alert(1)>",
+        url="https://example.com/a",
+        domain="example",
+        source_type=SourceType.DIRECT_LINK,
+        topics=("<b>AI</b>",),
+    )
+
+    html = render([article])
+
+    listed = _article_list(html)
+    assert "<script>" not in listed
+    assert "<img src=x" not in listed
+    assert "<b>AI</b>" not in listed
+    assert "&lt;img src=x onerror=alert(1)&gt;" in listed
+
+
+def test_load_feed_drops_non_http_links_and_covers(monkeypatch: pytest.MonkeyPatch) -> None:
+    rows = [
+        {"id": str(uuid4()), "url": "javascript:alert(1)", "title": "evil", "image_url": None,
+         "created_at": "2026-01-01T00:00:00+00:00", "link_topics": []},
+        {"id": str(uuid4()), "url": "https://example.com", "title": "ok", "image_url": "javascript:alert(1)",
+         "created_at": "2026-01-01T00:00:00+00:00", "link_topics": []},
+    ]
+
+    class _Query:
+        def select(self, *_: object) -> "_Query":
+            return self
+
+        def order(self, *_: object, **__: object) -> "_Query":
+            return self
+
+        def limit(self, *_: object) -> "_Query":
+            return self
+
+        def execute(self) -> object:
+            return type("R", (), {"data": rows})()
+
+    client = type("C", (), {"table": lambda self, _name: _Query()})()
+    monkeypatch.setattr(site, "get_unauthenticated_client", lambda: client)
+
+    feed = site.load_feed()
+
+    assert [item["title"] for item in feed] == ["ok"]
+    assert feed[0]["image_url"] == ""
+
+
+def test_page_script_only_links_http_urls() -> None:
+    html = render([])
+
+    script = _page_script(html)
+    assert "if (!isHttpUrl(row.url)) return null;" in script
+    assert "isHttpUrl(row.image_url)" in script

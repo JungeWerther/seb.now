@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="__CONTENT_SECURITY_POLICY__">
   <title>seb.now</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -575,19 +576,23 @@
 
     // Loaded without blocking the rest of this script, so swiping and the
     // other UI work while supabase-js is still downloading.
-    const supabaseReady = import("https://esm.sh/@supabase/supabase-js@2").then(({ createClient }) =>
+    const supabaseReady = import(__SUPABASE_JS_MODULE_URL__).then(({ createClient }) =>
       createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__),
     );
 
     // Covers point at arbitrary third-party sites, so drop one that fails to
-    // load rather than leave an empty frame. Module scripts run after parsing,
-    // so covers that already failed are swept up here too.
-    const dropBrokenCover = (img) => img.closest(".cover-link")?.remove();
+    // load rather than leave an empty frame; a favicon that fails leaves its
+    // letter fallback. Module scripts run after parsing, so images that
+    // already failed are swept up here too.
+    function dropBrokenImage(img) {
+      if (img.classList.contains("cover")) img.closest(".cover-link")?.remove();
+      else if (img.parentElement?.classList.contains("favicon")) img.remove();
+    }
     document.addEventListener("error", (e) => {
-      if (e.target instanceof HTMLImageElement && e.target.classList.contains("cover")) dropBrokenCover(e.target);
+      if (e.target instanceof HTMLImageElement) dropBrokenImage(e.target);
     }, true);
-    for (const img of document.querySelectorAll("img.cover")) {
-      if (img.complete && img.naturalWidth === 0) dropBrokenCover(img);
+    for (const img of document.querySelectorAll("img.cover, .favicon img")) {
+      if (img.complete && img.naturalWidth === 0) dropBrokenImage(img);
     }
     const SWIPE_COMMIT_THRESHOLD_PX = 110;
     const SWIPE_CAPTURE_SLOP_PX = 6;
@@ -1098,16 +1103,19 @@
         .map((lt) => lt.topics.name);
     }
 
+    function isHttpUrl(url) {
+      try {
+        return ["http:", "https:"].includes(new URL(url).protocol);
+      } catch {
+        return false;
+      }
+    }
+
     // cloneNode, not importNode: the clone stays in the template's inert
     // document until inserted, so its placeholder images never load.
     function renderArticle(row) {
-      let host;
-      try {
-        if (!/^https?:$/.test(new URL(row.url).protocol)) return null;
-        host = registrableHost(row.url);
-      } catch {
-        return null;
-      }
+      if (!isHttpUrl(row.url)) return null;
+      const host = registrableHost(row.url);
       const li = articleTemplate.content.querySelector("li.article").cloneNode(true);
       li.dataset.linkId = row.id;
       li.dataset.createdAt = row.created_at;
@@ -1133,7 +1141,7 @@
       link.href = row.url;
       link.textContent = row.title;
       const cover = li.querySelector(".cover-link");
-      if (row.image_url) {
+      if (row.image_url && isHttpUrl(row.image_url)) {
         cover.href = row.url;
         cover.querySelector("img").src = row.image_url;
       } else {
@@ -1254,9 +1262,6 @@
         return;
       }
       feed.cursor = cursorOf(prerendered.at(-1));
-      // Links only ever get older relative to the build, so a short
-      // pre-rendered page means there's nothing further down.
-      feed.done = prerendered.length < FEED_PAGE_SIZE;
       hydrateArticles(prerendered).then(() => {
         if (!feed.done && sentinelNearViewport()) loadMore();
       });

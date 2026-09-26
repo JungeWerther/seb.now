@@ -11,13 +11,14 @@ from html import escape
 from pathlib import Path
 from typing import Sequence
 
-import markdown
-
 from seb_now.auth import get_unauthenticated_client
 from seb_now.domain.models import Link
+from seb_now.sanitize import content_security_policy, is_safe_slug, render_markdown, safe_http_url
 
 SITE_URL = "https://seb.now"
 MARKDOWN_EXTENSIONS = ["extra", "sane_lists"]
+# Post pages run no script at all.
+POST_CSP = content_security_policy(script_src=[], connect_src=[])
 
 
 @dataclass(frozen=True)
@@ -42,8 +43,8 @@ def post_from_link(link: Link) -> Post:
         title=link.title,
         date=link.created_at.date().isoformat(),
         description=link.description or "",
-        image=link.image_url,
-        body_html=markdown.markdown(link.body_markdown, extensions=MARKDOWN_EXTENSIONS),
+        image=safe_http_url(link.image_url),
+        body_html=render_markdown(link.body_markdown, MARKDOWN_EXTENSIONS),
     )
 
 
@@ -59,7 +60,7 @@ def load_posts() -> list[Post]:
         .execute()
     )
     links = [Link.model_validate(row) for row in response.data]
-    return [post_from_link(link) for link in links]
+    return [post_from_link(link) for link in links if link.slug is not None and is_safe_slug(link.slug)]
 
 
 def render_post(post: Post) -> str:
@@ -70,6 +71,7 @@ def render_post(post: Post) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="{escape(POST_CSP)}">
   <title>{escape(post.title)} — seb.now</title>
   <meta name="description" content="{escape(post.description)}">
   <meta property="og:type" content="article">
