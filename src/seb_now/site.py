@@ -140,12 +140,14 @@ def _render_article(article: Article) -> str:
         f"{favicon}"
         f'<div class="card-body">'
         f'<span class="domain">{escape(article.domain)}</span>'
+        f'<div class="post">'
         f'<div class="article-row">'
         f'<a href="{url}" target="_blank" rel="noopener noreferrer">{escape(article.title)}</a>'
         f'<span class="score">0</span>'
         f"{topics}"
         f"</div>"
         f"{cover}"
+        f"</div>"
         f"</div>"
         f"</div>"
         f"</li>"
