@@ -88,7 +88,7 @@ def render_post(post: Post) -> str:
       --positive: #4c9a6a;
     }}
     @media (prefers-color-scheme: dark) {{
-      :root {{ --bg: #0a0a0a; --fg: #e8e8e8; --positive: #7fc999; }}
+      :root {{ --bg: #161616; --fg: #e8e8e8; --positive: #7fc999; }}
     }}
     body {{
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
