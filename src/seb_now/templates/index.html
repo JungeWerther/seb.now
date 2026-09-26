@@ -354,18 +354,13 @@
     .taste-bar .down { background: var(--negative); }
     #taste-status { color: gray; font-size: 0.85rem; margin: 0; }
     .taste-score { color: gray; }
-    .taste-how { margin-top: 1.25rem; font-size: 0.8rem; color: gray; }
-    .taste-how summary { cursor: pointer; }
-    .taste-how p { margin: 0.6rem 0 0; }
-    .taste-how .formula {
-      margin: 0.6rem 0 0;
-      padding: 0.5rem 0.75rem;
+    .taste-formula {
+      margin: 1.25rem 0 0;
+      padding: 0.6rem 0.75rem;
       border-radius: 8px;
       background: var(--post-bg);
-      color: var(--fg);
-      font-size: 0.8rem;
+      font-size: 0.7rem;
       text-align: center;
-      white-space: nowrap;
       overflow-x: auto;
     }
     ul.articles { list-style: none; padding: 0; margin: 0; }
@@ -643,7 +638,7 @@
         <ul id="menu-bubbles">
           <li><button class="bubble" data-overlay="taste-overlay" tabindex="-1">
             <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></span>
-            <span>My Taste</span>
+            <span>My Algorithm</span>
           </button></li>
           <li><button class="bubble" data-overlay="profile-overlay" tabindex="-1">
             <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
@@ -663,17 +658,12 @@
   <div id="toast-container"></div>
   <dialog id="taste-overlay" class="overlay" aria-labelledby="taste-title">
     <div class="overlay-head">
-      <p class="overlay-title" id="taste-title">My Taste</p>
+      <p class="overlay-title" id="taste-title">My Algorithm</p>
       <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     </div>
     <p id="taste-status"></p>
     <ol id="taste-list"></ol>
-    <details class="taste-how">
-      <summary>How is this calculated?</summary>
-      <p>Every article is tagged with one to three topics, each with a weight <i>p</i> from 0 to 1 for how much the article is about it. Upvoting adds <i>p</i> to that topic's likes; downvoting adds it to its dislikes.</p>
-      <p class="formula">score = (1 + likes) / (2 + likes + dislikes)</p>
-      <p>The 1 and 2 start every topic at a neutral 50%, so a single vote doesn't read as 100%; the more you vote, the more the score follows your votes. Topics are ranked by score, and the bar shows your plain vote counts. Votes on articles without topics don't count yet.</p>
-    </details>
+    <pre class="taste-formula"><code>score = (1+likes) / (2+likes+dislikes)</code></pre>
   </dialog>
   <dialog id="profile-overlay" class="overlay" aria-labelledby="profile-title">
     <div class="overlay-head">
