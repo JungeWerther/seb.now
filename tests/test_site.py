@@ -437,5 +437,5 @@ def test_page_script_ranks_the_default_feed_and_shows_the_formula() -> None:
     html = render([])
 
     assert 'rpc("ranked_feed"' in html
-    assert "posts.orderBy(post =&gt;" in html
-    assert "0.5 ** (post.ageHours / 24)" in html
+    assert "your topic scores" in html
+    assert "0.5 ^ (age in hours / 24)" in html

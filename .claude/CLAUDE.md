@@ -176,8 +176,8 @@ don't shift between pages; votes can still move a link between pages, so the
 client skips ids it has already shown. If `ranked_feed` fails, the pre-rendered
 links stay and the feed carries on newest-first. It ranks every link on each
 call — fine at hundreds of links, needs a precomputed score or a recency cut-off
-before tens of thousands. The My Algorithm overlay shows this formula as a
-`posts.orderBy(...)` snippet; keep the two in sync.
+before tens of thousands. The My Algorithm overlay spells this formula out in
+plain words in a code block; keep the two in sync.
 
 Search is server-side and newest-first: a debounced `ilike` on
 `links.search_text`, a stored generated column (lowercased title + host
