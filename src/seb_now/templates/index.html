@@ -567,6 +567,8 @@
     const supabase = createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__);
     const SWIPE_COMMIT_THRESHOLD_PX = 90;
     const SWIPE_CAPTURE_SLOP_PX = 6;
+    // Steepest upward heading a gesture may start with and still become a swipe.
+    const SWIPE_START_MAX_UP_DEG = 15;
     const SWIPE_PIVOT_DISTANCE_PX = 600;
     const SWIPE_MAX_ANGLE_DEG = 35;
     const SWIPE_RADIAL_SLACK_PX = 30;
@@ -733,6 +735,7 @@
       const tintUp = li.querySelector(".tint-up");
       const linkId = li.dataset.linkId;
       const maxAngle = (SWIPE_MAX_ANGLE_DEG * Math.PI) / 180;
+      const maxStartUpSlope = Math.tan((SWIPE_START_MAX_UP_DEG * Math.PI) / 180);
 
       let startX = null;
       let startY = null;
@@ -828,7 +831,15 @@
         const dx = e.clientX - startX;
         const dy = e.clientY - startY;
         if (!area.hasPointerCapture(e.pointerId)) {
-          if (Math.abs(dx) < SWIPE_CAPTURE_SLOP_PX) return;
+          if (Math.hypot(dx, dy) < SWIPE_CAPTURE_SLOP_PX) return;
+          // A gesture that starts mostly vertical, or heading upward, is the
+          // feed being scrolled: give it up for good, even if it later turns sideways.
+          if (Math.abs(dy) > Math.abs(dx) || -dy > Math.abs(dx) * maxStartUpSlope) {
+            dragging = false;
+            startX = null;
+            startY = null;
+            return;
+          }
           area.setPointerCapture(e.pointerId);
           li.classList.add("dragging");
         }

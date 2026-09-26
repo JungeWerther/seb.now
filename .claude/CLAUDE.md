@@ -179,7 +179,11 @@ vertical travel alone sets the radius (clamped to the pivot distance ±
 angle from the finger's position relative to the pivot (`atan2(dx, R -
 dy)`): a steep downward drag then amplifies a small dx into a large tilt,
 can cross the vote threshold, and flips past the pivot. A drag must start
-sideways (`touch-action: pan-y`, so vertical-first gestures scroll); once
+sideways (`touch-action: pan-y`, so vertical-first gestures scroll) and
+not heading upward: a gesture whose first `SWIPE_CAPTURE_SLOP_PX` of
+travel is vertical-dominant or climbs steeper than `SWIPE_START_MAX_UP_DEG`
+is the feed being scrolled and is dropped for good, even if it turns
+sideways later; once
 it has, a non-passive `touchmove` handler blocks scrolling for the rest
 of the gesture so the browser can't cancel it mid-drag. Pointer events
 only update the finger's target position; a single rAF loop eases the
