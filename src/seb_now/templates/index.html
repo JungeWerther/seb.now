@@ -250,6 +250,9 @@
       position: relative;
       overflow: hidden;
     }
+    li.article.dragging { overflow: visible; z-index: 5; }
+    li.article.dragging .post-swipe { overflow: visible; }
+    li.article.dragging .post { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18); will-change: transform; }
     li.article.upvoted { box-shadow: inset 3px 0 0 var(--positive); }
     .post-swipe {
       --post-pad-x: calc(0.75rem + 1px);
@@ -259,7 +262,7 @@
       border-radius: 14px;
       touch-action: pan-y;
     }
-    .swipe-bg { position: absolute; inset: 0; }
+    .swipe-bg { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; }
     .swipe-bg .tint {
       position: absolute;
       inset: 0;
@@ -531,6 +534,11 @@
     const supabase = createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__);
     const SWIPE_COMMIT_THRESHOLD_PX = 90;
     const SWIPE_CAPTURE_SLOP_PX = 6;
+    const SWIPE_PIVOT_DISTANCE_PX = 600;
+    const SWIPE_MAX_ANGLE_DEG = 25;
+    const SWIPE_RADIAL_SLACK_PX = 30;
+    const SWIPE_SETTLE_MS = 280;
+    const SWIPE_FLY_MS = 220;
 
     async function ensureSession() {
       const { data: { session } } = await supabase.auth.getSession();
@@ -651,8 +659,9 @@
         li.style.opacity = "";
         li.classList.remove("upvoted");
         const content = li.querySelector(".post");
-        content.style.transition = "transform 0.2s ease-out";
-        content.style.transform = "translateX(0)";
+        content.style.transition = "transform 0.2s ease-out, opacity 0.2s ease-out";
+        content.style.transform = "";
+        content.style.opacity = "";
         const scores = await loadScores([linkId]);
         renderScore(li, scores[linkId] || 0);
         dismiss();
@@ -666,27 +675,63 @@
       badge.classList.toggle("negative", score < 0);
     }
 
+    // The post swings like a card hanging from a pivot SWIPE_PIVOT_DISTANCE_PX
+    // below its centre: the finger sets an angle around that pivot (clamped
+    // to +/- SWIPE_MAX_ANGLE_DEG) and a radius (clamped to the pivot distance
+    // +/- SWIPE_RADIAL_SLACK_PX), so the card can only ever sit inside that
+    // arc-shaped band and tilts by the same angle. Measuring the angle from a
+    // far-away pivot, rather than from the start point, keeps it stable when
+    // the finger is close to or just below where it started.
     function setupSwipe(li, session) {
       const area = li.querySelector(".post-swipe");
       const content = area.querySelector(".post");
       const tintDown = li.querySelector(".tint-down");
       const tintUp = li.querySelector(".tint-up");
       const linkId = li.dataset.linkId;
+      const maxAngle = (SWIPE_MAX_ANGLE_DEG * Math.PI) / 180;
 
       let startX = null;
-      let dx = 0;
+      let startY = null;
+      let offsetX = 0;
       let dragging = false;
 
+      function place(dx, dy) {
+        const R = SWIPE_PIVOT_DISTANCE_PX;
+        const angle = Math.max(-maxAngle, Math.min(maxAngle, Math.atan2(dx, R - dy)));
+        const radius = Math.max(R - SWIPE_RADIAL_SLACK_PX, Math.min(R + SWIPE_RADIAL_SLACK_PX, Math.hypot(dx, R - dy)));
+        const x = radius * Math.sin(angle);
+        const y = R - radius * Math.cos(angle);
+        content.style.transform = `translate(${x}px, ${y}px) rotate(${angle}rad)`;
+        return x;
+      }
+
+      function setTints(x) {
+        const progress = Math.min(Math.abs(x) / SWIPE_COMMIT_THRESHOLD_PX, 1);
+        tintUp.style.opacity = x < 0 ? progress : 0; // left = upvote
+        tintDown.style.opacity = x > 0 ? progress : 0; // right = downvote + hide
+      }
+
+      function endDrag() {
+        dragging = false;
+        startX = null;
+        startY = null;
+        offsetX = 0;
+      }
+
       function reset() {
-        content.style.transition = "transform 0.2s";
-        content.style.transform = "translateX(0)";
+        content.style.transition = `transform ${SWIPE_SETTLE_MS}ms cubic-bezier(0.2, 0.9, 0.3, 1.15)`;
+        content.style.transform = "";
         tintDown.style.opacity = 0;
         tintUp.style.opacity = 0;
+        const settle = () => li.classList.remove("dragging");
+        content.addEventListener("transitionend", settle, { once: true });
+        setTimeout(settle, SWIPE_SETTLE_MS + 50);
       }
 
       function onDown(e) {
         if (e.target.closest("button")) return;
         startX = e.clientX;
+        startY = e.clientY;
         dragging = true;
         content.style.transition = "none";
       }
@@ -696,29 +741,23 @@
       // once the pointer has actually moved far enough to be a swipe.
       function onMove(e) {
         if (!dragging || startX === null) return;
-        dx = e.clientX - startX;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
         if (!area.hasPointerCapture(e.pointerId)) {
           if (Math.abs(dx) < SWIPE_CAPTURE_SLOP_PX) return;
           area.setPointerCapture(e.pointerId);
+          li.classList.add("dragging");
         }
-        content.style.transform = `translateX(${dx}px)`;
-        const progress = Math.min(Math.abs(dx) / SWIPE_COMMIT_THRESHOLD_PX, 1);
-        if (dx < 0) {
-          // left = upvote
-          tintUp.style.opacity = progress;
-          tintDown.style.opacity = 0;
-        } else {
-          // right = downvote + hide
-          tintDown.style.opacity = progress;
-          tintUp.style.opacity = 0;
-        }
+        offsetX = place(dx, dy);
+        setTints(offsetX);
       }
 
       async function onUp() {
         if (!dragging) return;
-        dragging = false;
+        const x = offsetX;
+        endDrag();
 
-        if (dx <= -SWIPE_COMMIT_THRESHOLD_PX) {
+        if (x <= -SWIPE_COMMIT_THRESHOLD_PX) {
           // left = upvote
           reset();
           li.classList.add("upvoted");
@@ -727,11 +766,13 @@
           await castVote(session, linkId, 1);
           const scores = await loadScores([linkId]);
           renderScore(li, scores[linkId] || 0);
-        } else if (dx >= SWIPE_COMMIT_THRESHOLD_PX) {
-          // right = downvote + hide
-          content.style.transition = "transform 0.2s ease-in";
-          content.style.transform = "translateX(120%)";
+        } else if (x >= SWIPE_COMMIT_THRESHOLD_PX) {
+          // right = downvote + hide: carry on along the arc and off-screen
+          content.style.transition = `transform ${SWIPE_FLY_MS}ms ease-in, opacity ${SWIPE_FLY_MS}ms ease-in`;
+          content.style.transform = `translate(${window.innerWidth}px, ${SWIPE_PIVOT_DISTANCE_PX * (1 - Math.cos(maxAngle))}px) rotate(${maxAngle}rad)`;
+          content.style.opacity = "0";
           await castVote(session, linkId, -1);
+          li.classList.remove("dragging");
           li.style.transition = "max-height 0.2s ease-in, opacity 0.2s ease-in";
           li.style.maxHeight = li.offsetHeight + "px";
           requestAnimationFrame(() => {
@@ -742,17 +783,13 @@
         } else {
           reset();
         }
-        dx = 0;
-        startX = null;
       }
 
       area.addEventListener("pointerdown", onDown);
       area.addEventListener("pointermove", onMove);
       area.addEventListener("pointerup", onUp);
       area.addEventListener("pointercancel", () => {
-        dragging = false;
-        dx = 0;
-        startX = null;
+        endDrag();
         reset();
       });
     }

@@ -170,7 +170,14 @@ yet — anyone with an anonymous session can post.
 
 Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the
 vote tints (`.swipe-bg`) and the `.post` that slides over them, so the
-favicon, domain/chips line and replies don't react. `--post-bg` must stay
+favicon, domain/chips line and replies don't react. While dragged, the
+post swings like a card hanging from a pivot `SWIPE_PIVOT_DISTANCE_PX`
+below it: the finger sets an angle around that pivot (clamped to
+`SWIPE_MAX_ANGLE_DEG`) and a radius (clamped to the pivot distance ±
+`SWIPE_RADIAL_SLACK_PX`), so the card stays inside an arc-shaped band and
+tilts by that angle — measuring from a far pivot rather than the start
+point is what keeps it stable near/below the start. A drag must still
+start sideways (`touch-action: pan-y`); a vertical-first gesture scrolls. `--post-bg` must stay
 opaque for the same reason (a translucent post would show the tint
 through it). The handler only takes pointer capture once the pointer has
 moved `SWIPE_CAPTURE_SLOP_PX`, and never starts on a `<button>` —
