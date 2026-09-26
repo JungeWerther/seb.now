@@ -17,15 +17,17 @@
       --positive-soft: #e1f3e6;
       --negative: #c96a6a;
       --negative-soft: #f8e6e6;
-      --sheen: rgba(255, 255, 255, 0.75);
-      /* Page edge margin, shared by the page, header and search dock. The
-         header's icon glyph (15px tall) sits one gutter from the top, and
-         horizontally shares its centre with the favicon column below. */
+      --sheen: rgba(255, 255, 255, 0.5);
+      /* The header's icon glyph (15px square) sits one gutter from the top,
+         bottom and left edges. The feed's favicon column shares its centre,
+         so the page itself is inset by the gutter less half the size
+         difference between favicon and glyph. */
       --gutter: 24px;
       --favicon-size: 26px;
       --header-icon-glyph: 15px;
       --header-icon-inset: 2.5px;
       --header-height: calc(2 * var(--gutter) + var(--header-icon-glyph));
+      --page-pad: calc(var(--gutter) - (var(--favicon-size) - var(--header-icon-glyph)) / 2);
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -36,14 +38,14 @@
         --positive-soft: #203a29;
         --negative: #e0a0a0;
         --negative-soft: #3a2323;
-        --sheen: rgba(255, 255, 255, 0.12);
+        --sheen: rgba(255, 255, 255, 0.07);
       }
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      max-width: 720px;
+      max-width: calc(720px + var(--favicon-size) - var(--header-icon-glyph));
       margin: 0 auto;
-      padding: calc(var(--header-height) + 1.5rem) var(--gutter) 6rem;
+      padding: calc(var(--header-height) + 1.5rem) var(--page-pad) 6rem;
       line-height: 1.5;
       background: var(--bg);
       color: var(--fg);
@@ -209,7 +211,7 @@
       cursor: pointer;
       display: flex;
       padding: 0;
-      margin-left: calc((var(--favicon-size) - var(--header-icon-glyph)) / 2 - var(--header-icon-inset));
+      margin-left: calc(-1 * var(--header-icon-inset));
       color: inherit;
       opacity: 0.7;
     }
@@ -565,7 +567,7 @@
     import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
     const supabase = createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__);
-    const SWIPE_COMMIT_THRESHOLD_PX = 90;
+    const SWIPE_COMMIT_THRESHOLD_PX = 110;
     const SWIPE_CAPTURE_SLOP_PX = 6;
     // Steepest upward heading a gesture may start with and still become a swipe.
     const SWIPE_START_MAX_UP_DEG = 15;
