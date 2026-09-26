@@ -339,15 +339,18 @@
     #profile-status { font-size: 0.8rem; color: gray; min-height: 1.2em; margin: 0.4rem 0 0; }
     #taste-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
     .taste-row { display: grid; grid-template-columns: 1fr auto; gap: 0.25rem 0.75rem; font-size: 0.85rem; }
-    .taste-votes { color: gray; font-size: 0.75rem; }
+    .taste-votes { display: flex; gap: 0.6rem; font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+    .taste-up { color: var(--positive); }
+    .taste-down { color: var(--negative); }
     .taste-bar {
       grid-column: 1 / -1;
+      display: flex;
+      gap: 2px;
       height: 6px;
-      border-radius: 3px;
-      background: var(--negative-soft);
-      overflow: hidden;
     }
-    .taste-bar span { display: block; height: 100%; background: var(--positive); }
+    .taste-bar span { height: 100%; border-radius: 3px; }
+    .taste-bar .up { background: var(--positive); }
+    .taste-bar .down { background: var(--negative); }
     #taste-status { color: gray; font-size: 0.85rem; margin: 0; }
     ul.articles { list-style: none; padding: 0; margin: 0; }
     li.article {
@@ -1440,7 +1443,7 @@
       const client = await supabaseReady;
       const { data: prefs, error } = await client
         .from("user_topic_preferences")
-        .select("topic_id, likes, dislikes, alpha, beta, votes")
+        .select("topic_id, likes, dislikes, alpha, beta, upvotes, downvotes")
         .eq("voter_id", session.user.id);
       if (error) {
         status.textContent = "Couldn't load your taste.";
@@ -1457,7 +1460,7 @@
         .in("id", leaves.map((pref) => pref.topic_id));
       const names = new Map((topics ?? []).map((topic) => [topic.id, topic.name]));
       const mean = (pref) => pref.alpha / (pref.alpha + pref.beta);
-      leaves.sort((a, b) => mean(b) - mean(a) || b.votes - a.votes);
+      leaves.sort((a, b) => mean(b) - mean(a) || b.upvotes + b.downvotes - a.upvotes - a.downvotes);
 
       status.textContent = "";
       for (const pref of leaves) {
@@ -1467,12 +1470,25 @@
         name.textContent = names.get(pref.topic_id) ?? pref.topic_id;
         const votes = document.createElement("span");
         votes.className = "taste-votes";
-        votes.textContent = `${pref.votes} ${pref.votes === 1 ? "vote" : "votes"}`;
+        const up = document.createElement("span");
+        up.className = "taste-up";
+        up.textContent = `▲ ${pref.upvotes}`;
+        up.title = `${pref.upvotes} upvoted`;
+        const down = document.createElement("span");
+        down.className = "taste-down";
+        down.textContent = `▼ ${pref.downvotes}`;
+        down.title = `${pref.downvotes} downvoted`;
+        votes.append(up, down);
         const bar = document.createElement("div");
         bar.className = "taste-bar";
-        const fill = document.createElement("span");
-        fill.style.width = `${Math.round(mean(pref) * 100)}%`;
-        bar.append(fill);
+        const total = pref.likes + pref.dislikes;
+        for (const [cls, weight] of [["up", pref.likes], ["down", pref.dislikes]]) {
+          if (!weight) continue;
+          const part = document.createElement("span");
+          part.className = cls;
+          part.style.flexGrow = String(weight / total);
+          bar.append(part);
+        }
         row.append(name, votes, bar);
         list.append(row);
       }
