@@ -124,6 +124,30 @@ would have orphaned that history for no reason (their URLs simply
 weren't in HN's/TechCrunch's *current* top lists at seed time, so a
 plain re-run wouldn't have touched them).
 
+**Topics — the recommender's label space.** `public.topics` is a fixed,
+human-named taxonomy keyed by an `ltree` path (`ai.agents`,
+`sports.football`), so `'ai' @> topic_id` selects a parent and all its
+children without a recursive query. `description` is the definition a
+classifier reads for each label. Links are tagged with leaf topics only,
+in `public.link_topics` as fuzzy `p ∈ (0, 1]`, typically 1–3 per link;
+`labeled_by` is `manual` (hand labels) or `jev` (the TypeSafe Jev
+decision model, planned, not yet automated — so new ingested links
+currently arrive untagged). Both tables are public-read, service_role-write.
+
+The intended recommender (not built yet): a user's preference is
+derived, not stored — per topic, `α = 1 + Σ p` over their upvoted links
+and `β = 1 + Σ p` over their downvoted ones (a view over `votes` ⋈
+`link_topics`, rolled up to ancestors for cold start). The client
+Thompson-samples `θ ~ Beta(α, β)` per topic and ranks links by `Σ θ·p`.
+The older word-count `TopicClusterer` in `site.py` is unrelated and
+will be superseded by this.
+
+**Open privacy question (deferred until there are real users):**
+`votes` is publicly readable (the page shows net scores), so any user's
+topic profile is derivable by anyone from `votes` ⋈ `link_topics`.
+Either accept that as part of an "open algorithm" stance, or make
+per-voter rows private and expose only per-link totals via a view.
+
 **Hosting — DigitalOcean.** The site is meant to ship as a static
 site (no server framework — see the architecture discussion for why:
 Supabase's auto-generated REST API + `supabase-js` + RLS covers reads,
