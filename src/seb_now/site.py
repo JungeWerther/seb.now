@@ -124,12 +124,12 @@ def load_feed() -> list[FeedItem]:
 
 
 def domain_with_author(domain: str, author: str) -> str:
-    """The domain line: a handle joins the domain ("youtube@Channel5YouTube"),
-    a display name follows it ("youtube · Name"). Same as the page script's
-    domainWithAuthor."""
+    """The domain line: a handle stands in for the domain ("@Channel5YouTube";
+    the favicon still shows the platform), a display name follows it
+    ("youtube · Name"). Same as the page script's domainWithAuthor."""
     if not author:
         return domain
-    return f"{domain}{author}" if author.startswith("@") else f"{domain} · {author}"
+    return author if author.startswith("@") else f"{domain} · {author}"
 
 
 def build_articles(feed: Sequence[FeedItem]) -> list[Article]:

@@ -1352,7 +1352,7 @@
     // Same as site.py's domain_with_author.
     function domainWithAuthor(domain, author) {
       if (!author) return domain;
-      return author.startsWith("@") ? `${domain}${author}` : `${domain} · ${author}`;
+      return author.startsWith("@") ? author : `${domain} · ${author}`;
     }
 
     function isHttpUrl(url) {

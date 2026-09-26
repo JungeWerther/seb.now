@@ -125,8 +125,9 @@ falling back to the host's first letter); the domain, title row and — when
 `image_url` is set — a clickable 16:9 cover image share the indented
 column to its right, cover below the title. The domain line also carries
 `links.author` when set (`domain_with_author` in `site.py`, `domainWithAuthor`
-in the page script): a handle joins the domain (`youtube@Channel5YouTube`), a
-display name follows it (`youtube · Name`).
+in the page script): a handle stands in for the domain (`@Channel5YouTube`;
+the favicon still shows the platform), a display name follows it
+(`youtube · Name`).
 
 Both upsert into `links` as `origin: 'feed'`, `onConflict: 'url'` (falling
 back to the HN item's own discussion-page URL when a story has no
