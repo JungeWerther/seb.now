@@ -19,16 +19,15 @@
       --negative: #c96a6a;
       --negative-soft: #f8e6e6;
       --sheen: rgba(255, 255, 255, 0.5);
-      /* The header's icon glyph sits one gutter from the header's top,
-         bottom and left edges and shares its centre with the feed's favicon
-         column, so the page is inset by the gutter less half the size
-         difference. The icon's SVG box is 4/3 of the glyph size and centred
-         vertically, so pulling it left by the same 1/6 of the glyph size
-         leaves equal space to its left and above it. The icon and wordmark
-         are centred in the top --header-bar-height of the header; the tagline
-         hangs below the wordmark in the extra --header-tagline-room, sized so
-         the tagline ends as far above the header's bottom as the wordmark
-         starts below its top (measured on the rendered Bricolage glyphs). */
+      /* The header's icon glyph is centred vertically in the header, one
+         gutter from its left edge, and shares its centre with the feed's
+         favicon column, so the page is inset by the gutter less half the size
+         difference. The icon's SVG box is 4/3 of the glyph size, so pulling it
+         left by 1/6 of the glyph size puts the glyph itself one gutter in.
+         The wordmark and tagline together are --brand-ink-height tall
+         (measured on the rendered Bricolage glyphs) with --header-brand-gap
+         above and below; --brand-ink-offset lifts the wordmark so that ink
+         block, not the SVG box, is what's centred. */
       --brand-font: "Bricolage Grotesque", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       --post-pad-x: calc(0.75rem + 1px);
       --post-pad-y: calc(0.6rem + 1px);
@@ -37,9 +36,10 @@
       --header-icon-glyph: 16px;
       --header-icon-box: calc(var(--header-icon-glyph) * 4 / 3);
       --header-icon-inset: calc(var(--header-icon-glyph) / 6);
-      --header-bar-height: calc(2 * var(--gutter) + var(--header-icon-glyph));
-      --header-tagline-room: 13px;
-      --header-height: calc(var(--header-bar-height) + var(--header-tagline-room));
+      --brand-ink-height: 31px;
+      --brand-ink-offset: 6.5px;
+      --header-brand-gap: 19px;
+      --header-height: calc(2 * var(--header-brand-gap) + var(--brand-ink-height));
       --page-pad: calc(var(--gutter) - (var(--favicon-size) - var(--header-icon-glyph)) / 2);
     }
     @media (prefers-color-scheme: dark) {
@@ -78,7 +78,7 @@
     }
     .header-inner {
       max-width: calc(720px + 2 * var(--gutter));
-      height: var(--header-bar-height);
+      height: 100%;
       margin: 0 auto;
       padding: 0 var(--gutter);
       box-sizing: border-box;
@@ -218,12 +218,12 @@
       padding: 2.5rem 0;
     }
     #search-empty.visible { display: block; }
-    h1.brand { position: relative; margin: 0; line-height: 0; }
+    h1.brand { position: relative; top: calc(-1 * var(--brand-ink-offset)); margin: 0; line-height: 0; }
     /* The viewBox is trimmed to the Bricolage glyphs so the tagline can centre
        on them; overflow stays visible for a wider fallback font. */
     h1.brand .wordmark { height: 26px; width: auto; display: block; overflow: visible; }
-    /* Hangs below the wordmark without moving it, so the wordmark stays
-       centred with the menu icon. */
+    /* Hangs below the wordmark, out of flow, so the header centres the
+       wordmark box and --brand-ink-offset accounts for the tagline. */
     h1.brand .tagline {
       position: absolute;
       top: calc(100% - 2px);
@@ -257,7 +257,8 @@
     #menu-btn[aria-expanded="true"] { color: var(--positive); }
     #menu-bubbles {
       position: absolute;
-      top: calc(100% + var(--gutter) - var(--header-icon-inset) + var(--header-tagline-room));
+      /* The menu is centred in the header, so this is the header's bottom edge. */
+      top: calc(50% + var(--header-height) / 2);
       left: calc(-1 * var(--header-icon-inset));
       list-style: none;
       margin: 0;
