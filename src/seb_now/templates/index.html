@@ -569,6 +569,8 @@
     const SWIPE_CAPTURE_SLOP_PX = 6;
     // Steepest upward heading a gesture may start with and still become a swipe.
     const SWIPE_START_MAX_UP_DEG = 15;
+    // How long a gesture runs before its direction decides swipe vs. scroll.
+    const SWIPE_START_DECIDE_MS = 100;
     const SWIPE_PIVOT_DISTANCE_PX = 600;
     const SWIPE_MAX_ANGLE_DEG = 35;
     const SWIPE_RADIAL_SLACK_PX = 30;
@@ -739,6 +741,7 @@
 
       let startX = null;
       let startY = null;
+      let startedAt = 0;
       let dragging = false;
       // Where the finger is (target) vs. where the card is drawn (shown);
       // pointer events only move the target, and one rAF loop eases the card
@@ -819,6 +822,7 @@
         if (e.target.closest("button")) return;
         startX = e.clientX;
         startY = e.clientY;
+        startedAt = e.timeStamp;
         dragging = true;
         content.style.transition = "none";
       }
@@ -832,14 +836,16 @@
         const dy = e.clientY - startY;
         if (!area.hasPointerCapture(e.pointerId)) {
           if (Math.hypot(dx, dy) < SWIPE_CAPTURE_SLOP_PX) return;
-          // A gesture that starts mostly vertical, or heading upward, is the
-          // feed being scrolled: give it up for good, even if it later turns sideways.
+          // A gesture that heads mostly vertical or upward at any point in its
+          // first SWIPE_START_DECIDE_MS is the feed being scrolled: give it up
+          // for good, even if it later turns sideways.
           if (Math.abs(dy) > Math.abs(dx) || -dy > Math.abs(dx) * maxStartUpSlope) {
             dragging = false;
             startX = null;
             startY = null;
             return;
           }
+          if (e.timeStamp - startedAt < SWIPE_START_DECIDE_MS) return;
           area.setPointerCapture(e.pointerId);
           li.classList.add("dragging");
         }
