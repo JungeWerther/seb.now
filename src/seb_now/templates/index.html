@@ -224,10 +224,9 @@
     #menu-btn svg {
       width: var(--header-icon-box);
       height: var(--header-icon-box);
-      transition: transform 0.25s ease;
     }
     #menu-btn:hover, #menu-btn[aria-expanded="true"] { opacity: 1; }
-    #menu-btn[aria-expanded="true"] svg { transform: rotate(90deg); }
+    #menu-btn[aria-expanded="true"] { color: var(--positive); }
     #menu-bubbles {
       position: absolute;
       top: calc(100% + var(--gutter) - var(--header-icon-inset));
@@ -278,16 +277,66 @@
       color: var(--bg);
     }
     .bubble .bubble-icon svg { width: 1rem; height: 1rem; }
-    .bubble[aria-pressed="true"] { border-color: var(--positive); }
-    .panel {
-      display: none;
-      border: 1px solid rgba(128, 128, 128, 0.35);
-      border-radius: 8px;
-      padding: 1rem;
-      margin-bottom: 2rem;
+    dialog.overlay {
+      width: min(420px, calc(100vw - 2 * var(--gutter)));
+      max-height: calc(100dvh - 2 * var(--header-height));
+      box-sizing: border-box;
+      padding: 1.25rem;
+      border: 1px solid rgba(128, 128, 128, 0.25);
+      border-radius: 16px;
+      background: var(--bg);
+      color: var(--fg);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+      overflow-y: auto;
     }
-    .panel.open { display: block; }
-    .panel-title { font-weight: 600; margin: 0 0 0.75rem; }
+    dialog.overlay[open] { animation: overlay-in 0.18s ease; }
+    dialog.overlay::backdrop {
+      background: rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+    @keyframes overlay-in {
+      from { opacity: 0; transform: translateY(8px) scale(0.98); }
+      to { opacity: 1; transform: none; }
+    }
+    .overlay-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+    .overlay-title { font-weight: 600; margin: 0; }
+    .overlay-close {
+      display: flex;
+      padding: 0.3rem;
+      border: none;
+      border-radius: 50%;
+      background: none;
+      color: inherit;
+      opacity: 0.6;
+      cursor: pointer;
+    }
+    .overlay-close:hover { opacity: 1; background: var(--post-bg); }
+    .overlay-close svg { width: 1.1rem; height: 1.1rem; }
+    #profile-overlay label { display: block; font-size: 0.8rem; color: gray; margin-bottom: 0.3rem; }
+    #profile-overlay .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    #handle-input {
+      font: inherit;
+      flex: 1;
+      min-width: 0;
+      padding: 0.45rem 0.7rem;
+      border: 1px solid rgba(128, 128, 128, 0.5);
+      border-radius: 999px;
+      background: transparent;
+      color: inherit;
+    }
+    #handle-input:focus { outline: none; border-color: var(--positive); box-shadow: 0 0 0 3px var(--positive-soft); }
+    #handle-save {
+      font: inherit;
+      padding: 0.45rem 1rem;
+      border: none;
+      border-radius: 999px;
+      background: var(--positive);
+      color: var(--bg);
+      cursor: pointer;
+    }
+    #handle-save:disabled { opacity: 0.5; cursor: default; }
+    #profile-status { font-size: 0.8rem; color: gray; min-height: 1.2em; margin: 0.4rem 0 0; }
     #taste-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
     .taste-row { display: grid; grid-template-columns: 1fr auto; gap: 0.25rem 0.75rem; font-size: 0.85rem; }
     .taste-votes { color: gray; font-size: 0.75rem; }
@@ -565,15 +614,19 @@
       <div class="menu">
         <button id="menu-btn" aria-label="Menu" aria-expanded="false" aria-controls="menu-bubbles">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect width="18" height="18" x="3" y="3" rx="2"/>
-            <path d="M9 3v18"/>
-            <path d="m14 9 3 3-3 3"/>
+            <path d="M18 20a6 6 0 0 0-12 0"/>
+            <circle cx="12" cy="10" r="4"/>
+            <circle cx="12" cy="12" r="10"/>
           </svg>
         </button>
         <ul id="menu-bubbles">
-          <li><button class="bubble" data-panel="taste-panel" aria-pressed="false" tabindex="-1">
+          <li><button class="bubble" data-overlay="taste-overlay" tabindex="-1">
             <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></span>
             <span>My Taste</span>
+          </button></li>
+          <li><button class="bubble" data-overlay="profile-overlay" tabindex="-1">
+            <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+            <span>My Profile</span>
           </button></li>
         </ul>
       </div>
@@ -587,11 +640,26 @@
     </div>
   </header>
   <div id="toast-container"></div>
-  <section id="taste-panel" class="panel" aria-label="My Taste">
-    <p class="panel-title">My Taste</p>
+  <dialog id="taste-overlay" class="overlay" aria-labelledby="taste-title">
+    <div class="overlay-head">
+      <p class="overlay-title" id="taste-title">My Taste</p>
+      <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
     <p id="taste-status"></p>
     <ol id="taste-list"></ol>
-  </section>
+  </dialog>
+  <dialog id="profile-overlay" class="overlay" aria-labelledby="profile-title">
+    <div class="overlay-head">
+      <p class="overlay-title" id="profile-title">My Profile</p>
+      <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
+    <label for="handle-input">Handle</label>
+    <div class="row">
+      <input id="handle-input" type="text" placeholder="pick a handle" maxlength="40" autocomplete="off">
+      <button id="handle-save">Save</button>
+    </div>
+    <p id="profile-status"></p>
+  </dialog>
   <p id="search-empty">No matching articles.</p>
   <!--ARTICLES-->
   <div id="search-dock">
@@ -1344,19 +1412,17 @@
 
       for (const item of items) {
         item.addEventListener("click", () => {
-          const panel = document.getElementById(item.dataset.panel);
-          const open = !panel.classList.contains("open");
-          for (const other of items) {
-            document.getElementById(other.dataset.panel).classList.remove("open");
-            other.setAttribute("aria-pressed", "false");
-          }
-          panel.classList.toggle("open", open);
-          item.setAttribute("aria-pressed", String(open));
           setOpen(false);
-          if (open) {
-            window.scrollTo({ top: 0, behavior: "smooth" });
-            PANEL_LOADERS[item.dataset.panel]?.();
-          }
+          const overlay = document.getElementById(item.dataset.overlay);
+          overlay.showModal();
+          OVERLAY_LOADERS[overlay.id]?.();
+        });
+      }
+
+      for (const overlay of document.querySelectorAll("dialog.overlay")) {
+        overlay.querySelector(".overlay-close").addEventListener("click", () => overlay.close());
+        overlay.addEventListener("click", (event) => {
+          if (event.target === overlay) overlay.close();
         });
       }
     }
@@ -1412,7 +1478,40 @@
       }
     }
 
-    const PANEL_LOADERS = { "taste-panel": loadTaste };
+    async function loadProfile() {
+      const input = document.getElementById("handle-input");
+      const status = document.getElementById("profile-status");
+      status.textContent = "";
+      const session = await pendingSession;
+      if (!session) return;
+      const { data } = await (await supabaseReady)
+        .from("profiles").select("handle").eq("id", session.user.id).single();
+      input.value = data?.handle ?? "";
+    }
+
+    function setupProfile() {
+      const input = document.getElementById("handle-input");
+      const saveBtn = document.getElementById("handle-save");
+      const status = document.getElementById("profile-status");
+      const save = async () => {
+        const session = await pendingSession;
+        if (!session) return;
+        saveBtn.disabled = true;
+        status.textContent = "Saving…";
+        const { error } = await (await supabaseReady)
+          .from("profiles")
+          .update({ handle: input.value.trim() || null })
+          .eq("id", session.user.id);
+        saveBtn.disabled = false;
+        status.textContent = error ? "Couldn't save." : "Saved.";
+      };
+      saveBtn.addEventListener("click", save);
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") save();
+      });
+    }
+
+    const OVERLAY_LOADERS = { "taste-overlay": loadTaste, "profile-overlay": loadProfile };
 
     // Must match the replies_body_length check in the replies migration.
     const REPLY_MAX_LENGTH = 500;
@@ -1671,6 +1770,7 @@
 
     setupFeed(savedSearchQuery().trim());
     setupMenu();
+    setupProfile();
     setupSearch();
     setupReplies();
     setupViewportPinning();

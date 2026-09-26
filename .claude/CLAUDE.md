@@ -193,14 +193,15 @@ inline event handlers (`onerror=` etc.) can't be used in markup — image
 error handling is one capture-phase listener in the page script — and bumping
 supabase-js means changing `SUPABASE_JS_MODULE_URL`, not the template.
 
-**Header menu.** The header's left icon opens a dropdown of round "bubbles"
-(`#menu-bubbles`), one per menu item; while open the icon rotates 90° so its
-chevron points down. Each bubble names a `.panel` (`data-panel`) shown above
-the feed, with an optional loader in `PANEL_LOADERS`. The first is **My
-Taste** (`#taste-panel`): the signed-in user's leaf topics from
-`user_topic_preferences`, ranked by the Beta mean `alpha / (alpha + beta)`
-and drawn as a liked/disliked bar. Setting a reply handle has no UI any more
-(the old settings panel it lived in was replaced by this menu).
+**Header menu.** The header's left icon (Lucide `circle-user-round`) opens a
+dropdown of round "bubbles" (`#menu-bubbles`), one per menu item. Each bubble
+names a `<dialog class="overlay">` (`data-overlay`) opened with `showModal()`
+— floating over the feed, closed by its ✕, a backdrop click or Escape — with
+an optional loader in `OVERLAY_LOADERS`. **My Taste** (`#taste-overlay`)
+lists the signed-in user's leaf topics from `user_topic_preferences`, ranked
+by the Beta mean `alpha / (alpha + beta)` and drawn as a liked/disliked bar.
+**My Profile** (`#profile-overlay`) edits `profiles.handle`, the name shown on
+replies.
 
 **Replies.** `public.replies` (`link_id`, `author_id` → `profiles`,
 `body`, `created_at`): publicly readable; any signed-in user (anonymous
