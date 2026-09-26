@@ -172,12 +172,16 @@ Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the
 vote tints (`.swipe-bg`) and the `.post` that slides over them, so the
 favicon, domain/chips line and replies don't react. While dragged, the
 post swings like a card hanging from a pivot `SWIPE_PIVOT_DISTANCE_PX`
-below it: the finger sets an angle around that pivot (clamped to
-`SWIPE_MAX_ANGLE_DEG`) and a radius (clamped to the pivot distance ±
-`SWIPE_RADIAL_SLACK_PX`), so the card stays inside an arc-shaped band and
-tilts by that angle — measuring from a far pivot rather than the start
-point is what keeps it stable near/below the start. A drag must still
-start sideways (`touch-action: pan-y`); a vertical-first gesture scrolls. `--post-bg` must stay
+below it, confined to an arc-shaped band: horizontal finger travel alone
+sets the angle around that pivot (clamped to `SWIPE_MAX_ANGLE_DEG`) and
+vertical travel alone sets the radius (clamped to the pivot distance ±
+`SWIPE_RADIAL_SLACK_PX`); the card tilts by that angle. Don't derive the
+angle from the finger's position relative to the pivot (`atan2(dx, R -
+dy)`): a steep downward drag then amplifies a small dx into a large tilt,
+can cross the vote threshold, and flips past the pivot. A drag must start
+sideways (`touch-action: pan-y`, so vertical-first gestures scroll); once
+it has, a non-passive `touchmove` handler blocks scrolling for the rest
+of the gesture so the browser can't cancel it mid-drag. `--post-bg` must stay
 opaque for the same reason (a translucent post would show the tint
 through it). The handler only takes pointer capture once the pointer has
 moved `SWIPE_CAPTURE_SLOP_PX`, and never starts on a `<button>` —

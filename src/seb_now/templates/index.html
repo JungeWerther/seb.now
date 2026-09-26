@@ -676,12 +676,14 @@
     }
 
     // The post swings like a card hanging from a pivot SWIPE_PIVOT_DISTANCE_PX
-    // below its centre: the finger sets an angle around that pivot (clamped
-    // to +/- SWIPE_MAX_ANGLE_DEG) and a radius (clamped to the pivot distance
-    // +/- SWIPE_RADIAL_SLACK_PX), so the card can only ever sit inside that
-    // arc-shaped band and tilts by the same angle. Measuring the angle from a
-    // far-away pivot, rather than from the start point, keeps it stable when
-    // the finger is close to or just below where it started.
+    // below its centre, confined to an arc-shaped band: the finger's
+    // horizontal travel alone sets the angle around that pivot (clamped to
+    // +/- SWIPE_MAX_ANGLE_DEG), and its vertical travel alone sets the radius
+    // (clamped to the pivot distance +/- SWIPE_RADIAL_SLACK_PX). Keeping the
+    // axes separate means dragging far down only presses the card against
+    // the band's edge - it never adds tilt, flips the angle, or reaches the
+    // vote threshold the way an angle measured from the finger's position
+    // relative to the pivot would once the finger approaches the pivot.
     function setupSwipe(li, session) {
       const area = li.querySelector(".post-swipe");
       const content = area.querySelector(".post");
@@ -697,8 +699,8 @@
 
       function place(dx, dy) {
         const R = SWIPE_PIVOT_DISTANCE_PX;
-        const angle = Math.max(-maxAngle, Math.min(maxAngle, Math.atan2(dx, R - dy)));
-        const radius = Math.max(R - SWIPE_RADIAL_SLACK_PX, Math.min(R + SWIPE_RADIAL_SLACK_PX, Math.hypot(dx, R - dy)));
+        const angle = Math.max(-maxAngle, Math.min(maxAngle, Math.atan2(dx, R)));
+        const radius = Math.max(R - SWIPE_RADIAL_SLACK_PX, Math.min(R + SWIPE_RADIAL_SLACK_PX, R - dy));
         const x = radius * Math.sin(angle);
         const y = R - radius * Math.cos(angle);
         content.style.transform = `translate(${x}px, ${y}px) rotate(${angle}rad)`;
@@ -787,6 +789,18 @@
 
       area.addEventListener("pointerdown", onDown);
       area.addEventListener("pointermove", onMove);
+      // Once a card drag is under way, keep the browser from turning the
+      // rest of the gesture into a page scroll (which would fire
+      // pointercancel and drop the card) however steeply the finger then
+      // moves down. Vertical-first gestures never reach "dragging", so they
+      // still scroll.
+      area.addEventListener(
+        "touchmove",
+        (e) => {
+          if (dragging && li.classList.contains("dragging")) e.preventDefault();
+        },
+        { passive: false },
+      );
       area.addEventListener("pointerup", onUp);
       area.addEventListener("pointercancel", () => {
         endDrag();
