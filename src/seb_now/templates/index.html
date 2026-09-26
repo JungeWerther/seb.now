@@ -212,8 +212,22 @@
       padding: 2.5rem 0;
     }
     #search-empty.visible { display: block; }
-    h1.brand { margin: 0; line-height: 0; }
+    h1.brand { position: relative; margin: 0; line-height: 0; }
     h1.brand .wordmark { height: 26px; width: auto; display: block; }
+    /* Hangs below the wordmark without moving it, so the wordmark stays
+       centred with the menu icon. */
+    h1.brand .tagline {
+      position: absolute;
+      top: calc(100% - 2px);
+      right: 0;
+      font-family: var(--brand-font);
+      font-size: 0.7rem;
+      font-weight: 500;
+      line-height: 1;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      color: gray;
+    }
     .menu { position: relative; display: flex; }
     #menu-btn {
       background: none;
@@ -694,6 +708,7 @@
             <tspan fill="var(--fg)">seb</tspan><tspan fill="var(--positive)"><animate attributeName="opacity" values="1;0.35;1" dur="2.4s" repeatCount="indefinite"/>.</tspan><tspan fill="var(--fg)" font-weight="400" opacity="0.85">now</tspan>
           </text>
         </svg>
+        <span class="tagline">own your feed</span>
       </h1>
     </div>
   </header>
