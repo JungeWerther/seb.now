@@ -1446,7 +1446,7 @@
       const client = await supabaseReady;
       const { data: prefs, error } = await client
         .from("user_topic_preferences")
-        .select("topic_id, likes, dislikes, alpha, beta, upvotes, downvotes")
+        .select("topic_id, alpha, beta, upvotes, downvotes")
         .eq("voter_id", session.user.id);
       if (error) {
         status.textContent = "Couldn't load your taste.";
@@ -1484,12 +1484,11 @@
         votes.append(up, down);
         const bar = document.createElement("div");
         bar.className = "taste-bar";
-        const total = pref.likes + pref.dislikes;
-        for (const [cls, weight] of [["up", pref.likes], ["down", pref.dislikes]]) {
-          if (!weight) continue;
+        for (const [cls, count] of [["up", pref.upvotes], ["down", pref.downvotes]]) {
+          if (!count) continue;
           const part = document.createElement("span");
           part.className = cls;
-          part.style.flexGrow = String(weight / total);
+          part.style.flex = `${count} 1 0`;
           bar.append(part);
         }
         row.append(name, votes, bar);
