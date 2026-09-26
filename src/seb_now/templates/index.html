@@ -539,6 +539,8 @@
     const SWIPE_RADIAL_SLACK_PX = 30;
     const SWIPE_SETTLE_MS = 280;
     const SWIPE_FLY_MS = 220;
+    // Time constant of the card's exponential follow toward the finger.
+    const SWIPE_SMOOTHING_MS = 35;
 
     async function ensureSession() {
       const { data: { session } } = await supabase.auth.getSession();
@@ -694,17 +696,43 @@
 
       let startX = null;
       let startY = null;
-      let offsetX = 0;
       let dragging = false;
+      // Where the finger is (target) vs. where the card is drawn (shown);
+      // pointer events only move the target, and one rAF loop eases the card
+      // toward it, so bursty/uneven event delivery can't make it jitter.
+      const target = { dx: 0, dy: 0 };
+      const shown = { dx: 0, dy: 0 };
+      let frame = null;
+      let lastFrameAt = null;
 
-      function place(dx, dy) {
+      function arcPosition(dx, dy) {
         const R = SWIPE_PIVOT_DISTANCE_PX;
         const angle = Math.max(-maxAngle, Math.min(maxAngle, Math.atan2(dx, R)));
         const radius = Math.max(R - SWIPE_RADIAL_SLACK_PX, Math.min(R + SWIPE_RADIAL_SLACK_PX, R - dy));
-        const x = radius * Math.sin(angle);
-        const y = R - radius * Math.cos(angle);
+        return { x: radius * Math.sin(angle), y: R - radius * Math.cos(angle), angle };
+      }
+
+      function draw() {
+        const { x, y, angle } = arcPosition(shown.dx, shown.dy);
         content.style.transform = `translate(${x}px, ${y}px) rotate(${angle}rad)`;
-        return x;
+        setTints(x);
+      }
+
+      function tick(now) {
+        const dt = lastFrameAt === null ? 16 : now - lastFrameAt;
+        lastFrameAt = now;
+        const follow = 1 - Math.exp(-dt / SWIPE_SMOOTHING_MS);
+        shown.dx += (target.dx - shown.dx) * follow;
+        shown.dy += (target.dy - shown.dy) * follow;
+        draw();
+        frame = dragging ? requestAnimationFrame(tick) : null;
+      }
+
+      function stopFollowing() {
+        if (frame !== null) cancelAnimationFrame(frame);
+        frame = null;
+        lastFrameAt = null;
+        target.dx = target.dy = shown.dx = shown.dy = 0;
       }
 
       function setTints(x) {
@@ -717,7 +745,7 @@
         dragging = false;
         startX = null;
         startY = null;
-        offsetX = 0;
+        stopFollowing();
       }
 
       function reset() {
@@ -750,13 +778,14 @@
           area.setPointerCapture(e.pointerId);
           li.classList.add("dragging");
         }
-        offsetX = place(dx, dy);
-        setTints(offsetX);
+        target.dx = dx;
+        target.dy = dy;
+        if (frame === null) frame = requestAnimationFrame(tick);
       }
 
       async function onUp() {
         if (!dragging) return;
-        const x = offsetX;
+        const { x } = arcPosition(target.dx, target.dy);
         endDrag();
 
         if (x <= -SWIPE_COMMIT_THRESHOLD_PX) {

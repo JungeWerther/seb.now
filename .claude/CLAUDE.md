@@ -181,7 +181,11 @@ dy)`): a steep downward drag then amplifies a small dx into a large tilt,
 can cross the vote threshold, and flips past the pivot. A drag must start
 sideways (`touch-action: pan-y`, so vertical-first gestures scroll); once
 it has, a non-passive `touchmove` handler blocks scrolling for the rest
-of the gesture so the browser can't cancel it mid-drag. `--post-bg` must stay
+of the gesture so the browser can't cancel it mid-drag. Pointer events
+only update the finger's target position; a single rAF loop eases the
+drawn card toward it (exponential follow, `SWIPE_SMOOTHING_MS` time
+constant, frame-rate independent) so uneven event delivery can't make it
+jitter. Vote decisions use the finger's target, not the eased position. `--post-bg` must stay
 opaque for the same reason (a translucent post would show the tint
 through it). The handler only takes pointer capture once the pointer has
 moved `SWIPE_CAPTURE_SLOP_PX`, and never starts on a `<button>` —
