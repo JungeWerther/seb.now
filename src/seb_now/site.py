@@ -150,6 +150,8 @@ def _render_article(article: Article) -> str:
         f'<span class="score">0</span>'
         f"</div>"
         f"{cover}"
+        f"</div>"
+        f"</div>"
         f'<div class="post-footer">'
         f'<span class="reply-count" hidden></span>'
         f'<button type="button" class="reply-btn" aria-label="Reply">'
@@ -158,8 +160,6 @@ def _render_article(article: Article) -> str:
         f'<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>'
         f"</svg>"
         f"</button>"
-        f"</div>"
-        f"</div>"
         f"</div>"
         f'<ol class="replies" hidden></ol>'
         f"</div>"

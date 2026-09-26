@@ -169,7 +169,7 @@ handles) into the DOM via `textContent`, and anything server-rendered
 must go through `html.escape`. `tests/test_site.py` fails if the page
 script assigns `innerHTML`/`outerHTML` from anything but a string
 literal, or uses `insertAdjacentHTML`/`document.write`. Each post has a
-round reply button (bottom right of the post box) that swaps the search
+round reply button (below the post box, right-aligned, outside `.post-swipe` so it stays put while the card is swiped) that swaps the search
 bar for a reply composer in the same dock; replies are loaded
 client-side and listed under the post. No moderation or rate limiting
 yet — anyone with an anonymous session can post.
