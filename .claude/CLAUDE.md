@@ -230,9 +230,9 @@ the tagline centres on the letters) the page loads "your own feed", and
 `swapTagline()` swaps the first two words on every load: "your" dips down a
 semicircle into second place while "own" glides left over it (Web Animations
 API, FLIP from the measured positions; an instant swap under
-`prefers-reduced-motion`). The header is `--header-bar-height` plus
-`--header-tagline-room`, so the tagline ends as far above the header's bottom
-as the wordmark starts below its top.
+`prefers-reduced-motion`). The wordmark-plus-tagline ink block is centred
+in the header with `--header-brand-gap` above and below it, and the menu icon
+is centred vertically.
 
 **Replies.** `public.replies` (`link_id`, `author_id` → `profiles`,
 `body`, `created_at`): publicly readable; any signed-in user (anonymous
