@@ -185,7 +185,13 @@ of the gesture so the browser can't cancel it mid-drag. Pointer events
 only update the finger's target position; a single rAF loop eases the
 drawn card toward it (exponential follow, `SWIPE_SMOOTHING_MS` time
 constant, frame-rate independent) so uneven event delivery can't make it
-jitter. Vote decisions use the finger's target, not the eased position. `--post-bg` must stay
+jitter. Vote decisions use the finger's target, not the eased position.
+Below the vote threshold the tint only previews (up to
+`SWIPE_TINT_PREVIEW_OPACITY`, icon and label dimmed); the moment the
+finger's target crosses it the tint gets `.armed` — full opacity, the icon
+pops, one light sheen sweeps across in the swipe direction, and a short
+`navigator.vibrate` where supported — and loses it again if dragged back,
+so "release now counts" is unambiguous. `--post-bg` must stay
 opaque for the same reason (a translucent post would show the tint
 through it). The handler only takes pointer capture once the pointer has
 moved `SWIPE_CAPTURE_SLOP_PX`, and never starts on a `<button>` —

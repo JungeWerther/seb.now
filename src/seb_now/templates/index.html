@@ -17,6 +17,7 @@
       --positive-soft: #e1f3e6;
       --negative: #c96a6a;
       --negative-soft: #f8e6e6;
+      --sheen: rgba(255, 255, 255, 0.75);
       /* Page edge margin, shared by the page, header and search dock. The
          header's icon glyph (15px tall) sits one gutter from the top, and
          horizontally shares its centre with the favicon column below. */
@@ -35,6 +36,7 @@
         --positive-soft: #203a29;
         --negative: #e0a0a0;
         --negative-soft: #3a2323;
+        --sheen: rgba(255, 255, 255, 0.12);
       }
     }
     body {
@@ -276,6 +278,37 @@
       font-weight: 600;
     }
     .swipe-bg .tint svg { flex-shrink: 0; }
+    .swipe-bg .tint > svg,
+    .swipe-bg .tint > span {
+      opacity: 0.55;
+      transform: scale(0.9);
+      transition: opacity 0.15s, transform 0.25s cubic-bezier(0.3, 1.6, 0.5, 1);
+    }
+    .swipe-bg .tint.armed > svg,
+    .swipe-bg .tint.armed > span { opacity: 1; transform: scale(1); }
+    /* One soft light band sweeping across the tint the moment a drag crosses the vote threshold. */
+    .swipe-bg .tint::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(100deg, transparent 30%, var(--sheen) 50%, transparent 70%);
+      transform: translateX(-100%);
+      opacity: 0;
+      pointer-events: none;
+    }
+    .swipe-bg .tint-down.armed::after { animation: sheen-right 0.6s ease-out; }
+    .swipe-bg .tint-up.armed::after { animation: sheen-left 0.6s ease-out; }
+    @keyframes sheen-right {
+      from { transform: translateX(-100%); opacity: 1; }
+      to { transform: translateX(100%); opacity: 1; }
+    }
+    @keyframes sheen-left {
+      from { transform: translateX(100%); opacity: 1; }
+      to { transform: translateX(-100%); opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .swipe-bg .tint.armed::after { animation: none; }
+    }
     .swipe-bg .tint-down { background: var(--negative-soft); color: var(--negative); justify-content: flex-start; }
     .swipe-bg .tint-up { background: var(--positive-soft); color: var(--positive); justify-content: flex-end; }
     .swipe-content {
@@ -535,12 +568,15 @@
     const SWIPE_COMMIT_THRESHOLD_PX = 90;
     const SWIPE_CAPTURE_SLOP_PX = 6;
     const SWIPE_PIVOT_DISTANCE_PX = 600;
-    const SWIPE_MAX_ANGLE_DEG = 25;
+    const SWIPE_MAX_ANGLE_DEG = 35;
     const SWIPE_RADIAL_SLACK_PX = 30;
     const SWIPE_SETTLE_MS = 280;
     const SWIPE_FLY_MS = 220;
     // Time constant of the card's exponential follow toward the finger.
     const SWIPE_SMOOTHING_MS = 35;
+    // Tint opacity just short of the threshold; crossing it jumps to full.
+    const SWIPE_TINT_PREVIEW_OPACITY = 0.55;
+    const SWIPE_ARMED_VIBRATE_MS = 8;
 
     async function ensureSession() {
       const { data: { session } } = await supabase.auth.getSession();
@@ -664,6 +700,10 @@
         content.style.transition = "transform 0.2s ease-out, opacity 0.2s ease-out";
         content.style.transform = "";
         content.style.opacity = "";
+        for (const tint of li.querySelectorAll(".tint")) {
+          tint.style.opacity = 0;
+          tint.classList.remove("armed");
+        }
         const scores = await loadScores([linkId]);
         renderScore(li, scores[linkId] || 0);
         dismiss();
@@ -715,7 +755,7 @@
       function draw() {
         const { x, y, angle } = arcPosition(shown.dx, shown.dy);
         content.style.transform = `translate(${x}px, ${y}px) rotate(${angle}rad)`;
-        setTints(x);
+        setTints(x, arcPosition(target.dx, target.dy).x);
       }
 
       function tick(now) {
@@ -735,10 +775,22 @@
         target.dx = target.dy = shown.dx = shown.dy = 0;
       }
 
-      function setTints(x) {
-        const progress = Math.min(Math.abs(x) / SWIPE_COMMIT_THRESHOLD_PX, 1);
-        tintUp.style.opacity = x < 0 ? progress : 0; // left = upvote
-        tintDown.style.opacity = x > 0 ? progress : 0; // right = downvote + hide
+      // Opacity follows the drawn card; the armed state follows the finger,
+      // because that is what onUp decides the vote from.
+      function setTints(x, targetX) {
+        const progress = Math.min(Math.abs(x) / SWIPE_COMMIT_THRESHOLD_PX, 1) * SWIPE_TINT_PREVIEW_OPACITY;
+        const upArmed = targetX <= -SWIPE_COMMIT_THRESHOLD_PX; // left = upvote
+        const downArmed = targetX >= SWIPE_COMMIT_THRESHOLD_PX; // right = downvote + hide
+        tintUp.style.opacity = upArmed ? 1 : x < 0 ? progress : 0;
+        tintDown.style.opacity = downArmed ? 1 : x > 0 ? progress : 0;
+        setArmed(tintUp, upArmed);
+        setArmed(tintDown, downArmed);
+      }
+
+      function setArmed(tint, armed) {
+        if (tint.classList.contains("armed") === armed) return;
+        tint.classList.toggle("armed", armed);
+        if (armed) navigator.vibrate?.(SWIPE_ARMED_VIBRATE_MS);
       }
 
       function endDrag() {
@@ -753,6 +805,8 @@
         content.style.transform = "";
         tintDown.style.opacity = 0;
         tintUp.style.opacity = 0;
+        setArmed(tintDown, false);
+        setArmed(tintUp, false);
         const settle = () => li.classList.remove("dragging");
         content.addEventListener("transitionend", settle, { once: true });
         setTimeout(settle, SWIPE_SETTLE_MS + 50);
