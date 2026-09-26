@@ -35,7 +35,7 @@ write goes through RLS as an authenticated (including anonymous) user.
 The one exception is `service_role` inside the three ingestion Edge
 Functions (see below) — server-side only, never shipped to a client.
 
-**Ingestion — three Edge Functions, each on its own `pg_cron` schedule,
+**Ingestion — four Edge Functions, each on its own `pg_cron` schedule,
 all inside the `seb-now` project itself** (unlike the DO deploy trigger,
 these don't need the personal CRM project or its vault secret, since
 they call their own project's own functions):
@@ -58,6 +58,15 @@ they call their own project's own functions):
   (`techcrunch.com/feed/`), top 20 items, extracted with a small regex
   (not a full XML parser — the feed's `<item>`/`<title>`/`<link>` shape
   is stable and simple enough that a parser dependency isn't worth it).
+- `youtube-ingest` (`45 */6 * * *`) — each channel's public Atom feed
+  (`youtube.com/feeds/videos.xml?channel_id=…`, no auth, latest 15 uploads)
+  for the channels in `CHANNELS` (currently Channel 5 with Andrew Callaghan).
+  Shorts (`/shorts/` links) are skipped. Videos upsert as `origin: 'feed'`
+  with a canonical `watch?v=` url, `image_url` set to the video's
+  `hqdefault.jpg` (letterboxed 4:3, which the 16:9 cover crop trims exactly),
+  and `created_at` set to the upload date rather than ingest time, so a
+  channel's backlog doesn't all rank as fresh. Deployed with `verify_jwt` on;
+  its cron sends the same anon-key bearer as the others.
 
 **Blog posts** are how "your own submission" (the `origin: 'local'`
 value that's existed in the schema since the start) actually gets
@@ -119,7 +128,7 @@ which is why these are full indexes rather than e.g.
 `... where fediverse_post_uri is not null` — harmless here since `NULL`
 never collides with `NULL` under uniqueness anyway.
 
-The three schedules are staggered 15 minutes apart (`:00`/`:15`/`:30`)
+The four schedules are staggered 15 minutes apart (`:00`/`:15`/`:30`/`:45`)
 so they don't all hit the DB/edge runtime at once.
 
 `origin` has three values: `local` (a user's own submission — none yet;
