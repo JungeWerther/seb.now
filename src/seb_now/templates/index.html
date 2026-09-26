@@ -343,20 +343,58 @@
     }
     #handle-save:disabled { opacity: 0.5; cursor: default; }
     #profile-status { font-size: 0.8rem; color: gray; min-height: 1.2em; margin: 0.4rem 0 0; }
-    #taste-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
-    .taste-row { display: grid; grid-template-columns: 1fr auto; gap: 0.25rem 0.75rem; font-size: 0.85rem; }
+    #taste-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1.4rem; }
+    .taste-row { display: grid; grid-template-columns: 1fr auto; gap: 0.5rem 0.75rem; font-size: 0.85rem; }
+    .taste-custom { margin-left: 0.4rem; font-size: 0.7rem; color: gray; }
     .taste-votes { display: flex; gap: 0.6rem; font-size: 0.75rem; font-variant-numeric: tabular-nums; }
     .taste-up { color: var(--positive); }
     .taste-down { color: var(--negative); }
-    .taste-bar {
+    /* The slider's track is green up to the thumb and red after it, so the
+       split is the topic's score. */
+    .taste-slider {
+      --pct: 50%;
       grid-column: 1 / -1;
-      display: flex;
-      gap: 2px;
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
       height: 6px;
+      margin: 0.35rem 0;
+      border-radius: 3px;
+      background: linear-gradient(to right, var(--positive) var(--pct), var(--negative) var(--pct));
+      cursor: pointer;
+      touch-action: pan-y;
     }
-    .taste-bar span { height: 100%; border-radius: 3px; }
-    .taste-bar .up { background: var(--positive); }
-    .taste-bar .down { background: var(--negative); }
+    .taste-slider:focus-visible { outline: 2px solid var(--positive-soft); outline-offset: 4px; }
+    .taste-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--bg);
+      border: 2px solid var(--fg);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    }
+    .taste-slider::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--bg);
+      border: 2px solid var(--fg);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    }
+    #taste-reset {
+      display: none;
+      margin: 1.5rem auto 0;
+      font: inherit;
+      font-size: 0.8rem;
+      padding: 0.45rem 1rem;
+      border: 1px solid rgba(128, 128, 128, 0.4);
+      border-radius: 999px;
+      background: none;
+      color: inherit;
+      cursor: pointer;
+    }
+    #taste-reset.visible { display: block; }
     #taste-status { color: gray; font-size: 0.85rem; margin: 0; }
     .taste-score { color: gray; }
     .taste-lead { font-weight: 700; font-size: 0.9rem; margin: 0 0 1rem; }
@@ -672,6 +710,7 @@
     <p class="taste-lead">Green topics are more likely to appear in your feed</p>
     <p id="taste-status"></p>
     <ol id="taste-list"></ol>
+    <button id="taste-reset">Reset to default</button>
   </dialog>
   <dialog id="profile-overlay" class="overlay" aria-labelledby="profile-title">
     <div class="overlay-head">
@@ -1506,26 +1545,40 @@
       }
     }
 
+    // Set once My Algorithm changes an override, so closing it re-ranks the feed.
+    let tasteChanged = false;
+
     async function loadTaste() {
       const status = document.getElementById("taste-status");
       const list = document.getElementById("taste-list");
+      const reset = document.getElementById("taste-reset");
       status.textContent = "Loading…";
       list.replaceChildren();
+      reset.classList.remove("visible");
       const session = await pendingSession;
       if (!session) {
         status.textContent = "Couldn't load your taste.";
         return;
       }
       const client = await supabaseReady;
-      const { data: prefs, error } = await client
-        .from("user_topic_preferences")
-        .select("topic_id, alpha, beta, upvotes, downvotes")
-        .eq("voter_id", session.user.id);
-      if (error) {
+      const [{ data: prefs, error }, { data: overrideRows, error: overridesError }] = await Promise.all([
+        client
+          .from("user_topic_preferences")
+          .select("topic_id, alpha, beta, upvotes, downvotes")
+          .eq("voter_id", session.user.id),
+        client.from("topic_overrides").select("topic_id, score").eq("user_id", session.user.id),
+      ]);
+      if (error || overridesError) {
         status.textContent = "Couldn't load your taste.";
         return;
       }
+      const overrides = new Map((overrideRows ?? []).map((row) => [row.topic_id, row.score]));
       const leaves = (prefs ?? []).filter((pref) => pref.topic_id.includes("."));
+      for (const topicId of overrides.keys()) {
+        if (!leaves.some((pref) => pref.topic_id === topicId)) {
+          leaves.push({ topic_id: topicId, alpha: 1, beta: 1, upvotes: 0, downvotes: 0 });
+        }
+      }
       if (!leaves.length) {
         status.textContent = "Swipe to vote on a few articles and your taste shows up here.";
         return;
@@ -1535,15 +1588,21 @@
         .select("id, name")
         .in("id", leaves.map((pref) => pref.topic_id));
       const names = new Map((topics ?? []).map((topic) => [topic.id, topic.name]));
-      const mean = (pref) => pref.alpha / (pref.alpha + pref.beta);
-      leaves.sort((a, b) => mean(b) - mean(a) || b.upvotes + b.downvotes - a.upvotes - a.downvotes);
+      const scoreOf = (pref) => overrides.get(pref.topic_id) ?? pref.alpha / (pref.alpha + pref.beta);
+      leaves.sort((a, b) => scoreOf(b) - scoreOf(a) || b.upvotes + b.downvotes - a.upvotes - a.downvotes);
 
       status.textContent = "";
+      reset.classList.toggle("visible", overrides.size > 0);
       for (const pref of leaves) {
         const row = document.createElement("li");
         row.className = "taste-row";
         const name = document.createElement("span");
         name.textContent = names.get(pref.topic_id) ?? pref.topic_id;
+        const custom = document.createElement("span");
+        custom.className = "taste-custom";
+        custom.textContent = "custom";
+        custom.hidden = !overrides.has(pref.topic_id);
+        name.append(custom);
         const votes = document.createElement("span");
         votes.className = "taste-votes";
         const up = document.createElement("span");
@@ -1556,21 +1615,62 @@
         down.title = `${pref.downvotes} downvoted`;
         const score = document.createElement("span");
         score.className = "taste-score";
-        score.textContent = `score ${mean(pref).toFixed(2)}`;
-        score.title = "score";
         votes.append(score, up, down);
-        const bar = document.createElement("div");
-        bar.className = "taste-bar";
-        for (const [cls, count] of [["up", pref.upvotes], ["down", pref.downvotes]]) {
-          if (!count) continue;
-          const part = document.createElement("span");
-          part.className = cls;
-          part.style.flex = `${count} 1 0`;
-          bar.append(part);
-        }
-        row.append(name, votes, bar);
+
+        const slider = document.createElement("input");
+        slider.type = "range";
+        slider.className = "taste-slider";
+        slider.min = "0";
+        slider.max = "100";
+        slider.value = String(Math.round(scoreOf(pref) * 100));
+        slider.setAttribute("aria-label", `${name.firstChild.textContent} score`);
+        const show = () => {
+          slider.style.setProperty("--pct", `${slider.value}%`);
+          score.textContent = `score ${(slider.value / 100).toFixed(2)}`;
+        };
+        show();
+        slider.addEventListener("input", show);
+        slider.addEventListener("change", async () => {
+          const { error: saveError } = await client
+            .from("topic_overrides")
+            .upsert(
+              { user_id: session.user.id, topic_id: pref.topic_id, score: slider.value / 100, updated_at: new Date().toISOString() },
+              { onConflict: "user_id,topic_id" },
+            );
+          if (saveError) {
+            status.textContent = "Couldn't save that change.";
+            return;
+          }
+          tasteChanged = true;
+          custom.hidden = false;
+          reset.classList.add("visible");
+        });
+        row.append(name, votes, slider);
         list.append(row);
       }
+    }
+
+    function setupTaste() {
+      const overlay = document.getElementById("taste-overlay");
+      document.getElementById("taste-reset").addEventListener("click", async () => {
+        const session = await pendingSession;
+        if (!session) return;
+        const { error } = await (await supabaseReady)
+          .from("topic_overrides")
+          .delete()
+          .eq("user_id", session.user.id);
+        if (error) {
+          document.getElementById("taste-status").textContent = "Couldn't reset.";
+          return;
+        }
+        tasteChanged = true;
+        loadTaste();
+      });
+      overlay.addEventListener("close", () => {
+        if (!tasteChanged) return;
+        tasteChanged = false;
+        if (!feed.query) showFeed("");
+      });
     }
 
     async function loadProfile() {
@@ -1865,6 +1965,7 @@
 
     setupFeed(savedSearchQuery().trim());
     setupMenu();
+    setupTaste();
     setupProfile();
     setupSearch();
     setupReplies();

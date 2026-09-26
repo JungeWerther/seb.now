@@ -439,3 +439,11 @@ def test_page_script_ranks_the_default_feed_and_shows_the_formula() -> None:
     assert 'rpc("ranked_feed"' in html
     assert "your topic scores" in html
     assert "0.5 ^ (age in hours / 24)" in html
+
+
+def test_my_algorithm_has_sliders_saved_as_overrides_and_a_reset() -> None:
+    html = render([])
+
+    assert 'id="taste-reset"' in html
+    assert 'from("topic_overrides")' in html
+    assert 'slider.type = "range"' in html
