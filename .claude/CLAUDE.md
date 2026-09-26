@@ -166,8 +166,8 @@ arrives, and fetches further pages as you scroll (infinite scroll via an
 `public.ranked_feed(as_of, page_offset, page_size)` SQL function (security
 invoker, so `auth.uid()` is the viewer):
 `rank = taste * (1 + ups) / (2 + ups + downs) * 0.5 ^ (age_hours / 24)` —
-`taste` is the viewer's p-weighted mean `user_topic_preferences` score over the
-link's topics (a never-voted topic falls back to its parent, then 0.5;
+`taste` is the viewer's p-weighted mean topic score over the link's topics (their
+`topic_overrides` score if they set one, else the `user_topic_preferences` one) (a never-voted topic falls back to its parent, then 0.5;
 untagged links are 0.5), `ups`/`downs` are everyone's votes on the link, and
 freshness halves every 24h. It returns `(link_id, rank)` pages; the client
 then loads those links by id with `FEED_SELECT` and sorts them into rank order.
@@ -216,8 +216,11 @@ an optional loader in `OVERLAY_LOADERS`. **My Algorithm** (`#taste-overlay`)
 lists the signed-in user's leaf topics from `user_topic_preferences`, ranked
 by the Beta mean `alpha / (alpha + beta)`, with the view's `upvotes`/`downvotes`
 counts, the score itself (the formula's output, two decimals) and a
-green/red bar split by the counts;
-above the list a code block shows the feed's ranking formula (see "Feed
+green/red slider whose split is the score. Dragging a slider saves the
+user's own score for that topic to `public.topic_overrides` (private to its
+owner by RLS), which `ranked_feed` uses in place of the vote-derived score;
+"Reset to default" deletes the user's overrides, and closing the overlay
+after a change re-ranks the feed. Above the list a code block shows the feed's ranking formula (see "Feed
 pagination, ranking and search"), so keep it in sync with `ranked_feed`.
 **My Profile** (`#profile-overlay`) edits `profiles.handle`, the name shown on
 replies.
