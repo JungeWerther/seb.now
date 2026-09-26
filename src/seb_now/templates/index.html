@@ -354,6 +354,7 @@
     .taste-bar .down { background: var(--negative); }
     #taste-status { color: gray; font-size: 0.85rem; margin: 0; }
     .taste-score { color: gray; }
+    .taste-lead { font-weight: 700; font-size: 0.9rem; margin: 0 0 1rem; }
     .taste-formula {
       margin: 1.25rem 0 0;
       padding: 0.6rem 0.75rem;
@@ -661,6 +662,7 @@
       <p class="overlay-title" id="taste-title">My Algorithm</p>
       <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     </div>
+    <p class="taste-lead">Green topics are more likely to appear in your feed</p>
     <p id="taste-status"></p>
     <ol id="taste-list"></ol>
     <pre class="taste-formula"><code>score = (1+likes) / (2+likes+dislikes)</code></pre>
@@ -1494,7 +1496,7 @@
         down.title = `${pref.downvotes} downvoted`;
         const score = document.createElement("span");
         score.className = "taste-score";
-        score.textContent = `${Math.round(mean(pref) * 100)}%`;
+        score.textContent = `score ${mean(pref).toFixed(2)}`;
         score.title = "score";
         votes.append(score, up, down);
         const bar = document.createElement("div");
