@@ -200,7 +200,7 @@ jitter. Vote decisions use the finger's target, not the eased position.
 Below the vote threshold the tint only previews (up to
 `SWIPE_TINT_PREVIEW_OPACITY`, icon and label dimmed); the moment the
 finger's target crosses it the tint gets `.armed` — full opacity, the icon
-pops, one light sheen sweeps diagonally across it (from the bottom-left corner for an upvote, the top-right for a downvote), and a short
+pops, one light sheen sweeps diagonally upward across it (from the bottom-left corner for an upvote, the bottom-right for a downvote), and a short
 `navigator.vibrate` where supported — and loses it again if dragged back,
 so "release now counts" is unambiguous. `--post-bg` must stay
 opaque for the same reason (a translucent post would show the tint
