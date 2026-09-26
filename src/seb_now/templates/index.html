@@ -12,7 +12,7 @@
       color-scheme: light dark;
       --bg: #ffffff;
       --fg: #1a1a1a;
-      --post-bg: rgba(128, 128, 128, 0.07);
+      --post-bg: #f6f6f6;
       --positive: #4c9a6a;
       --positive-soft: #e1f3e6;
       --negative: #c96a6a;
@@ -249,9 +249,16 @@
       --domain-line-height: 1.05rem;
       position: relative;
       overflow: hidden;
-      touch-action: pan-y;
     }
     li.article.upvoted { box-shadow: inset 3px 0 0 var(--positive); }
+    .post-swipe {
+      --post-pad-x: calc(0.75rem + 1px);
+      position: relative;
+      overflow: hidden;
+      margin: calc(0.3rem + 6px) 0 0 calc(-1 * var(--post-pad-x));
+      border-radius: 14px;
+      touch-action: pan-y;
+    }
     .swipe-bg { position: absolute; inset: 0; }
     .swipe-bg .tint {
       position: absolute;
@@ -304,10 +311,10 @@
       flex-direction: column;
       gap: 0.15rem;
     }
-    .swipe-content.flash-positive { animation: flash-positive 0.9s ease-out; }
+    .post.flash-positive { animation: flash-positive 0.9s ease-out; }
     @keyframes flash-positive {
       from { background-color: var(--positive-soft); }
-      to { background-color: var(--bg); }
+      to { background-color: var(--post-bg); }
     }
     .swipe-content::before {
       content: "";
@@ -319,8 +326,7 @@
       background: rgba(128, 128, 128, 0.25);
     }
     .swipe-content .post {
-      --post-pad-x: calc(0.75rem + 1px);
-      margin: calc(0.3rem + 6px) 0 0 calc(-1 * var(--post-pad-x));
+      position: relative;
       padding: calc(0.6rem + 1px) var(--post-pad-x);
       border-radius: 14px;
       background: var(--post-bg);
@@ -644,7 +650,7 @@
         li.style.maxHeight = "";
         li.style.opacity = "";
         li.classList.remove("upvoted");
-        const content = li.querySelector(".swipe-content");
+        const content = li.querySelector(".post");
         content.style.transition = "transform 0.2s ease-out";
         content.style.transform = "translateX(0)";
         const scores = await loadScores([linkId]);
@@ -661,7 +667,8 @@
     }
 
     function setupSwipe(li, session) {
-      const content = li.querySelector(".swipe-content");
+      const area = li.querySelector(".post-swipe");
+      const content = area.querySelector(".post");
       const tintDown = li.querySelector(".tint-down");
       const tintUp = li.querySelector(".tint-up");
       const linkId = li.dataset.linkId;
@@ -685,14 +692,14 @@
       }
 
       // Capturing on pointerdown would retarget a plain tap's click to the
-      // <li>, so links/buttons inside never receive it - capture only once
-      // the pointer has actually moved far enough to be a swipe.
+      // swipe area, so links/buttons inside never receive it - capture only
+      // once the pointer has actually moved far enough to be a swipe.
       function onMove(e) {
         if (!dragging || startX === null) return;
         dx = e.clientX - startX;
-        if (!li.hasPointerCapture(e.pointerId)) {
+        if (!area.hasPointerCapture(e.pointerId)) {
           if (Math.abs(dx) < SWIPE_CAPTURE_SLOP_PX) return;
-          li.setPointerCapture(e.pointerId);
+          area.setPointerCapture(e.pointerId);
         }
         content.style.transform = `translateX(${dx}px)`;
         const progress = Math.min(Math.abs(dx) / SWIPE_COMMIT_THRESHOLD_PX, 1);
@@ -739,10 +746,10 @@
         startX = null;
       }
 
-      li.addEventListener("pointerdown", onDown);
-      li.addEventListener("pointermove", onMove);
-      li.addEventListener("pointerup", onUp);
-      li.addEventListener("pointercancel", () => {
+      area.addEventListener("pointerdown", onDown);
+      area.addEventListener("pointermove", onMove);
+      area.addEventListener("pointerup", onUp);
+      area.addEventListener("pointercancel", () => {
         dragging = false;
         dx = 0;
         startX = null;

@@ -203,6 +203,23 @@ def test_template_never_assigns_non_literal_html() -> None:
     assert "document.write" not in script
 
 
+def test_swipe_area_wraps_only_the_post_box() -> None:
+    article = Article(
+        id="a1",
+        title="Wire story",
+        url="https://www.reuters.com/a",
+        domain="reuters",
+        source_type=SourceType.MAINSTREAM_MEDIA,
+    )
+
+    html = render([article])
+
+    swipe = html.index('<div class="post-swipe">')
+    assert html.index('class="meta"') < swipe
+    assert swipe < html.index('<div class="swipe-bg">') < html.index('<div class="post">')
+    assert html.index('<ol class="replies"') > html.index('class="reply-btn"')
+
+
 def test_render_includes_settings_icon() -> None:
     html = render([])
 

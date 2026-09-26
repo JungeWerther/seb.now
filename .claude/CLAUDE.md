@@ -168,10 +168,14 @@ bar for a reply composer in the same dock; replies are loaded
 client-side and listed under the post. No moderation or rate limiting
 yet — anyone with an anonymous session can post.
 
-The card's swipe handler only takes pointer capture once the pointer has
+Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the
+vote tints (`.swipe-bg`) and the `.post` that slides over them, so the
+favicon, domain/chips line and replies don't react. `--post-bg` must stay
+opaque for the same reason (a translucent post would show the tint
+through it). The handler only takes pointer capture once the pointer has
 moved `SWIPE_CAPTURE_SLOP_PX`, and never starts on a `<button>` —
-capturing on `pointerdown` retargets a plain tap's `click` to the `<li>`,
-so buttons inside the card would never receive it.
+capturing on `pointerdown` retargets a plain tap's `click` to the swipe
+area, so links and buttons inside would never receive it.
 
 **Open privacy question (deferred until there are real users):**
 `votes` is publicly readable (the page shows net scores), so any user's

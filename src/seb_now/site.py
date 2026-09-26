@@ -118,6 +118,14 @@ def _render_article(article: Article) -> str:
     )
     return (
         f'      <li class="article" data-link-id="{link_id}">'
+        f'<div class="swipe-content">'
+        f"{favicon}"
+        f'<div class="card-body">'
+        f'<div class="meta">'
+        f'<span class="domain">{escape(article.domain)}</span>'
+        f"{topics}"
+        f"</div>"
+        f'<div class="post-swipe">'
         f'<div class="swipe-bg">'
         f'<span class="tint tint-down">'
         f'<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" '
@@ -136,13 +144,6 @@ def _render_article(article: Article) -> str:
         f"<span>Upvote</span>"
         f"</span>"
         f"</div>"
-        f'<div class="swipe-content">'
-        f"{favicon}"
-        f'<div class="card-body">'
-        f'<div class="meta">'
-        f'<span class="domain">{escape(article.domain)}</span>'
-        f"{topics}"
-        f"</div>"
         f'<div class="post">'
         f'<div class="article-row">'
         f'<a href="{url}" target="_blank" rel="noopener noreferrer">{escape(article.title)}</a>'
@@ -157,6 +158,7 @@ def _render_article(article: Article) -> str:
         f'<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>'
         f"</svg>"
         f"</button>"
+        f"</div>"
         f"</div>"
         f"</div>"
         f'<ol class="replies" hidden></ol>'
