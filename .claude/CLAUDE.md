@@ -197,12 +197,12 @@ supabase-js means changing `SUPABASE_JS_MODULE_URL`, not the template.
 dropdown of round "bubbles" (`#menu-bubbles`), one per menu item. Each bubble
 names a `<dialog class="overlay">` (`data-overlay`) opened with `showModal()`
 — floating over the feed, closed by its ✕, a backdrop click or Escape — with
-an optional loader in `OVERLAY_LOADERS`. **My Taste** (`#taste-overlay`)
+an optional loader in `OVERLAY_LOADERS`. **My Algorithm** (`#taste-overlay`)
 lists the signed-in user's leaf topics from `user_topic_preferences`, ranked
 by the Beta mean `alpha / (alpha + beta)`, with the view's `upvotes`/`downvotes`
-counts, the score as a percentage and a green/red bar split by the counts; a
-"How is this calculated?" `<details>` below the list explains the formula to
-users, so keep it in sync if the view's maths changes.
+counts, the score as a percentage and a green/red bar split by the counts;
+below the list a single code block shows the scoring formula to users, so
+keep it in sync if the view's maths changes.
 **My Profile** (`#profile-overlay`) edits `profiles.handle`, the name shown on
 replies.
 
