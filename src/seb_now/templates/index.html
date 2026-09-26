@@ -571,8 +571,13 @@
     const SWIPE_CAPTURE_SLOP_PX = 6;
     // Steepest upward heading a gesture may start with and still become a swipe.
     const SWIPE_START_MAX_UP_DEG = 15;
-    // How long a gesture runs before its direction decides swipe vs. scroll.
+    // How long after crossing SWIPE_CAPTURE_SLOP_PX the card waits before
+    // it starts following, so the gesture's heading can settle first.
     const SWIPE_START_DECIDE_MS = 100;
+    // Momentum time constant for a feed scroll the page drives itself.
+    const SCROLL_FLING_DECAY_MS = 325;
+    const SCROLL_FLING_MIN_SPEED = 0.02; // px/ms
+    const SCROLL_FLING_IDLE_MS = 60;
     const SWIPE_PIVOT_DISTANCE_PX = 600;
     const SWIPE_MAX_ANGLE_DEG = 35;
     const SWIPE_RADIAL_SLACK_PX = 30;
@@ -732,6 +737,28 @@
     // the band's edge - it never adds tilt, flips the angle, or reaches the
     // vote threshold the way an angle measured from the finger's position
     // relative to the pivot would once the finger approaches the pivot.
+    // A sideways-leaning gesture that turns out to be a feed scroll gets no
+    // native scrolling (touch-action: pan-y already gave it to the page
+    // script), so the page scrolls itself, with momentum on release.
+    let flingFrame = null;
+    function stopFling() {
+      if (flingFrame !== null) cancelAnimationFrame(flingFrame);
+      flingFrame = null;
+    }
+    function flingScroll(velocity) {
+      stopFling();
+      let last = null;
+      const step = (now) => {
+        const dt = last === null ? 16 : now - last;
+        last = now;
+        window.scrollBy(0, velocity * dt);
+        velocity *= Math.exp(-dt / SCROLL_FLING_DECAY_MS);
+        flingFrame = Math.abs(velocity) < SCROLL_FLING_MIN_SPEED ? null : requestAnimationFrame(step);
+      };
+      flingFrame = requestAnimationFrame(step);
+    }
+    window.addEventListener("pointerdown", stopFling, { capture: true });
+
     function setupSwipe(li, session) {
       const area = li.querySelector(".post-swipe");
       const content = area.querySelector(".post");
@@ -743,7 +770,12 @@
 
       let startX = null;
       let startY = null;
-      let startedAt = 0;
+      let slopAt = null;
+      // Scroll mode: this gesture is the feed being scrolled by the page.
+      let scrolling = false;
+      let lastY = 0;
+      let lastMoveAt = 0;
+      let velocity = 0;
       let dragging = false;
       // Where the finger is (target) vs. where the card is drawn (shown);
       // pointer events only move the target, and one rAF loop eases the card
@@ -824,7 +856,8 @@
         if (e.target.closest("button")) return;
         startX = e.clientX;
         startY = e.clientY;
-        startedAt = e.timeStamp;
+        slopAt = null;
+        scrolling = false;
         dragging = true;
         content.style.transition = "none";
       }
@@ -832,22 +865,54 @@
       // Capturing on pointerdown would retarget a plain tap's click to the
       // swipe area, so links/buttons inside never receive it - capture only
       // once the pointer has actually moved far enough to be a swipe.
+      // A vertical-dominant gesture is already the browser's pan (it sends
+      // pointercancel), so only a sideways-leaning one needs scrolling here.
+      function startScroll(e, dx, dy) {
+        dragging = false;
+        startX = null;
+        startY = null;
+        if (e.pointerType !== "touch" || Math.abs(dy) > Math.abs(dx)) return;
+        scrolling = true;
+        window.scrollBy(0, -dy);
+        lastY = e.clientY;
+        lastMoveAt = e.timeStamp;
+        velocity = 0;
+      }
+
+      function followScroll(e) {
+        const delta = lastY - e.clientY;
+        const dt = Math.max(1, e.timeStamp - lastMoveAt);
+        window.scrollBy(0, delta);
+        velocity = 0.8 * (delta / dt) + 0.2 * velocity;
+        lastY = e.clientY;
+        lastMoveAt = e.timeStamp;
+      }
+
+      function endScroll(e, fling) {
+        scrolling = false;
+        if (fling && e.timeStamp - lastMoveAt < SCROLL_FLING_IDLE_MS) flingScroll(velocity);
+      }
+
       function onMove(e) {
+        if (scrolling) {
+          followScroll(e);
+          return;
+        }
         if (!dragging || startX === null) return;
         const dx = e.clientX - startX;
         const dy = e.clientY - startY;
         if (!area.hasPointerCapture(e.pointerId)) {
           if (Math.hypot(dx, dy) < SWIPE_CAPTURE_SLOP_PX) return;
-          // A gesture that heads mostly vertical or upward at any point in its
-          // first SWIPE_START_DECIDE_MS is the feed being scrolled: give it up
-          // for good, even if it later turns sideways.
-          if (Math.abs(dy) > Math.abs(dx) || -dy > Math.abs(dx) * maxStartUpSlope) {
-            dragging = false;
-            startX = null;
-            startY = null;
+          // Heading upward (or mostly vertical) when crossing the slop, or
+          // once the decide delay has passed, means the feed is being
+          // scrolled: the card never starts moving.
+          const scrollish = Math.abs(dy) > Math.abs(dx) || -dy > Math.abs(dx) * maxStartUpSlope;
+          if (slopAt === null) slopAt = e.timeStamp;
+          if (scrollish) {
+            startScroll(e, dx, dy);
             return;
           }
-          if (e.timeStamp - startedAt < SWIPE_START_DECIDE_MS) return;
+          if (e.timeStamp - slopAt < SWIPE_START_DECIDE_MS) return;
           area.setPointerCapture(e.pointerId);
           li.classList.add("dragging");
         }
@@ -856,7 +921,11 @@
         if (frame === null) frame = requestAnimationFrame(tick);
       }
 
-      async function onUp() {
+      async function onUp(e) {
+        if (scrolling) {
+          endScroll(e, true);
+          return;
+        }
         if (!dragging) return;
         const { x } = arcPosition(target.dx, target.dy);
         endDrag();
@@ -904,7 +973,8 @@
         { passive: false },
       );
       area.addEventListener("pointerup", onUp);
-      area.addEventListener("pointercancel", () => {
+      area.addEventListener("pointercancel", (e) => {
+        if (scrolling) endScroll(e, false);
         endDrag();
         reset();
       });

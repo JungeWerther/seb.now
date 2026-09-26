@@ -180,11 +180,15 @@ angle from the finger's position relative to the pivot (`atan2(dx, R -
 dy)`): a steep downward drag then amplifies a small dx into a large tilt,
 can cross the vote threshold, and flips past the pivot. A drag must start
 sideways (`touch-action: pan-y`, so vertical-first gestures scroll) and
-not heading upward: the card is only picked up once the gesture has
-run `SWIPE_START_DECIDE_MS` (and moved `SWIPE_CAPTURE_SLOP_PX`), and if at
-any point in that window it is vertical-dominant or climbs steeper than
-`SWIPE_START_MAX_UP_DEG`, it is the feed being scrolled and is dropped for
-good, even if it turns sideways later; once
+not heading upward. Once the finger has moved `SWIPE_CAPTURE_SLOP_PX`,
+a gesture that is vertical-dominant or climbs steeper than
+`SWIPE_START_MAX_UP_DEG` is a feed scroll and the card never moves; a
+sideways one is picked up `SWIPE_START_DECIDE_MS` after crossing the slop
+(timed from the crossing, not from touchdown, since a finger usually rests
+longer than that before moving), re-checking the heading then. A
+sideways-leaning scroll gets no native scrolling under `pan-y`, so the page
+scrolls itself with the finger and flings on release
+(`SCROLL_FLING_DECAY_MS`); vertical-dominant ones are left to the browser. Once
 it has, a non-passive `touchmove` handler blocks scrolling for the rest
 of the gesture so the browser can't cancel it mid-drag. Pointer events
 only update the finger's target position; a single rAF loop eases the
