@@ -59,6 +59,12 @@ ARTICLE_TOPIC_CHIPS = 2
 # link's host without "www.". DuckDuckGo's service, not Google's, so a
 # visitor's browser doesn't report every source it renders to Google.
 FAVICON_URL_TEMPLATE = "https://icons.duckduckgo.com/ip3/{host}.ico"
+# site.py — articles pre-rendered into index.html; the page loads the rest
+# (and search results) from Supabase in pages of the same size as you scroll.
+FEED_PAGE_SIZE = 30
+# site.py — value of every field in the #article-template markup, which the
+# page script overwrites per link
+TEMPLATE_ARTICLE_BLANK = ""
 
 # examples/real_embedding_check.py
 REAL_EMBEDDING_LAW_CHECK_TOLERANCE = 1e-4

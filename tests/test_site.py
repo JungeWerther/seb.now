@@ -1,6 +1,6 @@
 import re
 
-from seb_now.constants import ARTICLE_TOPIC_CHIPS, FAVICON_URL_TEMPLATE, SourceType
+from seb_now.constants import ARTICLE_TOPIC_CHIPS, FAVICON_URL_TEMPLATE, FEED_PAGE_SIZE, SourceType
 from seb_now.site import Article, _top_topic_names, build_articles, render
 
 FEED_FIXTURE = [
@@ -8,6 +8,11 @@ FEED_FIXTURE = [
     {"id": "22222222-2222-2222-2222-222222222222", "title": "Fed chair explains the rate decision in full", "url": "https://www.youtube.com/watch?v=a"},
     {"id": "33333333-3333-3333-3333-333333333333", "title": "My take on the Fed's rate cut", "url": "https://sebswrites.example.com/posts/a"},
 ]
+
+
+def _article_list(html: str) -> str:
+    """The pre-rendered <ul class="articles">, without the #article-template copy."""
+    return html[html.index('<ul class="articles">') : html.index("</ul>")]
 
 
 def test_build_articles_classifies_source_type() -> None:
@@ -51,7 +56,7 @@ def test_render_is_a_flat_list_with_no_group_headers() -> None:
     assert "Mainstream Media" not in html
     assert "Direct Link" not in html
     assert "<h2>" not in html
-    assert html.count('li class="article"') == 2
+    assert _article_list(html).count('li class="article"') == 2
 
 
 def test_render_includes_swipeable_article_with_link_id_and_domain() -> None:
@@ -97,7 +102,7 @@ def test_render_shows_clickable_cover_image_below_title_when_present() -> None:
         '<a class="cover-link" href="https://example.com/a" target="_blank" rel="noopener noreferrer" '
         'tabindex="-1"><img class="cover" src="https://example.com/cover.jpg" alt="" loading="lazy"></a>'
     ) in html
-    assert html.count('class="cover"') == 1
+    assert _article_list(html).count('class="cover"') == 1
     title_index = html.index(">Has cover</a>")
     cover_index = html.index('<a class="cover-link"')
     assert title_index < cover_index
@@ -160,7 +165,7 @@ def test_render_shows_topic_chips_and_omits_them_when_untagged() -> None:
         '<span class="topics"><span class="topic">AI models</span>'
         '<span class="topic">Open source</span></span>'
     ) in html
-    assert html.count('<span class="topics">') == 1
+    assert _article_list(html).count('<span class="topics">') == 1
     assert "cluster" not in html
 
 
@@ -276,3 +281,47 @@ def test_render_injects_supabase_config() -> None:
     assert "test-anon-key" in html
     assert "__SUPABASE_URL__" not in html
     assert "__SUPABASE_ANON_KEY__" not in html
+
+
+def test_render_carries_each_articles_created_at_for_the_pagination_cursor() -> None:
+    article = Article(
+        id="a1",
+        title="Wire story",
+        url="https://www.reuters.com/a",
+        domain="reuters",
+        source_type=SourceType.MAINSTREAM_MEDIA,
+        created_at="2026-09-26T08:15:02.123456+00:00",
+    )
+
+    html = render([article])
+
+    assert 'data-link-id="a1" data-created-at="2026-09-26T08:15:02.123456+00:00"' in html
+
+
+def test_render_includes_article_template_with_a_cover_and_topic_chip_to_fill() -> None:
+    html = render([])
+
+    template = html[html.index('<template id="article-template">') : html.index("</template>")]
+    assert template.count('li class="article"') == 1
+    assert 'class="cover-link"' in template
+    assert '<span class="topic">' in template
+    assert 'id="feed-sentinel"' in html
+    assert '<ul class="articles">' in html
+
+
+def test_render_injects_feed_constants() -> None:
+    html = render([])
+
+    assert f"const FEED_PAGE_SIZE = {FEED_PAGE_SIZE};" in html
+    assert f"const ARTICLE_TOPIC_CHIPS = {ARTICLE_TOPIC_CHIPS};" in html
+    assert f'const FAVICON_URL_TEMPLATE = "{FAVICON_URL_TEMPLATE}";' in html
+    assert "__FEED_PAGE_SIZE__" not in html
+    assert "__ARTICLE_TOPIC_CHIPS__" not in html
+    assert "__FAVICON_URL_TEMPLATE__" not in html
+
+
+def test_search_queries_the_server_instead_of_filtering_the_page() -> None:
+    html = render([])
+
+    assert '.ilike("search_text"' in html
+    assert "IntersectionObserver" in html

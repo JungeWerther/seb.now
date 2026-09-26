@@ -2,7 +2,10 @@
 
 Feed: the `links` table in Supabase (title + url per row), read with the
 public anon client, with each link's `link_topics` labels embedded. Each
-article shows its ARTICLE_TOPIC_CHIPS highest-p topics as chips.
+article shows its ARTICLE_TOPIC_CHIPS highest-p topics as chips. Only the
+newest FEED_PAGE_SIZE links are pre-rendered; the page script fetches the
+rest (and any newer than the build) as you scroll, filling the
+`#article-template` markup emitted here so both paths share one layout.
 classify_source still tags each article's SourceType (mainstream media /
 YouTube long-form / direct link) for future filtering, but the page no
 longer groups or headers by it - each article shows its own domain instead.
@@ -17,7 +20,13 @@ from html import escape
 from pathlib import Path
 from typing import NotRequired, Sequence, TypedDict
 
-from seb_now.constants import ARTICLE_TOPIC_CHIPS, FAVICON_URL_TEMPLATE, SourceType
+from seb_now.constants import (
+    ARTICLE_TOPIC_CHIPS,
+    FAVICON_URL_TEMPLATE,
+    FEED_PAGE_SIZE,
+    TEMPLATE_ARTICLE_BLANK,
+    SourceType,
+)
 from seb_now.auth import get_unauthenticated_client
 from seb_now.domain.models import Link, LinkTopic, Topic
 from seb_now.posts import load_posts, write_posts
@@ -30,6 +39,11 @@ OUTPUT_PATH = Path(__file__).parent.parent.parent / "dist" / "index.html"
 ARTICLES_PLACEHOLDER = "<!--ARTICLES-->"
 SUPABASE_URL_PLACEHOLDER = "__SUPABASE_URL__"
 SUPABASE_ANON_KEY_PLACEHOLDER = "__SUPABASE_ANON_KEY__"
+FEED_PAGE_SIZE_PLACEHOLDER = "__FEED_PAGE_SIZE__"
+ARTICLE_TOPIC_CHIPS_PLACEHOLDER = "__ARTICLE_TOPIC_CHIPS__"
+FAVICON_URL_TEMPLATE_PLACEHOLDER = "__FAVICON_URL_TEMPLATE__"
+
+FEED_COLUMNS = "id, title, url, image_url, created_at"
 
 
 @dataclass(frozen=True)
@@ -41,6 +55,7 @@ class Article:
     source_type: SourceType
     topics: tuple[str, ...] = ()
     image_url: str | None = None
+    created_at: str = ""
 
 
 class FeedItem(TypedDict):
@@ -49,6 +64,20 @@ class FeedItem(TypedDict):
     url: str
     image_url: NotRequired[str]
     topics: NotRequired[list[str]]
+    created_at: NotRequired[str]
+
+
+# The page script clones this and fills it in per fetched link, so it carries
+# one topic chip and a cover for the script to fill or drop.
+TEMPLATE_ARTICLE = Article(
+    id=TEMPLATE_ARTICLE_BLANK,
+    title=TEMPLATE_ARTICLE_BLANK,
+    url=TEMPLATE_ARTICLE_BLANK,
+    domain=TEMPLATE_ARTICLE_BLANK,
+    source_type=SourceType.DIRECT_LINK,
+    topics=(TEMPLATE_ARTICLE_BLANK,),
+    image_url=TEMPLATE_ARTICLE_BLANK,
+)
 
 
 def _top_topic_names(link_topics: Sequence[dict]) -> list[str]:
@@ -60,20 +89,24 @@ def load_feed() -> list[FeedItem]:
     client = get_unauthenticated_client()
     response = (
         client.table(Link.__tablename__)
-        .select(f"*, {LinkTopic.__tablename__}(p, {Topic.__tablename__}(name))")
+        .select(f"{FEED_COLUMNS}, {LinkTopic.__tablename__}(p, {Topic.__tablename__}(name))")
         .order("created_at", desc=True)
+        .order("id", desc=True)
+        .limit(FEED_PAGE_SIZE)
         .execute()
     )
     feed: list[FeedItem] = []
     for row in response.data:
-        link = Link.model_validate(row)
         feed.append(
             {
-                "id": str(link.id),
-                "title": link.title,
-                "url": link.url,
-                "image_url": link.image_url or "",
+                "id": row["id"],
+                "title": row["title"],
+                "url": row["url"],
+                "image_url": row["image_url"] or "",
                 "topics": _top_topic_names(row[LinkTopic.__tablename__]),
+                # Kept as PostgREST's own string so the page's pagination
+                # cursor round-trips it exactly (microseconds included).
+                "created_at": row["created_at"],
             }
         )
     return feed
@@ -89,6 +122,7 @@ def build_articles(feed: Sequence[FeedItem]) -> list[Article]:
             source_type=classify_source(item["url"]),
             topics=tuple(item.get("topics", ())),
             image_url=item.get("image_url") or None,
+            created_at=item.get("created_at", ""),
         )
         for item in feed
     ]
@@ -106,7 +140,7 @@ def _render_article(article: Article) -> str:
     cover = (
         f'<a class="cover-link" href="{url}" target="_blank" rel="noopener noreferrer" tabindex="-1">'
         f'<img class="cover" src="{escape(article.image_url)}" alt="" loading="lazy"></a>'
-        if article.image_url
+        if article.image_url is not None
         else ""
     )
     topics = (
@@ -117,7 +151,7 @@ def _render_article(article: Article) -> str:
         else ""
     )
     return (
-        f'      <li class="article" data-link-id="{link_id}">'
+        f'      <li class="article" data-link-id="{link_id}" data-created-at="{escape(article.created_at)}">'
         f'<div class="swipe-content">'
         f"{favicon}"
         f'<div class="card-body">'
@@ -169,11 +203,18 @@ def _render_article(article: Article) -> str:
 
 
 def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon_key: str = "") -> str:
-    items = "\n".join(_render_article(article) for article in articles)
-    list_html = f'    <ul class="articles">\n{items}\n    </ul>' if items else ""
+    items = "".join(f"\n{_render_article(article)}" for article in articles)
+    list_html = (
+        f'    <ul class="articles">{items}\n    </ul>\n'
+        f'    <div id="feed-sentinel" aria-hidden="true"></div>\n'
+        f'    <template id="article-template">\n{_render_article(TEMPLATE_ARTICLE)}\n    </template>'
+    )
     html = TEMPLATE_PATH.read_text().replace(ARTICLES_PLACEHOLDER, list_html)
     html = html.replace(SUPABASE_URL_PLACEHOLDER, json.dumps(supabase_url))
     html = html.replace(SUPABASE_ANON_KEY_PLACEHOLDER, json.dumps(supabase_anon_key))
+    html = html.replace(FEED_PAGE_SIZE_PLACEHOLDER, json.dumps(FEED_PAGE_SIZE))
+    html = html.replace(ARTICLE_TOPIC_CHIPS_PLACEHOLDER, json.dumps(ARTICLE_TOPIC_CHIPS))
+    html = html.replace(FAVICON_URL_TEMPLATE_PLACEHOLDER, json.dumps(FAVICON_URL_TEMPLATE))
     return html
 
 
