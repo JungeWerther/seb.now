@@ -1496,7 +1496,7 @@
       resetFeed(query);
       articleList.replaceChildren();
       updateSearchEmpty();
-      loadMore();
+      return loadMore();
     }
 
     function setupFeed(initialQuery) {
@@ -1511,24 +1511,20 @@
         if (entries.some((entry) => entry.isIntersecting)) loadMore();
       }, { rootMargin: `0px 0px ${FEED_PREFETCH_MARGIN_PX}px 0px` }).observe(feedSentinel);
 
-      if (initialQuery) {
-        showFeed(initialQuery);
-        return;
-      }
+      if (initialQuery) return showFeed(initialQuery);
       // The build pre-renders the newest links for a fast first paint; the
       // ranked feed replaces them once its first page arrives. If ranking
       // fails, keep them and carry on newest-first.
       const prerendered = [...articleList.querySelectorAll("li.article")];
       resetFeed("");
       const generation = feed.generation;
-      loadMore({ replace: true }).then((ok) => {
+      return loadMore({ replace: true }).then(async (ok) => {
         if (ok !== false || generation !== feed.generation || prerendered.length === 0) return;
         feed.chronological = true;
         feed.cursor = cursorOf(prerendered.at(-1));
         for (const li of prerendered) feed.seen.add(li.dataset.linkId);
-        hydrateArticles(prerendered).then(() => {
-          if (!feed.done && sentinelNearViewport()) loadMore();
-        });
+        await hydrateArticles(prerendered);
+        if (!feed.done && sentinelNearViewport()) loadMore();
       });
     }
 
@@ -1992,16 +1988,33 @@
     // The tagline loads as "your own feed" and, a moment later, swaps its
     // first two words: "your" dips down a semicircle into second place while
     // "own" glides left over it, leaving "own your feed".
-    const TAGLINE_SWAP_DELAY_MS = 700;
+    const TAGLINE_SWAP_DELAY_MS = 400;
+    // Covers are hotlinked, so one slow image could hold off the page's load
+    // event (and document.fonts.ready with it) indefinitely; stop waiting for
+    // it this long after the feed is in.
+    const TAGLINE_MAX_LOAD_WAIT_MS = 5000;
     const TAGLINE_ARC_MS = 900;
     const TAGLINE_GLIDE_DELAY_MS = 200;
     const TAGLINE_GLIDE_MS = 550;
     const TAGLINE_ARC_STEPS = 24;
 
-    async function swapTagline() {
+    // Runs last: once the feed has loaded and the page has finished loading
+    // and painted.
+    async function swapTagline(feedReady) {
       const tagline = document.querySelector(".tagline");
       const [your, own] = tagline.querySelectorAll(".tagline-word");
-      await document.fonts.ready;
+      const pageLoaded =
+        document.readyState === "complete"
+          ? Promise.resolve()
+          : new Promise((resolve) => window.addEventListener("load", resolve, { once: true }));
+      await feedReady.catch(() => {});
+      // document.fonts.ready also waits for the page's load event, so both
+      // share the cap.
+      await Promise.race([
+        Promise.all([pageLoaded, document.fonts.ready]),
+        new Promise((resolve) => setTimeout(resolve, TAGLINE_MAX_LOAD_WAIT_MS)),
+      ]);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       await new Promise((resolve) => setTimeout(resolve, TAGLINE_SWAP_DELAY_MS));
       const yourStart = your.getBoundingClientRect().left;
       const ownStart = own.getBoundingClientRect().left;
@@ -2029,8 +2042,7 @@
       );
     }
 
-    swapTagline();
-    setupFeed(savedSearchQuery().trim());
+    swapTagline(setupFeed(savedSearchQuery().trim()));
     setupMenu();
     setupTaste();
     setupProfile();
