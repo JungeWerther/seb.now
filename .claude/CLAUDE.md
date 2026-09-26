@@ -143,8 +143,9 @@ every ancestor of the labelled topic (`ai.agents` feeds `ai`), so a
 never-voted leaf can fall back to its parent. No time decay yet. Not
 built yet: the client Thompson-sampling `θ ~ Beta(alpha, beta)` per
 topic and ranking links by `Σ θ·p`.
-The older word-count `TopicClusterer` in `site.py` is unrelated and
-will be superseded by this.
+`site.py` embeds each link's `link_topics` in the build-time feed query
+and renders the top `ARTICLE_TOPIC_CHIPS` (by `p`) leaf-topic names as
+stacked chips on the right of each article row; untagged links show none.
 
 **Open privacy question (deferred until there are real users):**
 `votes` is publicly readable (the page shows net scores), so any user's
@@ -329,7 +330,7 @@ names one of a fixed set of external things (e.g. a pretrained model id)
 is a `StrEnum` member there, not a raw string.
 
 In particular, a call that instantiates a class (`nn.MultiheadAttention(...)`,
-`SentenceTransformer(...)`, `TopicClusterer(...)`) must not take a literal
+`SentenceTransformer(...)`) must not take a literal
 `int`/`float`/`str`/`bool` argument — reference a name from `constants.py`
 instead. `tests/test_constants_convention.py` asserts this in CI by
 AST-scanning `src/seb_now/*.py` and `examples/*.py` for class-instantiation

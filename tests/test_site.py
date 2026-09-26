@@ -1,5 +1,5 @@
-from seb_now.constants import SourceType
-from seb_now.site import Article, build_articles, render
+from seb_now.constants import ARTICLE_TOPIC_CHIPS, SourceType
+from seb_now.site import Article, _top_topic_names, build_articles, render
 
 FEED_FIXTURE = [
     {"id": "11111111-1111-1111-1111-111111111111", "title": "Fed signals rate cut as inflation cools", "url": "https://www.nytimes.com/a"},
@@ -32,7 +32,6 @@ def test_render_is_a_flat_list_with_no_group_headers() -> None:
             url="https://blog.example.com/a",
             domain="blog.example",
             source_type=SourceType.DIRECT_LINK,
-            cluster_id=0,
         ),
         Article(
             id="a2",
@@ -40,7 +39,6 @@ def test_render_is_a_flat_list_with_no_group_headers() -> None:
             url="https://www.reuters.com/a",
             domain="reuters",
             source_type=SourceType.MAINSTREAM_MEDIA,
-            cluster_id=0,
         ),
     ]
 
@@ -62,7 +60,6 @@ def test_render_includes_swipeable_article_with_link_id_and_domain() -> None:
             url="https://www.reuters.com/a",
             domain="reuters",
             source_type=SourceType.MAINSTREAM_MEDIA,
-            cluster_id=0,
         )
     ]
 
@@ -82,7 +79,6 @@ def test_render_shows_cover_image_above_domain_and_title_when_present() -> None:
         url="https://example.com/a",
         domain="example.com",
         source_type=SourceType.DIRECT_LINK,
-        cluster_id=0,
         image_url="https://example.com/cover.jpg",
     )
     without_cover = Article(
@@ -91,7 +87,6 @@ def test_render_shows_cover_image_above_domain_and_title_when_present() -> None:
         url="https://example.com/b",
         domain="example.com",
         source_type=SourceType.DIRECT_LINK,
-        cluster_id=0,
     )
 
     html = render([with_cover, without_cover])
@@ -102,6 +97,52 @@ def test_render_shows_cover_image_above_domain_and_title_when_present() -> None:
     cover_index = html.index('<img class="cover"')
     domain_index = html.index('<span class="domain">example.com</span>', cover_index)
     assert cover_index < domain_index
+
+
+def test_build_articles_keeps_feed_topics() -> None:
+    feed = [{**FEED_FIXTURE[0], "topics": ["AI models", "Open source"]}, FEED_FIXTURE[1]]
+
+    articles = build_articles(feed)
+
+    assert articles[0].topics == ("AI models", "Open source")
+    assert articles[1].topics == ()
+
+
+def test_top_topic_names_orders_by_p_and_caps_at_chip_count() -> None:
+    link_topics = [
+        {"p": 0.5, "topics": {"name": "Big tech"}},
+        {"p": 0.9, "topics": {"name": "AI models"}},
+        {"p": 0.7, "topics": {"name": "Open source"}},
+    ]
+
+    assert _top_topic_names(link_topics) == ["AI models", "Open source"][:ARTICLE_TOPIC_CHIPS]
+
+
+def test_render_shows_topic_chips_and_omits_them_when_untagged() -> None:
+    tagged = Article(
+        id="a1",
+        title="Tagged",
+        url="https://example.com/a",
+        domain="example.com",
+        source_type=SourceType.DIRECT_LINK,
+        topics=("AI models", "Open source"),
+    )
+    untagged = Article(
+        id="a2",
+        title="Untagged",
+        url="https://example.com/b",
+        domain="example.com",
+        source_type=SourceType.DIRECT_LINK,
+    )
+
+    html = render([tagged, untagged])
+
+    assert (
+        '<span class="topics"><span class="topic">AI models</span>'
+        '<span class="topic">Open source</span></span>'
+    ) in html
+    assert html.count('<span class="topics">') == 1
+    assert "cluster" not in html
 
 
 def test_render_includes_settings_icon() -> None:

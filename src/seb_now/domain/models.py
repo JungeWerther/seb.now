@@ -1,4 +1,4 @@
-"""Domain models mirroring the `public.links` table."""
+"""Domain models mirroring the `public.links`, `public.topics` and `public.link_topics` tables."""
 
 from __future__ import annotations
 
@@ -24,3 +24,22 @@ class Link(BaseModel):
     slug: str | None = None
     body_markdown: str | None = None
     created_at: datetime
+
+
+class Topic(BaseModel):
+    __tablename__: ClassVar[str] = "topics"
+
+    id: str
+    name: str
+    description: str
+    created_at: datetime
+
+
+class LinkTopic(BaseModel):
+    __tablename__: ClassVar[str] = "link_topics"
+
+    link_id: UUID
+    topic_id: str
+    p: float
+    labeled_by: Literal["manual", "jev"]
+    labeled_at: datetime

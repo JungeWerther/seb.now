@@ -1,12 +1,11 @@
-"""Render index.html: a flat list of articles, each tagged with its topic cluster.
+"""Render index.html: a flat list of articles, each tagged with its top topics.
 
 Feed: the `links` table in Supabase (title + url per row), read with the
-public anon client. Vocab: built from the corpus itself, so it never drifts
-out of sync with the feed. Clustering: TopicClusterer over titles,
-bag-of-words embedded. classify_source still tags each article's
-SourceType (mainstream media / YouTube long-form / direct link) for future
-filtering, but the page no longer groups or headers by it - each article
-shows its own domain instead.
+public anon client, with each link's `link_topics` labels embedded. Each
+article shows its ARTICLE_TOPIC_CHIPS highest-p topics as chips.
+classify_source still tags each article's SourceType (mainstream media /
+YouTube long-form / direct link) for future filtering, but the page no
+longer groups or headers by it - each article shows its own domain instead.
 """
 
 from __future__ import annotations
@@ -16,13 +15,11 @@ import os
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
-from typing import Sequence
+from typing import NotRequired, Sequence, TypedDict
 
-from seb_now.algebra import bag_of_words_embed, vec_add, vec_isclose
-from seb_now.clustering import TopicClusterer
-from seb_now.constants import BAG_OF_WORDS_SIMILARITY_THRESHOLD, SourceType
+from seb_now.constants import ARTICLE_TOPIC_CHIPS, SourceType
 from seb_now.auth import get_unauthenticated_client
-from seb_now.domain.models import Link
+from seb_now.domain.models import Link, LinkTopic, Topic
 from seb_now.posts import load_posts, write_posts
 from seb_now.source_type import classify_source, display_domain
 
@@ -42,51 +39,59 @@ class Article:
     url: str
     domain: str
     source_type: SourceType
-    cluster_id: int
+    topics: tuple[str, ...] = ()
     image_url: str | None = None
 
 
-def _vocab(titles: Sequence[str]) -> list[str]:
-    words: set[str] = set()
-    for title in titles:
-        words.update(title.lower().split())
-    return sorted(words)
+class FeedItem(TypedDict):
+    id: str
+    title: str
+    url: str
+    image_url: NotRequired[str]
+    topics: NotRequired[list[str]]
 
 
-def load_feed() -> list[dict[str, str]]:
+def _top_topic_names(link_topics: Sequence[dict]) -> list[str]:
+    ranked = sorted(link_topics, key=lambda lt: (-lt["p"], lt["topics"]["name"]))
+    return [lt["topics"]["name"] for lt in ranked[:ARTICLE_TOPIC_CHIPS]]
+
+
+def load_feed() -> list[FeedItem]:
     client = get_unauthenticated_client()
-    response = client.table(Link.__tablename__).select("*").order("created_at", desc=True).execute()
-    links = [Link.model_validate(row) for row in response.data]
-    return [
-        {"id": str(link.id), "title": link.title, "url": link.url, "image_url": link.image_url or ""}
-        for link in links
-    ]
-
-
-def build_articles(feed: Sequence[dict[str, str]]) -> list[Article]:
-    vocab = _vocab([item["title"] for item in feed])
-    clusterer = TopicClusterer(
-        embed=bag_of_words_embed(vocab),
-        combine_emb=vec_add,
-        is_close=vec_isclose,
-        similarity_threshold=BAG_OF_WORDS_SIMILARITY_THRESHOLD,
+    response = (
+        client.table(Link.__tablename__)
+        .select(f"*, {LinkTopic.__tablename__}(p, {Topic.__tablename__}(name))")
+        .order("created_at", desc=True)
+        .execute()
     )
-
-    articles = []
-    for item in feed:
-        cluster = clusterer.add_article(item["title"])
-        articles.append(
-            Article(
-                id=item["id"],
-                title=item["title"],
-                url=item["url"],
-                domain=display_domain(item["url"]),
-                source_type=classify_source(item["url"]),
-                cluster_id=clusterer.clusters.index(cluster),
-                image_url=item.get("image_url") or None,
-            )
+    feed: list[FeedItem] = []
+    for row in response.data:
+        link = Link.model_validate(row)
+        feed.append(
+            {
+                "id": str(link.id),
+                "title": link.title,
+                "url": link.url,
+                "image_url": link.image_url or "",
+                "topics": _top_topic_names(row[LinkTopic.__tablename__]),
+            }
         )
-    return articles
+    return feed
+
+
+def build_articles(feed: Sequence[FeedItem]) -> list[Article]:
+    return [
+        Article(
+            id=item["id"],
+            title=item["title"],
+            url=item["url"],
+            domain=display_domain(item["url"]),
+            source_type=classify_source(item["url"]),
+            topics=tuple(item.get("topics", ())),
+            image_url=item.get("image_url") or None,
+        )
+        for item in feed
+    ]
 
 
 def _render_article(article: Article) -> str:
@@ -94,6 +99,13 @@ def _render_article(article: Article) -> str:
     cover = (
         f'<img class="cover" src="{escape(article.image_url)}" alt="" loading="lazy">'
         if article.image_url
+        else ""
+    )
+    topics = (
+        '<span class="topics">'
+        + "".join(f'<span class="topic">{escape(name)}</span>' for name in article.topics)
+        + "</span>"
+        if article.topics
         else ""
     )
     return (
@@ -122,7 +134,7 @@ def _render_article(article: Article) -> str:
         f'<div class="article-row">'
         f'<a href="{escape(article.url)}" target="_blank" rel="noopener noreferrer">{escape(article.title)}</a>'
         f'<span class="score">0</span>'
-        f'<span class="cluster">cluster {article.cluster_id}</span>'
+        f"{topics}"
         f"</div>"
         f"</div>"
         f"</li>"

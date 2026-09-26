@@ -2,9 +2,9 @@
 domain table, and each row matches its model."""
 
 from seb_now.auth import get_unauthenticated_client
-from seb_now.domain.models import Link
+from seb_now.domain.models import Link, LinkTopic, Topic
 
-MODELS = (Link,)
+MODELS = (Link, Topic, LinkTopic)
 
 
 def test_unauthenticated_client_has_no_user_session() -> None:
