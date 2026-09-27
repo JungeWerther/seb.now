@@ -40,9 +40,18 @@ all inside the `seb-now` project itself** (unlike the DO deploy trigger,
 these don't need the personal CRM project or its vault secret, since
 they call their own project's own functions):
 
-- `fediverse-ingest` (`0 */6 * * *`) — pulls recent public posts from a
-  fixed list of Mastodon accounts (`ACCOUNTS` in
-  `supabase/functions/fediverse-ingest/index.ts`; currently
+**Followed sources live in `public.sources`, not in code** — one row per
+followed account/channel (`kind`: `youtube_channel` or `mastodon_account`,
+`identifier`, `label`, `enabled`), public-read, service_role-write. Following
+or dropping a source is a row insert/update (`enabled = false` to pause), with
+no redeploy. A check constraint validates `identifier` per kind (a
+`UC…` channel id; `handle@instance` for Mastodon), because the ingest
+functions build fetch URLs from it and a Mastodon instance becomes the request
+host. TechCrunch and Hacker News aren't rows: each is a single fixed API, and
+the function *is* the source.
+
+- `fediverse-ingest` (`0 */6 * * *`) — pulls recent public posts from the
+  enabled `mastodon_account` rows in `sources` (currently
   `@DAIR@dair-community.social` for AI ethics/policy and
   `@colossal@mastodon.art` for contemporary art/visual culture — swapped
   in for `@blendernation@mastodon.online`, which turned out to read as
@@ -60,8 +69,8 @@ they call their own project's own functions):
   is stable and simple enough that a parser dependency isn't worth it).
 - `youtube-ingest` (`45 */6 * * *`) — each channel's public Atom feed
   (`youtube.com/feeds/videos.xml?channel_id=…`, no auth, latest 15 uploads)
-  for the channels in `CHANNELS` (currently Channel 5 with Andrew Callaghan
-  and no cap on god).
+  for the enabled `youtube_channel` rows in `sources` (currently Channel 5
+  with Andrew Callaghan and no cap on god).
   Shorts (`/shorts/` links) are skipped. Videos upsert as `origin: 'feed'`
   with a canonical `watch?v=` url, `image_url` set to the video's
   `hqdefault.jpg` (letterboxed 4:3, which the 16:9 cover crop trims exactly),
