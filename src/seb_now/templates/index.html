@@ -589,6 +589,17 @@
       margin-top: 0.5rem;
     }
     .swipe-content .reply-count { font-size: 0.75rem; color: gray; font-variant-numeric: tabular-nums; }
+    .post-footer .score {
+      display: flex;
+      align-items: center;
+      gap: 0.2rem;
+      margin-right: 0.35rem;
+      font-size: 0.75rem;
+      font-variant-numeric: tabular-nums;
+      color: gray;
+    }
+    .post-footer .score.positive { color: var(--positive); }
+    .post-footer .score.negative { color: var(--negative); }
     .swipe-content .reply-btn {
       display: flex;
       align-items: center;
@@ -647,15 +658,6 @@
     .article-row a { flex: 1; min-width: 0; overflow-wrap: anywhere; text-decoration: none; color: inherit; }
     .article-row a:hover { text-decoration: underline; }
     .article-row a.visited { color: gray; }
-    .article-row .score {
-      font-size: 0.75rem;
-      font-variant-numeric: tabular-nums;
-      color: gray;
-      min-width: 1.5em;
-      text-align: right;
-    }
-    .article-row .score.positive { color: var(--positive); }
-    .article-row .score.negative { color: var(--negative); }
     .meta .topics {
       display: flex;
       gap: 0.25rem;
@@ -987,7 +989,7 @@
 
     function renderScore(li, score) {
       const badge = li.querySelector(".score");
-      badge.textContent = score > 0 ? `+${score}` : String(score);
+      badge.querySelector(".score-value").textContent = score > 0 ? `+${score}` : String(score);
       badge.classList.toggle("positive", score > 0);
       badge.classList.toggle("negative", score < 0);
     }
