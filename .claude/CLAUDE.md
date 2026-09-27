@@ -60,7 +60,8 @@ they call their own project's own functions):
   is stable and simple enough that a parser dependency isn't worth it).
 - `youtube-ingest` (`45 */6 * * *`) — each channel's public Atom feed
   (`youtube.com/feeds/videos.xml?channel_id=…`, no auth, latest 15 uploads)
-  for the channels in `CHANNELS` (currently Channel 5 with Andrew Callaghan).
+  for the channels in `CHANNELS` (currently Channel 5 with Andrew Callaghan
+  and no cap on god).
   Shorts (`/shorts/` links) are skipped. Videos upsert as `origin: 'feed'`
   with a canonical `watch?v=` url, `image_url` set to the video's
   `hqdefault.jpg` (letterboxed 4:3, which the 16:9 cover crop trims exactly),
