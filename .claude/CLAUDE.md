@@ -40,7 +40,9 @@ all inside the `seb-now` project itself**:
 followed account/channel (`kind`: `youtube_channel` or `mastodon_account`,
 `identifier`, `label`, `enabled`), public-read, service_role-write. Following
 or dropping a source is a row insert/update (`enabled = false` to pause), with
-no redeploy. A check constraint validates `identifier` per kind (a
+no redeploy. The `explore-taste` skill (`.claude/skills/explore-taste/`) grows the
+YouTube list from a short taste interview, verifying each channel id through
+`pg_net`, since this sandbox can't reach youtube.com. A check constraint validates `identifier` per kind (a
 `UC…` channel id; `handle@instance` for Mastodon), because the ingest
 functions build fetch URLs from it and a Mastodon instance becomes the request
 host. TechCrunch and Hacker News aren't rows: each is a single fixed API, and
