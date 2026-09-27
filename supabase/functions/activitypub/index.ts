@@ -1,8 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// Real ActivityPub backend for the DO Functions proxy at
-// seb.now/.well-known/webfinger, seb.now/ap/actor, seb.now/ap/inbox.
+// Real ActivityPub backend for seb.now: the DO Functions proxy forwards
+// seb.now/.well-known/webfinger and seb.now/ap/inbox here, and a DO ingress
+// rule 308-redirects seb.now/ap/actor straight to this function.
 // A single site-wide actor (@seb@seb.now), not per-profile - the local
 // `profiles`/`follows` tables are unrelated (those model a profile
 // following someone; this models the world following the site).
@@ -215,12 +216,11 @@ async function handleActor(): Promise<Response> {
       inbox: INBOX_URL,
       publicKey: { id: KEY_ID, owner: ACTOR_ID, publicKeyPem },
     },
-    // Same DO gateway quirk as WebFinger above - application/activity+json
-    // 400s under web: raw, plain application/json doesn't. Real senders
-    // (Mastodon included) negotiate on Accept, not a strict response
-    // Content-Type check, so this doesn't break federation.
+    // Mastodon rejects an actor served with any other type. seb.now/ap/actor
+    // redirects here rather than going through the DO Functions proxy, whose
+    // gateway can't send this type or accept Mastodon's Accept header.
     200,
-    "application/json",
+    "application/activity+json",
   );
 }
 
