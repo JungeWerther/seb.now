@@ -60,7 +60,8 @@ they call their own project's own functions):
   is stable and simple enough that a parser dependency isn't worth it).
 - `youtube-ingest` (`45 */6 * * *`) — each channel's public Atom feed
   (`youtube.com/feeds/videos.xml?channel_id=…`, no auth, latest 15 uploads)
-  for the channels in `CHANNELS` (currently Channel 5 with Andrew Callaghan).
+  for the channels in `CHANNELS` (currently Channel 5 with Andrew Callaghan
+  and no cap on god).
   Shorts (`/shorts/` links) are skipped. Videos upsert as `origin: 'feed'`
   with a canonical `watch?v=` url, `image_url` set to the video's
   `hqdefault.jpg` (letterboxed 4:3, which the 16:9 cover crop trims exactly),
@@ -330,6 +331,32 @@ the library has downloaded; every client call awaits `supabaseReady`.
 Swipe handlers are attached before the anonymous session and the
 own-vote/score/visited queries resolve; `castVote`/`removeVote` take the
 pending session promise and send once it resolves.
+
+**MCP server — agents read the feed.** The `mcp` Edge Function
+(`supabase/functions/mcp/index.ts`) is a remote MCP server at
+`https://yoxrhqlzsqwfjmsjpari.supabase.co/functions/v1/mcp`, hand-rolled like
+`activitypub`: Streamable HTTP, stateless (each POST is one JSON-RPC message
+answered with plain JSON; GET/DELETE are 405, no SSE, no sessions). Read-only
+tools: `get_feed` (`ranked_feed` as a logged-out visitor, so taste is a neutral
+0.5), `search_links` (same `search_text` ilike as the page), `list_topics`,
+`get_links_by_topic` (a topic id and all its children), `get_link` (with vote
+counts and replies). It queries with the **anon key**, never `service_role`, so
+RLS limits it to exactly what a logged-out visitor sees. It's deployed with
+`verify_jwt` **off**, since MCP clients don't send a Supabase JWT — safe only
+because every tool is a public read. Write tools (vote, reply,
+`topic_overrides`) are not built: they need the agent to act as a specific
+user, and accounts are anonymous per browser, so that waits on a decision about
+per-user tokens (or OAuth once real accounts exist). It's also served at
+`https://seb.now/mcp` through the DO Functions proxy `mcp/server`
+(`functions/packages/mcp/server`), with its own exact-match ingress rule
+(`/mcp` → `rewrite: /mcp/server`), the same pattern as `/ap/inbox`. The proxy
+sends an empty body (202 notification replies) as `text/plain`, since DO's
+gateway rejects a JSON content type on a non-JSON body.
+
+The DO API is reachable from a session through the personal-CRM project's
+`do-api` Edge Function (it holds the token; callers need that project's
+`edge_invoke_token`), called via `pg_net` from SQL on that project — that's
+how the app spec (ingress rules, components) is read and updated.
 
 **Open privacy question (deferred until there are real users):**
 `votes` is publicly readable (the page shows net scores), so any user's

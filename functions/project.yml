@@ -34,3 +34,10 @@ packages:
         main: main
         runtime: "nodejs:22"
         web: raw
+  - name: mcp
+    functions:
+      - name: server
+        binary: false
+        main: main
+        runtime: "nodejs:22"
+        web: raw

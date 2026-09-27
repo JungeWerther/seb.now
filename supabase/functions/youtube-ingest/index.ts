@@ -6,6 +6,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const CHANNELS = [
   // Channel 5 with Andrew Callaghan
   "UC-AQKm7HUNMmxjdS371MSwg",
+  // no cap on god (Lionel McGloin)
+  "UCLIYhydrnsWMDyJXacaj2Jg",
 ];
 const FEED_URL = "https://www.youtube.com/feeds/videos.xml?channel_id=";
 const WATCH_URL = "https://www.youtube.com/watch?v=";
