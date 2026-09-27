@@ -162,6 +162,19 @@ const USER_TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
+  {
+    name: "list_my_replies",
+    title: "My replies",
+    description: "The signed-in user's own replies, newest first, each with the link it answers. Page through with offset.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { ...limitSchema, description: `How many replies to return (1-${MAX_LIMIT}).` },
+        offset: { type: "integer", minimum: 0, default: 0, description: "How many replies to skip." },
+      },
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
 ];
 
 const VOTE_VALUES: Record<string, number> = { up: 1, down: -1 };
@@ -328,6 +341,29 @@ async function vote(args: Row, { db, userId }: Context) {
   return { link_id: linkId, vote: choice, ...(await voteTotals(db, [linkId])).get(linkId) };
 }
 
+async function listMyReplies(args: Row, { db, userId }: Context) {
+  if (!userId) throw new Error("list_my_replies needs a signed-in user");
+  const limit = intArg(args, "limit", DEFAULT_LIMIT, 1, MAX_LIMIT);
+  const offset = intArg(args, "offset", 0, 0, Number.MAX_SAFE_INTEGER);
+  const { data, error } = await db
+    .from("replies")
+    .select("id, body, created_at, links(id, title, url)")
+    .eq("author_id", userId)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range(offset, offset + limit - 1);
+  if (error) throw new Error(error.message);
+  return {
+    offset,
+    replies: data.map((r: Row) => ({
+      id: r.id,
+      at: r.created_at,
+      body: r.body,
+      link: { id: r.links.id, title: r.links.title, url: r.links.url, domain: domainOf(r.links.url) },
+    })),
+  };
+}
+
 type Handler = (args: Row, ctx: Context) => Promise<unknown>;
 
 const HANDLERS: Record<string, Handler> = {
@@ -338,7 +374,7 @@ const HANDLERS: Record<string, Handler> = {
   get_link: getLink,
 };
 
-const USER_HANDLERS: Record<string, Handler> = { ...HANDLERS, vote };
+const USER_HANDLERS: Record<string, Handler> = { ...HANDLERS, vote, list_my_replies: listMyReplies };
 
 async function callTool(params: Row, ctx: Context) {
   const handler = (ctx.userId ? USER_HANDLERS : HANDLERS)[params?.name];

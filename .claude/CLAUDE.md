@@ -358,7 +358,8 @@ relays `WWW-Authenticate`). It needs a bearer token from the project's OAuth
 dynamic client registration on and Authorization Path `/oauth/consent`),
 checks it with `auth.getUser` (so a revoked grant stops working at once), and
 queries as that user: `get_feed` is ranked by their taste, and it adds a `vote`
-tool (up/down/clear). Without a valid token it answers 401 with
+tool (up/down/clear) and `list_my_replies` (their own replies, newest first,
+each with its link). Without a valid token it answers 401 with
 `WWW-Authenticate: Bearer resource_metadata=…` pointing at the RFC 9728
 metadata the function serves at `…/functions/v1/mcp/oauth-protected-resource`
 (resource `https://seb.now/mcp/user`, authorization server
