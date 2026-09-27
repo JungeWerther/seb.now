@@ -564,3 +564,20 @@ in that test for the exact scope).
 This does not extend to every literal anywhere (`range(0, n)`, `.unsqueeze(0)`,
 a `torch.manual_seed(0)` reproducibility seed) — only to values instantiating
 a class where the choice of value is itself a design decision worth naming.
+
+## Data lives in tables, not module-level collections
+
+A list, tuple, set or dict written out at module scope is usually *data*
+(which domains are mainstream media, which channels to follow), and data
+belongs in a Supabase table the code reads — e.g. `public.sources` for the
+ingest functions, `public.domain_source_types` for `classify_source` (which
+takes the mapping as an argument; `site.py` loads it at build time).
+`tests/test_no_module_level_collections.py`
+(`test_no_list_declaration_in_outer_scope`) AST-scans `src/seb_now/*.py` and
+`examples/*.py` for module-level collection literals, including
+`frozenset({...})`-style wrappers and comprehensions. A collection that is
+genuinely code (an escape table, a security allowlist) goes in that test's
+`ALLOWED` with a one-line reason; stale `ALLOWED` entries fail the test too.
+The rule is Python-only — `ast` can't read the TypeScript Edge Functions, whose
+module-level arrays today are protocol/schema (MCP `TOOLS`, header lists), not
+data.

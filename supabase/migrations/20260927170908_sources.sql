@@ -32,5 +32,3 @@ insert into public.sources (kind, identifier, label) values
   ('youtube_channel', 'UCLIYhydrnsWMDyJXacaj2Jg', 'no cap on god (Lionel McGloin)'),
   ('mastodon_account', 'DAIR@dair-community.social', 'DAIR: AI ethics and policy'),
   ('mastodon_account', 'colossal@mastodon.art', 'Colossal: contemporary art and visual culture');
-
-revoke insert, update, delete, truncate on public.sources from anon, authenticated;

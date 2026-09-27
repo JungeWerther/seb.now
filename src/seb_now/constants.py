@@ -22,37 +22,6 @@ class SourceType(StrEnum):
     DIRECT_LINK = "direct_link"
 
 
-# source_type.py — classify_source
-# Domains recognized as mainstream media outlets. Anything else falls
-# through to DIRECT_LINK rather than growing this list unboundedly.
-MAINSTREAM_MEDIA_DOMAINS: frozenset[str] = frozenset(
-    {
-        "nytimes.com",
-        "washingtonpost.com",
-        "wsj.com",
-        "bbc.com",
-        "bbc.co.uk",
-        "cnn.com",
-        "reuters.com",
-        "apnews.com",
-        "theguardian.com",
-        "npr.org",
-        "ft.com",
-        "bloomberg.com",
-        "foxnews.com",
-        "nbcnews.com",
-        "cbsnews.com",
-        "abcnews.go.com",
-        "usatoday.com",
-        "politico.com",
-        "axios.com",
-        "time.com",
-        "newsweek.com",
-        "economist.com",
-    }
-)
-YOUTUBE_DOMAINS: frozenset[str] = frozenset({"youtube.com", "youtu.be"})
-
 # site.py — topic chips shown per article, highest-p first
 ARTICLE_TOPIC_CHIPS = 2
 # site.py — per-source favicon in each article's left column; {host} is the
