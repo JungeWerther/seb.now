@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="__CONTENT_SECURITY_POLICY__">
+  <meta name="referrer" content="no-referrer">
+  <title>Connect an app — seb.now</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #ffffff;
+      --fg: #1a1a1a;
+      --post-bg: #f6f6f6;
+      --positive: #4c9a6a;
+      --positive-soft: #e1f3e6;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #161616; --fg: #e8e8e8; --post-bg: #000000; --positive: #7fc999; --positive-soft: #203a29; }
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 480px;
+      margin: 3rem auto;
+      padding: 0 1rem;
+      line-height: 1.5;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    a.back { color: var(--positive); text-decoration: none; font-size: 0.9rem; }
+    a.back:hover { text-decoration: underline; }
+    h1 { font-family: "Bricolage Grotesque", sans-serif; font-size: 1.5rem; margin: 1.5rem 0 0.5rem; }
+    #request { background: var(--post-bg); border-radius: 14px; padding: 1rem 1.2rem; margin-top: 1rem; }
+    #request ul { padding-left: 1.2rem; margin: 0.5rem 0 1rem; }
+    .fine { color: gray; font-size: 0.85rem; }
+    .actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
+    .actions button {
+      font: inherit;
+      padding: 0.5rem 1.2rem;
+      border-radius: 999px;
+      cursor: pointer;
+      border: 1px solid rgba(128, 128, 128, 0.5);
+      background: transparent;
+      color: inherit;
+    }
+    #approve { border-color: var(--positive); background: var(--positive); color: var(--bg); font-weight: 600; }
+    .actions button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--positive-soft); }
+    .actions button:disabled { opacity: 0.5; cursor: default; }
+    #status:empty { display: none; }
+  </style>
+</head>
+<body>
+  <a class="back" href="/">&larr; seb.now</a>
+  <h1>Connect an app</h1>
+  <p id="status">Loading…</p>
+  <div id="request" hidden>
+    <p><strong id="client-name"></strong> wants to use seb.now as you. It will be able to:</p>
+    <ul>
+      <li>read your feed, ranked by your taste</li>
+      <li>vote on links for you</li>
+    </ul>
+    <p class="fine">Signed in as <span id="identity"></span>. After you approve, you'll be sent back to <span id="redirect-host"></span>.</p>
+    <div class="actions">
+      <button type="button" id="approve">Approve</button>
+      <button type="button" id="deny">Deny</button>
+    </div>
+  </div>
+  <script type="module">
+    const supabaseReady = import(__SUPABASE_JS_MODULE_URL__).then(({ createClient }) =>
+      createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__),
+    );
+    const authorizationId = new URLSearchParams(location.search).get("authorization_id");
+    const status = document.getElementById("status");
+    const request = document.getElementById("request");
+    const buttons = [document.getElementById("approve"), document.getElementById("deny")];
+
+    function show(text) {
+      status.textContent = text;
+    }
+
+    function parseHttpUrl(value) {
+      try {
+        const url = new URL(value);
+        return url.protocol === "https:" || url.protocol === "http:" ? url : null;
+      } catch {
+        return null;
+      }
+    }
+
+    // The return address comes from the app's own registration, so only a
+    // web URL is followed.
+    function followRedirect(value) {
+      if (parseHttpUrl(value)) location.assign(value);
+      else show("The app's return address isn't a web address, so seb.now won't open it.");
+    }
+
+    // Same account as the feed: this browser's session, anonymous unless
+    // it has been upgraded.
+    async function ensureSession(client) {
+      const { data: { session } } = await client.auth.getSession();
+      if (session) return session;
+      const { data, error } = await client.auth.signInAnonymously();
+      if (error) {
+        console.error("anonymous sign-in failed", error);
+        return null;
+      }
+      return data.session;
+    }
+
+    async function decide(approve) {
+      for (const button of buttons) button.disabled = true;
+      const oauth = (await supabaseReady).auth.oauth;
+      const { data, error } = approve
+        ? await oauth.approveAuthorization(authorizationId)
+        : await oauth.denyAuthorization(authorizationId);
+      if (error) {
+        for (const button of buttons) button.disabled = false;
+        show(`That didn't work: ${error.message}`);
+        return;
+      }
+      request.hidden = true;
+      show(approve ? "Approved. Taking you back…" : "Denied. Taking you back…");
+      followRedirect(data.redirect_url);
+    }
+
+    async function start() {
+      if (!authorizationId) {
+        show("An app asking to connect to seb.now opens this page. There's no request here to answer.");
+        return;
+      }
+      const client = await supabaseReady;
+      const session = await ensureSession(client);
+      if (!session) {
+        show("Couldn't sign you in. Try again in a moment.");
+        return;
+      }
+      const { data, error } = await client.auth.oauth.getAuthorizationDetails(authorizationId);
+      if (error || !data) {
+        show(`This request can't be completed: ${error?.message ?? "it wasn't found"}.`);
+        return;
+      }
+      // Without an authorization_id the app was approved before, so there's
+      // nothing to ask.
+      if (!("authorization_id" in data)) {
+        followRedirect(data.redirect_url);
+        return;
+      }
+      document.getElementById("client-name").textContent = data.client?.name || "An app";
+      document.getElementById("identity").textContent = session.user.is_anonymous
+        ? "this browser's anonymous account"
+        : session.user.email ?? "your account";
+      document.getElementById("redirect-host").textContent = parseHttpUrl(data.redirect_uri)?.host ?? data.redirect_uri;
+      show("");
+      request.hidden = false;
+    }
+
+    buttons[0].addEventListener("click", () => decide(true));
+    buttons[1].addEventListener("click", () => decide(false));
+    start();
+  </script>
+</body>
+</html>

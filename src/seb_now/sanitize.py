@@ -23,8 +23,10 @@ from seb_now.constants import (
     GOOGLE_FONTS_STYLESHEET_ORIGIN,
     POST_SLUG_PATTERN,
     SAFE_URL_SCHEMES,
+    SUPABASE_JS_MODULE_URL,
 )
 
+PAGE_SCRIPT_PATTERN = re.compile(r'<script type="module">(.*?)</script>', re.DOTALL)
 _SCRIPT_JSON_ESCAPES = {"<": "\\u003c", ">": "\\u003e", "&": "\\u0026", " ": "\\u2028", " ": "\\u2029"}
 
 
@@ -65,3 +67,18 @@ def content_security_policy(*, script_src: list[str], connect_src: list[str]) ->
         "form-action": ["'none'"],
     }
     return "; ".join(f"{name} {' '.join(sources)}" for name, sources in directives.items())
+
+
+def _origin(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+# Only the page's own inline script (by hash) and supabase-js's origin may
+# run script, so markup that slips past escaping still can't execute.
+def page_csp(html: str, supabase_url: str) -> str:
+    scripts = PAGE_SCRIPT_PATTERN.findall(html)
+    return content_security_policy(
+        script_src=[*(script_hash(script) for script in scripts), _origin(SUPABASE_JS_MODULE_URL)],
+        connect_src=[_origin(supabase_url)] if supabase_url else [],
+    )
