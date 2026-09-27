@@ -347,11 +347,29 @@ tools: `get_feed` (`ranked_feed` as a logged-out visitor, so taste is a neutral
 `get_links_by_topic` (a topic id and all its children), `get_link` (with vote
 counts and replies). It queries with the **anon key**, never `service_role`, so
 RLS limits it to exactly what a logged-out visitor sees. It's deployed with
-`verify_jwt` **off**, since MCP clients don't send a Supabase JWT — safe only
-because every tool is a public read. Write tools (vote, reply,
-`topic_overrides`) are not built: they need the agent to act as a specific
-user, and accounts are anonymous per browser, so that waits on a decision about
-per-user tokens (or OAuth once real accounts exist). It's also served at
+`verify_jwt` **off**, since MCP clients don't send a Supabase JWT — safe
+because `/mcp` only reads, and `/mcp/user` checks its own token (below).
+
+**Signed-in MCP (`/mcp/user`) — OAuth via Supabase Auth.** The same function
+answers `…/functions/v1/mcp/user` (served at `https://seb.now/mcp/user` by the
+DO proxy `mcp/user`, which unlike `mcp/server` forwards `Authorization` and
+relays `WWW-Authenticate`). It needs a bearer token from the project's OAuth
+2.1 server (enabled in the dashboard under Authentication → OAuth Server, with
+dynamic client registration on and Authorization Path `/oauth/consent`),
+checks it with `auth.getUser` (so a revoked grant stops working at once), and
+queries as that user: `get_feed` is ranked by their taste, and it adds a `vote`
+tool (up/down/clear). Without a valid token it answers 401 with
+`WWW-Authenticate: Bearer resource_metadata=…` pointing at the RFC 9728
+metadata the function serves at `…/functions/v1/mcp/oauth-protected-resource`
+(resource `https://seb.now/mcp/user`, authorization server
+`…supabase.co/auth/v1`) — that 401 is what makes an MCP client start the OAuth
+flow, which is why this is a separate endpoint rather than optional auth on
+`/mcp`. Supabase sends the user to `seb.now/oauth/consent`
+(`src/seb_now/consent.py` + `templates/consent.html`, built into
+`dist/oauth/consent/index.html`), which approves or denies with
+`supabase.auth.oauth.*` as the browser's own session — the same, usually
+anonymous, account as the feed — and only follows an http(s) return address.
+Reply and `topic_overrides` tools aren't built yet. It's also served at
 `https://seb.now/mcp` through the DO Functions proxy `mcp/server`
 (`functions/packages/mcp/server`), with its own exact-match ingress rule
 (`/mcp` → `rewrite: /mcp/server`), the same pattern as `/ap/inbox`. The proxy
@@ -385,7 +403,7 @@ that exact host, which a static site can't do on its own. `functions/` is
 a DigitalOcean Functions project (a `functions`-type App Platform
 component, free under DO's per-team 90,000 GiB-second/month allowance)
 added to the app spec to give `seb.now` real endpoints at that host:
-`/.well-known/webfinger` and `/ap/inbox` (plus `/mcp`, see above). Each
+`/.well-known/webfinger` and `/ap/inbox` (plus `/mcp` and `/mcp/user`, see above). Each
 function is a thin proxy forwarding to the `activitypub` Supabase Edge
 Function and relaying the response back unchanged, keeping the actual
 protocol logic in one runtime. `/ap/actor` is **not** proxied: its ingress
@@ -496,7 +514,8 @@ succeeds:
   a valid function path for functions components, contrary to what the
   App Spec reference's generic rewrite semantics would suggest. Current
   `ingress.rules`: `/.well-known/webfinger` → `rewrite: /wellknown/webfinger`,
-  `/ap/inbox` → `rewrite: /ap/inbox`, `/mcp` → `rewrite: /mcp/server` —
+  `/ap/inbox` → `rewrite: /ap/inbox`, `/mcp` → `rewrite: /mcp/server`,
+  `/mcp/user` → `rewrite: /mcp/user` —
   one exact-match rule per function, not one broader rule per package
   (plus the `/ap/actor` redirect rule, and `/` → the static site last).
 

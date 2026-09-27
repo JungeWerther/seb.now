@@ -14,11 +14,9 @@ longer groups or headers by it - each article shows its own domain instead.
 from __future__ import annotations
 
 import os
-import re
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
-from urllib.parse import urlsplit
 from typing import Mapping, NotRequired, Sequence, TypedDict
 
 from seb_now.constants import (
@@ -30,9 +28,10 @@ from seb_now.constants import (
     SourceType,
 )
 from seb_now.auth import get_unauthenticated_client
+from seb_now.consent import write_consent
 from seb_now.domain.models import DomainSourceType, Link, LinkTopic, Topic
 from seb_now.posts import load_posts, write_posts
-from seb_now.sanitize import content_security_policy, safe_http_url, script_hash, script_json
+from seb_now.sanitize import page_csp, safe_http_url, script_json
 from seb_now.source_type import classify_source, display_domain, favicon_host
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -47,7 +46,6 @@ ARTICLE_TOPIC_CHIPS_PLACEHOLDER = "__ARTICLE_TOPIC_CHIPS__"
 FAVICON_URL_TEMPLATE_PLACEHOLDER = "__FAVICON_URL_TEMPLATE__"
 SUPABASE_JS_MODULE_URL_PLACEHOLDER = "__SUPABASE_JS_MODULE_URL__"
 CSP_PLACEHOLDER = "__CONTENT_SECURITY_POLICY__"
-PAGE_SCRIPT_PATTERN = re.compile(r'<script type="module">(.*?)</script>', re.DOTALL)
 
 FEED_COLUMNS = "id, title, url, image_url, author, created_at"
 
@@ -249,31 +247,14 @@ def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon
     html = html.replace(ARTICLE_TOPIC_CHIPS_PLACEHOLDER, script_json(ARTICLE_TOPIC_CHIPS))
     html = html.replace(FAVICON_URL_TEMPLATE_PLACEHOLDER, script_json(FAVICON_URL_TEMPLATE))
     html = html.replace(SUPABASE_JS_MODULE_URL_PLACEHOLDER, script_json(SUPABASE_JS_MODULE_URL))
-    return html.replace(CSP_PLACEHOLDER, escape(_page_csp(html, supabase_url)))
-
-
-def _origin(url: str) -> str:
-    parts = urlsplit(url)
-    return f"{parts.scheme}://{parts.netloc}"
-
-
-# Only the page's own inline script (by hash) and supabase-js's origin may
-# run script, so markup that slips past escaping still can't execute.
-def _page_csp(html: str, supabase_url: str) -> str:
-    scripts = PAGE_SCRIPT_PATTERN.findall(html)
-    return content_security_policy(
-        script_src=[*(script_hash(script) for script in scripts), _origin(SUPABASE_JS_MODULE_URL)],
-        connect_src=[_origin(supabase_url)] if supabase_url else [],
-    )
+    return html.replace(CSP_PLACEHOLDER, escape(page_csp(html, supabase_url)))
 
 
 def main() -> None:
+    supabase_url = os.environ["SUPABASE_URL"]
+    supabase_anon_key = os.environ["SUPABASE_ANON_KEY"]
     articles = build_articles(load_feed(), load_domain_source_types())
-    html = render(
-        articles,
-        supabase_url=os.environ["SUPABASE_URL"],
-        supabase_anon_key=os.environ["SUPABASE_ANON_KEY"],
-    )
+    html = render(articles, supabase_url=supabase_url, supabase_anon_key=supabase_anon_key)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(html)
     print(f"wrote {OUTPUT_PATH}")
@@ -281,6 +262,9 @@ def main() -> None:
     posts = load_posts()
     write_posts(posts, OUTPUT_PATH.parent)
     print(f"wrote {len(posts)} post(s) under {OUTPUT_PATH.parent / 'posts'}")
+
+    consent_path = write_consent(OUTPUT_PATH.parent, supabase_url=supabase_url, supabase_anon_key=supabase_anon_key)
+    print(f"wrote {consent_path}")
 
 
 if __name__ == "__main__":

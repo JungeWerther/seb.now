@@ -38,6 +38,10 @@ SAFE_URL_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 # segment, so it's limited to lowercase letters, digits and inner hyphens.
 POST_SLUG_PATTERN = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 
+# consent.py — where the OAuth consent page is written under dist/; must match
+# the Authorization Path set in Supabase (Authentication → OAuth Server).
+OAUTH_CONSENT_PATH = "oauth/consent"
+
 # site.py — supabase-js, pinned to an exact version since the page's CSP
 # trusts whatever script this origin serves.
 SUPABASE_JS_MODULE_URL = "https://esm.sh/@supabase/supabase-js@2.117.2"
