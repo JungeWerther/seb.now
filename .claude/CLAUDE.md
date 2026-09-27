@@ -399,10 +399,13 @@ that exact host, which a static site can't do on its own. `functions/` is
 a DigitalOcean Functions project (a `functions`-type App Platform
 component, free under DO's per-team 90,000 GiB-second/month allowance)
 added to the app spec to give `seb.now` real endpoints at that host:
-`/.well-known/webfinger`, `/ap/actor`, `/ap/inbox`. Each function is a
-thin proxy forwarding to the `activitypub` Supabase Edge Function and
-relaying the response back unchanged, keeping the actual protocol logic in
-one runtime.
+`/.well-known/webfinger` and `/ap/inbox` (plus `/mcp`, see above). Each
+function is a thin proxy forwarding to the `activitypub` Supabase Edge
+Function and relaying the response back unchanged, keeping the actual
+protocol logic in one runtime. `/ap/actor` is **not** proxied: its ingress
+rule is a `redirect` (308, `authority: yoxrhqlzsqwfjmsjpari.supabase.co`,
+`uri: /functions/v1/activitypub/ap/actor`), so the actor document comes
+straight from Supabase — see "DO Functions can't serve the actor" below.
 
 That Supabase function implements the real protocol, hand-rolled (not
 Fedify): a single site-wide `Person` actor (not per-profile — the local
@@ -460,22 +463,28 @@ that's what the sender actually signed against, since our own actor
 document is what told them `inbox: https://seb.now/ap/inbox` in the first
 place.
 
-**Another DO gateway quirk: reject `+json` response Content-Types.**
-WebFinger and the actor document are spec-correctly `application/jrd+json`
-and `application/activity+json` in `handleWebfinger`/`handleActor`'s JSON
-*data* (the `links[].type`/context fields), but the actual HTTP response
-`Content-Type` **header** for both is plain `application/json` — DO's
-OpenWhisk-based functions gateway 400s
-(`Messages.httpContentTypeError`, `"Response type in header did not match
-generated content type."`) on a `+json`-suffixed response header under
-`web: raw`, even though the JSON body itself is fine (traced to
-`WebActions.scala` in `apache/openwhisk`; DO's fork evidently diverges
-from upstream's `isJsonFamily` handling here). Real ActivityPub/WebFinger
-clients negotiate content on `Accept`, not a strict response
-`Content-Type` match, so this doesn't break federation — but don't
-"fix" these back to the spec-correct MIME type without re-testing through
-the live DO route, not just against Supabase directly (Supabase alone
-never reproduces this — it's DO's gateway specifically).
+**DO Functions can't serve the actor — two gateway limits.** DO's
+OpenWhisk-based functions gateway (a) 400s any request whose `Accept` header
+doesn't allow plain JSON (`application/activity+json`, `ld+json`, `jrd+json`,
+even `text/html` → `Incomplete web function path`; no `Accept`, `*/*` or
+`application/json` pass), before the function runs, on every function route;
+and (b) 400s a `+json`-suffixed response `Content-Type` under `web: raw`
+(`Messages.httpContentTypeError`). Mastodon fetches actors with
+`Accept: application/activity+json, application/ld+json` and, since its
+CVE-2024-23832 fix, only accepts an actor whose response `Content-Type` is
+`application/activity+json` (or `ld+json` with the ActivityStreams profile)
+— `valid_activitypub_content_type?` in `json_ld_helper.rb`. So a proxied
+actor fails both ways. Hence the `/ap/actor` 308 redirect to Supabase, which
+sends `application/activity+json`: Mastodon's HTTP client follows up to 3
+redirects and only checks that the JSON `id` equals the URL it asked for
+(`https://seb.now/ap/actor`), not the final host. The other routes survive
+the gateway: Mastodon's WebFinger lookup sends
+`Accept: application/jrd+json, application/json` and checks link `type`s in
+the body, not the response header (so WebFinger stays `application/json`),
+inbox deliveries send no restrictive `Accept`, and MCP clients send
+`application/json, text/event-stream`. A new route whose clients send a
+non-JSON `Accept` (or need a `+json` response type) should be a redirect to
+Supabase too, not a proxied function.
 
 Two non-obvious things had to be right simultaneously for this to route at
 all — get either wrong and it silently 404s or 400s even though the build
@@ -502,8 +511,9 @@ succeeds:
   a valid function path for functions components, contrary to what the
   App Spec reference's generic rewrite semantics would suggest. Current
   `ingress.rules`: `/.well-known/webfinger` → `rewrite: /wellknown/webfinger`,
-  `/ap/actor` → `rewrite: /ap/actor`, `/ap/inbox` → `rewrite: /ap/inbox` —
-  one exact-match rule per function, not one broader rule per package.
+  `/ap/inbox` → `rewrite: /ap/inbox`, `/mcp` → `rewrite: /mcp/server` —
+  one exact-match rule per function, not one broader rule per package
+  (plus the `/ap/actor` redirect rule, and `/` → the static site last).
 
 Both of these were confirmed by testing against a real, independently
 working app with the same shape (not guessed blindly) — if either changes
