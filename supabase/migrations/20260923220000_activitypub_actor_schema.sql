@@ -1,7 +1,6 @@
 -- get_vault_secret: lets the activitypub edge function (service_role) read the
 -- actor's RSA keypair (stored in Vault, not this table) without a direct
--- `vault` schema grant. Mirrors the same helper in the personal-CRM project's
--- `do-api` function. Only postgres/service_role may execute it - never anon
+-- `vault` schema grant. Only postgres/service_role may execute it - never anon
 -- or authenticated, since it can read any named secret.
 create function public.get_vault_secret(secret_name text)
 returns text

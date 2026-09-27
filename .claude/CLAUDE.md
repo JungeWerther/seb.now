@@ -7,13 +7,11 @@ Python package (`src/seb_now`); no web framework has been chosen yet.
 
 ## Infrastructure: Supabase + DigitalOcean
 
-**Storage — Supabase.** Project `seb-now`, ref `yoxrhqlzsqwfjmsjpari`, org
-"Seb Private" (`jlizhkmtqqlztnjcknso`), region `eu-west-1`, URL
-`https://yoxrhqlzsqwfjmsjpari.supabase.co`. This is a dedicated project —
-deliberately separate from the `bhewgqnzhyllvxcdmjrd` project (personal
-CRM + EventMCP) so a public-facing site's anon key never shares a database
-with private data. Access it with the `mcp__Supabase__*` tools using that
-project ref; there is no CLI/local Supabase link in this repo.
+**Storage — Supabase.** Project `seb-now`, ref `yoxrhqlzsqwfjmsjpari`, URL
+`https://yoxrhqlzsqwfjmsjpari.supabase.co`. This is a dedicated project, so a
+public-facing site's anon key never shares a database with private data.
+Access it with the `mcp__Supabase__*` tools using that project ref; there is
+no CLI/local Supabase link in this repo.
 
 Schema: `profiles` / `links` / `votes` / `follows`, RLS enabled on all four
 (policies scoped to `auth.uid()`), migrations versioned under
@@ -36,9 +34,7 @@ The one exception is `service_role` inside the three ingestion Edge
 Functions (see below) — server-side only, never shipped to a client.
 
 **Ingestion — four Edge Functions, each on its own `pg_cron` schedule,
-all inside the `seb-now` project itself** (unlike the DO deploy trigger,
-these don't need the personal CRM project or its vault secret, since
-they call their own project's own functions):
+all inside the `seb-now` project itself**:
 
 **Followed sources live in `public.sources`, not in code** — one row per
 followed account/channel (`kind`: `youtube_channel` or `mastodon_account`,
@@ -364,11 +360,6 @@ gateway rejects a JSON content type on a non-JSON body.
 The repo's `.mcp.json` registers it as the `seb-now` server, so Claude Code
 sessions in this repo get its tools.
 
-The DO API is reachable from a session through the personal-CRM project's
-`do-api` Edge Function (it holds the token; callers need that project's
-`edge_invoke_token`), called via `pg_net` from SQL on that project — that's
-how the app spec (ingress rules, components) is read and updated.
-
 **Open privacy question (deferred until there are real users):**
 `votes` is publicly readable (the page shows net scores), so any user's
 topic profile is derivable by anyone from `votes` ⋈ `link_topics`.
@@ -384,11 +375,6 @@ the Supabase secrets policy above. **No DigitalOcean MCP/CLI is
 connected in this environment** — there is currently no automated way to
 inspect or deploy to DO from a Claude Code session here; DO setup is a
 manual step until that changes.
-
-A second Supabase project on this account, `trading.swiechers.nl`
-(`fvtapzjbxkqvmikdapla`, org `qiliecndqbdzhhdlcvgv`), was **paused** to
-free a free-tier project slot for `seb-now` — unrelated to this app, but
-worth knowing before assuming it's still active.
 
 **ActivityPub proxy — real actor, not a stub.** `fediverse-ingest` above
 only ever *reads* from the fediverse (Mastodon's public REST API).
@@ -428,10 +414,9 @@ keypair for HTTP Signatures, a `public.ap_followers` table, and signed
 - **Keys** — a 2048-bit RSA keypair (PKCS8 private / SPKI public PEM),
   generated once with `openssl` and stored in the `seb-now` project's
   Supabase Vault as `ap-actor-private-key` / `ap-actor-public-key`, read
-  via a `public.get_vault_secret(secret_name text)` RPC (mirrors the
-  personal-CRM project's `do-api` pattern; `execute` is revoked from
-  `anon`/`authenticated`, so it's reachable only via the edge function's
-  own `service_role` client). Rotating the key means regenerating both
+  via a `public.get_vault_secret(secret_name text)` RPC (`execute` is
+  revoked from `anon`/`authenticated`, so it's reachable only via the edge
+  function's own `service_role` client). Rotating the key means regenerating both
   secrets and redeploying — nothing else references the key material
   directly.
 
