@@ -9,16 +9,16 @@ starts with an uppercase letter): lowercase builtins/functions (`tuple(...)`,
 `range(0, n)`, `.unsqueeze(0)`) are exempt — constant-izing every literal
 anywhere would ban idiomatic Python, not hardcoded metaparameters.
 
-Scanned: src/seb_now/*.py (except this rule's own constants.py) and
-examples/*.py. Not scanned: tests/, where literal fixtures/assertions are
-normal pytest style.
+Scanned: src/seb_now/*.py and research/*.py (except each one's constants.py).
+Not scanned: tests/ or research/test_*.py, where literal fixtures/assertions
+are normal pytest style.
 """
 
 import ast
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
-SCANNED_DIRS = [REPO_ROOT / "src" / "seb_now", REPO_ROOT / "examples"]
+SCANNED_DIRS = [REPO_ROOT / "src" / "seb_now", REPO_ROOT / "research"]
 EXCLUDED_FILES = {"constants.py"}
 # TypeVar("V")'s string literal IS the type variable's name, per the stdlib
 # typing idiom — there's no separate metaparameter to extract. Built-in
@@ -58,7 +58,7 @@ def _literal_instantiation_args(source: str) -> list[str]:
 def _scanned_files() -> list[Path]:
     files = []
     for directory in SCANNED_DIRS:
-        files.extend(sorted(p for p in directory.glob("*.py") if p.name not in EXCLUDED_FILES))
+        files.extend(sorted(p for p in directory.glob("*.py") if p.name not in EXCLUDED_FILES and not p.name.startswith("test_")))
     return files
 
 

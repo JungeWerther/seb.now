@@ -1,6 +1,6 @@
 """Named metaparameters and model identifiers, so call sites never hardcode them.
 
-Referenced by src/seb_now/*.py and the examples/ scripts. Grouped
+Referenced by src/seb_now/*.py. Grouped
 by which file each constant belongs to; a string identifier that names an
 external model gets a StrEnum member instead of a bare literal.
 tests/test_constants_convention.py enforces the "no literal in a class
@@ -10,10 +10,6 @@ instantiation" half of this in CI.
 from __future__ import annotations
 
 from enum import StrEnum
-
-
-class ModelName(StrEnum):
-    ALL_MINI_LM_L6_V2 = "all-MiniLM-L6-v2"
 
 
 class SourceType(StrEnum):
@@ -34,17 +30,6 @@ FEED_PAGE_SIZE = 30
 # site.py — value of every field in the #article-template markup, which the
 # page script overwrites per link
 TEMPLATE_ARTICLE_BLANK = ""
-
-# examples/real_embedding_check.py
-REAL_EMBEDDING_LAW_CHECK_TOLERANCE = 1e-4
-
-# examples/train_compositional_embedding.py — TrainableEmbed + training loop
-ATTENTION_EMBEDDING_DIM = 16
-SELF_ATTENTION_NUM_HEADS = 1
-ATTENTION_BATCH_FIRST = True
-TRAINABLE_EMBED_TRAIN_STEPS = 300
-TRAINABLE_EMBED_LEARNING_RATE = 0.05
-TRAINABLE_EMBED_LAW_CHECK_TOLERANCE = 0.05
 
 # sanitize.py — safe_http_url
 # Schemes a feed/post URL may use when rendered into an href or src.

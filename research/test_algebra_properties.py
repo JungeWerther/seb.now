@@ -19,7 +19,7 @@ import pytest
 from hypothesis import example, given
 from hypothesis import strategies as st
 
-from seb_now.algebra import Combinable, bag_of_words_embed, hashed_embed, vec_add, vec_isclose
+from algebra import Combinable, bag_of_words_embed, hashed_embed, vec_add, vec_isclose
 
 WORDS = ["macro", "prices", "rose", "fell", "today", "team", "scored", "goal", "win"]
 

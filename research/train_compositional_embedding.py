@@ -16,7 +16,7 @@ evaluates it unchanged.
 
 Self-contained: a from-scratch model, no pretrained weights, no network
 access needed. Run with:
-    uv run --group examples python examples/train_compositional_embedding.py
+    uv run --group research python research/train_compositional_embedding.py
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from itertools import product
 import torch
 from torch import Tensor, nn
 
-from seb_now.algebra import (
+from algebra import (
     Combinable,
     Embed,
     LawCheckKind,
@@ -36,7 +36,7 @@ from seb_now.algebra import (
     vec_add,
     vec_isclose,
 )
-from seb_now.constants import (
+from constants import (
     ATTENTION_BATCH_FIRST,
     ATTENTION_EMBEDDING_DIM,
     SELF_ATTENTION_NUM_HEADS,

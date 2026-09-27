@@ -1,6 +1,6 @@
 from itertools import product
 
-from seb_now.algebra import (
+from algebra import (
     Combinable,
     LawCheckKind,
     SampleTriple,
