@@ -33,17 +33,21 @@ write goes through RLS as an authenticated (including anonymous) user.
 The one exception is `service_role` inside the three ingestion Edge
 Functions (see below) — server-side only, never shipped to a client.
 
-**Ingestion — four Edge Functions, each on its own `pg_cron` schedule,
+**Ingestion — five Edge Functions, each on its own `pg_cron` schedule,
 all inside the `seb-now` project itself**:
 
 **Followed sources live in `public.sources`, not in code** — one row per
-followed account/channel (`kind`: `youtube_channel` or `mastodon_account`,
+followed account/channel/feed (`kind`: `youtube_channel`, `mastodon_account`
+or `web_feed`,
 `identifier`, `label`, `enabled`), public-read, service_role-write. Following
 or dropping a source is a row insert/update (`enabled = false` to pause), with
 no redeploy. The `explore-taste` skill (`.claude/skills/explore-taste/`) grows the
 YouTube list from a short taste interview, verifying each channel id through
-`pg_net`, since this sandbox can't reach youtube.com. A check constraint validates `identifier` per kind (a
-`UC…` channel id; `handle@instance` for Mastodon), because the ingest
+`pg_net`, since this sandbox can't reach youtube.com; `find-sources` does the
+same for people's own blogs/newsletters (feed discovery + verification) and
+Mastodon accounts. A check constraint validates `identifier` per kind (a
+`UC…` channel id; `handle@instance` for Mastodon; an `https://` feed URL for
+`web_feed`), because the ingest
 functions build fetch URLs from it and a Mastodon instance becomes the request
 host. TechCrunch and Hacker News aren't rows: each is a single fixed API, and
 the function *is* the source.
@@ -78,6 +82,14 @@ the function *is* the source.
   which answers data-centre requests) for up to `AUTHOR_SWEEP_LIMIT` YouTube
   links still without one, whichever ingest added them. Deployed with
   `verify_jwt` on; its cron sends the same anon-key bearer as the others.
+- `web-feed-ingest` (`0 3-23/6 * * *`) — any site's own RSS 2.0 or Atom feed,
+  one per enabled `web_feed` row in `sources` (currently geohot's blog), first
+  `ITEMS_PER_FEED = 10` posts each, regex-extracted like `techcrunch-ingest`
+  (Atom: the `rel="alternate"` or rel-less `<link href>`; titles stripped to
+  plain text). Upserts as `origin: 'feed'`, `onConflict: 'url'`, with
+  `created_at` set to the post's publication date (a future or unparseable date
+  is dropped) and a declared-only preview image like `hn-ingest`. Its hours are
+  offset 3h from the others, so it never overlaps them.
 
 **Blog posts** are how "your own submission" (the `origin: 'local'`
 value that's existed in the schema since the start) actually gets
