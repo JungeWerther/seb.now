@@ -590,6 +590,9 @@
     }
     .swipe-content .reply-count { font-size: 0.75rem; color: gray; font-variant-numeric: tabular-nums; }
     .post-footer .score {
+      display: flex;
+      align-items: center;
+      gap: 0.2rem;
       margin-right: 0.35rem;
       font-size: 0.75rem;
       font-variant-numeric: tabular-nums;
@@ -986,7 +989,7 @@
 
     function renderScore(li, score) {
       const badge = li.querySelector(".score");
-      badge.textContent = score > 0 ? `+${score}` : String(score);
+      badge.querySelector(".score-value").textContent = score > 0 ? `+${score}` : String(score);
       badge.classList.toggle("positive", score > 0);
       badge.classList.toggle("negative", score < 0);
     }
