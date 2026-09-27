@@ -4,7 +4,7 @@
 # rest of the site's server-side logic) and relays the response back
 # unchanged. Keeps ActivityPub logic itself in one place (Supabase) rather
 # than split between two runtimes - these exist only so the site's own
-# domain answers WebFinger/inbox (and /mcp) requests, since WebFinger
+# domain answers WebFinger/inbox (and /mcp, /mcp/user) requests, since WebFinger
 # requires the response to come from the exact host in the acct: handle.
 # /ap/actor isn't here: its ingress rule redirects to Supabase, because this
 # gateway can't serve application/activity+json (see CLAUDE.md).
@@ -34,6 +34,11 @@ packages:
   - name: mcp
     functions:
       - name: server
+        binary: false
+        main: main
+        runtime: "nodejs:22"
+        web: raw
+      - name: user
         binary: false
         main: main
         runtime: "nodejs:22"
