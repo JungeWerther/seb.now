@@ -7,15 +7,15 @@ concatenated. Not part of the test suite — it downloads a ~90MB model, so
 it's opt-in rather than something every CI run pays for.
 
 Run with:
-    uv run --group examples python examples/real_embedding_check.py
+    uv run --group research python research/real_embedding_check.py
 """
 
 from itertools import product
 
 from sentence_transformers import SentenceTransformer
 
-from seb_now.algebra import Combinable, Embed, LawCheckKind, SampleTriple, Vector, vec_add, vec_isclose
-from seb_now.constants import ModelName, REAL_EMBEDDING_LAW_CHECK_TOLERANCE
+from algebra import Combinable, Embed, LawCheckKind, SampleTriple, Vector, vec_add, vec_isclose
+from constants import ModelName, REAL_EMBEDDING_LAW_CHECK_TOLERANCE
 
 
 def real_embed(model: SentenceTransformer) -> Embed[Vector]:

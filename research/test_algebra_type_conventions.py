@@ -1,4 +1,4 @@
-"""Enforces a review rule: record-like tuples in seb_now must be NamedTuple.
+"""Enforces a review rule: record-like tuples in algebra.py must be NamedTuple.
 
 `Vector` is the one sanctioned exception: it's a variable-length numeric
 sequence, not a fixed-field record, so it can't be expressed as a NamedTuple
@@ -8,7 +8,7 @@ without losing its arbitrary dimensionality.
 import ast
 from pathlib import Path
 
-ALGEBRA_SOURCE = Path(__file__).parent.parent / "src" / "seb_now" / "algebra.py"
+ALGEBRA_SOURCE = Path(__file__).parent / "algebra.py"
 VECTOR_ALIAS = "tuple[float, ...]"
 
 

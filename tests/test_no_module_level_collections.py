@@ -10,15 +10,16 @@ escape table, a security allowlist). Each of those is listed in ALLOWED with the
 reason it isn't data; an entry that no longer matches anything fails too, so the
 list can't go stale.
 
-Scanned: src/seb_now/*.py and examples/*.py, like test_constants_convention.
-Not scanned: tests/, where literal fixtures are normal pytest style.
+Scanned: src/seb_now/*.py and research/*.py, like test_constants_convention.
+Not scanned: tests/ or research/test_*.py, where literal fixtures are normal
+pytest style.
 """
 
 import ast
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
-SCANNED_DIRS = [REPO_ROOT / "src" / "seb_now", REPO_ROOT / "examples"]
+SCANNED_DIRS = [REPO_ROOT / "src" / "seb_now", REPO_ROOT / "research"]
 
 COLLECTION_NODES = (ast.List, ast.Tuple, ast.Set, ast.Dict, ast.ListComp, ast.SetComp, ast.DictComp)
 COLLECTION_CONSTRUCTORS = {"list", "tuple", "set", "frozenset", "dict"}
@@ -30,12 +31,12 @@ ALLOWED = {
         "the escape table is part of the escaping algorithm",
     ("src/seb_now/posts.py", "MARKDOWN_EXTENSIONS"):
         "renderer configuration, changed only together with the code that relies on it",
-    ("examples/train_compositional_embedding.py", "VOCAB"):
-        "the example script's own toy corpus",
-    ("examples/train_compositional_embedding.py", "WORD_TO_INDEX"):
-        "derived from the example's toy corpus",
-    ("examples/train_compositional_embedding.py", "TEXTS"):
-        "the example script's own toy corpus",
+    ("research/train_compositional_embedding.py", "VOCAB"):
+        "the research script's own toy corpus",
+    ("research/train_compositional_embedding.py", "WORD_TO_INDEX"):
+        "derived from the research script's toy corpus",
+    ("research/train_compositional_embedding.py", "TEXTS"):
+        "the research script's own toy corpus",
 }
 
 
@@ -64,7 +65,12 @@ def module_level_collections(source: str) -> list[tuple[str, int]]:
 
 
 def _scanned_files() -> list[Path]:
-    return [path for directory in SCANNED_DIRS for path in sorted(directory.glob("*.py"))]
+    return [
+        path
+        for directory in SCANNED_DIRS
+        for path in sorted(directory.glob("*.py"))
+        if not path.name.startswith("test_")
+    ]
 
 
 def test_no_list_declaration_in_outer_scope() -> None:

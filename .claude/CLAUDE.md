@@ -550,7 +550,7 @@ In particular, a call that instantiates a class (`nn.MultiheadAttention(...)`,
 `SentenceTransformer(...)`) must not take a literal
 `int`/`float`/`str`/`bool` argument — reference a name from `constants.py`
 instead. `tests/test_constants_convention.py` asserts this in CI by
-AST-scanning `src/seb_now/*.py` and `examples/*.py` for class-instantiation
+AST-scanning `src/seb_now/*.py` and `research/*.py` for class-instantiation
 calls with literal arguments (not `tests/`, where literal fixtures are
 normal pytest style, and not stdlib idioms like `TypeVar("V")`, where the
 literal *is* the name rather than a metaparameter — see the exclusion list
@@ -569,7 +569,7 @@ ingest functions, `public.domain_source_types` for `classify_source` (which
 takes the mapping as an argument; `site.py` loads it at build time).
 `tests/test_no_module_level_collections.py`
 (`test_no_list_declaration_in_outer_scope`) AST-scans `src/seb_now/*.py` and
-`examples/*.py` for module-level collection literals, including
+`research/*.py` for module-level collection literals, including
 `frozenset({...})`-style wrappers and comprehensions. A collection that is
 genuinely code (an escape table, a security allowlist) goes in that test's
 `ALLOWED` with a one-line reason; stale `ALLOWED` entries fail the test too.
