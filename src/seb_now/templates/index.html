@@ -589,6 +589,14 @@
       margin-top: 0.5rem;
     }
     .swipe-content .reply-count { font-size: 0.75rem; color: gray; font-variant-numeric: tabular-nums; }
+    .post-footer .score {
+      margin-right: 0.35rem;
+      font-size: 0.75rem;
+      font-variant-numeric: tabular-nums;
+      color: gray;
+    }
+    .post-footer .score.positive { color: var(--positive); }
+    .post-footer .score.negative { color: var(--negative); }
     .swipe-content .reply-btn {
       display: flex;
       align-items: center;
@@ -647,15 +655,6 @@
     .article-row a { flex: 1; min-width: 0; overflow-wrap: anywhere; text-decoration: none; color: inherit; }
     .article-row a:hover { text-decoration: underline; }
     .article-row a.visited { color: gray; }
-    .article-row .score {
-      font-size: 0.75rem;
-      font-variant-numeric: tabular-nums;
-      color: gray;
-      min-width: 1.5em;
-      text-align: right;
-    }
-    .article-row .score.positive { color: var(--positive); }
-    .article-row .score.negative { color: var(--negative); }
     .meta .topics {
       display: flex;
       gap: 0.25rem;

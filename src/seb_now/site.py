@@ -200,12 +200,12 @@ def _render_article(article: Article) -> str:
         f'<div class="post">'
         f'<div class="article-row">'
         f'<a href="{url}" target="_blank" rel="noopener noreferrer">{escape(article.title)}</a>'
-        f'<span class="score">0</span>'
         f"</div>"
         f"{cover}"
         f"</div>"
         f"</div>"
         f'<div class="post-footer">'
+        f'<span class="score">0</span>'
         f'<span class="reply-count" hidden></span>'
         f'<button type="button" class="reply-btn" aria-label="Reply">'
         f'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" '
