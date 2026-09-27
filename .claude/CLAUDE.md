@@ -346,9 +346,17 @@ RLS limits it to exactly what a logged-out visitor sees. It's deployed with
 because every tool is a public read. Write tools (vote, reply,
 `topic_overrides`) are not built: they need the agent to act as a specific
 user, and accounts are anonymous per browser, so that waits on a decision about
-per-user tokens (or OAuth once real accounts exist). A `seb.now/mcp` address
-would be one more DO Functions proxy plus an exact-match ingress rule, as for
-`/ap/inbox`.
+per-user tokens (or OAuth once real accounts exist). It's also served at
+`https://seb.now/mcp` through the DO Functions proxy `mcp/server`
+(`functions/packages/mcp/server`), with its own exact-match ingress rule
+(`/mcp` → `rewrite: /mcp/server`), the same pattern as `/ap/inbox`. The proxy
+sends an empty body (202 notification replies) as `text/plain`, since DO's
+gateway rejects a JSON content type on a non-JSON body.
+
+The DO API is reachable from a session through the personal-CRM project's
+`do-api` Edge Function (it holds the token; callers need that project's
+`edge_invoke_token`), called via `pg_net` from SQL on that project — that's
+how the app spec (ingress rules, components) is read and updated.
 
 **Open privacy question (deferred until there are real users):**
 `votes` is publicly readable (the page shows net scores), so any user's
