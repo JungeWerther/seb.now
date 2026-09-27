@@ -1,14 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// Each channel's public Atom feed (no auth) lists its latest 15 uploads.
-// Regex-extracted like techcrunch-ingest: the <entry> shape is flat and stable.
-const CHANNELS = [
-  // Channel 5 with Andrew Callaghan
-  "UC-AQKm7HUNMmxjdS371MSwg",
-  // no cap on god (Lionel McGloin)
-  "UCLIYhydrnsWMDyJXacaj2Jg",
-];
+// Each followed channel's public Atom feed (no auth) lists its latest 15
+// uploads. Regex-extracted like techcrunch-ingest: the <entry> shape is flat
+// and stable. The channels are the enabled youtube_channel rows in sources.
 const FEED_URL = "https://www.youtube.com/feeds/videos.xml?channel_id=";
 const WATCH_URL = "https://www.youtube.com/watch?v=";
 // 4:3 with letterbox bars on 16:9 videos; the page's 16:9 cover crop removes
@@ -67,7 +62,14 @@ Deno.serve(async (_req: Request) => {
   let upserted = 0;
   const errors: unknown[] = [];
 
-  for (const channel of CHANNELS) {
+  const { data: sources, error: sourcesError } = await supabase
+    .from("sources")
+    .select("identifier")
+    .eq("kind", "youtube_channel")
+    .eq("enabled", true);
+  if (sourcesError) errors.push({ sources: sourcesError.message });
+
+  for (const { identifier: channel } of sources ?? []) {
     const res = await fetch(FEED_URL + channel);
     if (!res.ok) {
       errors.push({ channel, status: res.status });

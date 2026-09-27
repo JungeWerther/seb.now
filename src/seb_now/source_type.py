@@ -1,17 +1,18 @@
 """Classify a link's source type: mainstream media, YouTube long-form, or direct link.
 
 Domain-based only — no article-body fetching or duration lookups. A URL's
-host is checked against MAINSTREAM_MEDIA_DOMAINS and YOUTUBE_DOMAINS in
-constants.py; anything that matches neither is a DIRECT_LINK.
+host is looked up in a domain -> SourceType mapping (the
+`public.domain_source_types` table, loaded by site.py at build time);
+anything not in it is a DIRECT_LINK.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Sequence
+from typing import Mapping, Sequence
 from urllib.parse import urlparse
 
-from seb_now.constants import MAINSTREAM_MEDIA_DOMAINS, YOUTUBE_DOMAINS, SourceType
+from seb_now.constants import SourceType
 
 
 def _registrable_domain(url: str) -> str:
@@ -31,17 +32,14 @@ def display_domain(url: str) -> str:
     return domain.rsplit(".", 1)[0] if "." in domain else domain
 
 
-def classify_source(url: str) -> SourceType:
-    domain = _registrable_domain(url)
-    if domain in YOUTUBE_DOMAINS:
-        return SourceType.YOUTUBE_LONGFORM
-    if domain in MAINSTREAM_MEDIA_DOMAINS:
-        return SourceType.MAINSTREAM_MEDIA
-    return SourceType.DIRECT_LINK
+def classify_source(url: str, domain_source_types: Mapping[str, SourceType]) -> SourceType:
+    return domain_source_types.get(_registrable_domain(url), SourceType.DIRECT_LINK)
 
 
-def group_by_source_type(urls: Sequence[str]) -> dict[SourceType, list[str]]:
+def group_by_source_type(
+    urls: Sequence[str], domain_source_types: Mapping[str, SourceType]
+) -> dict[SourceType, list[str]]:
     groups: dict[SourceType, list[str]] = defaultdict(list)
     for url in urls:
-        groups[classify_source(url)].append(url)
+        groups[classify_source(url, domain_source_types)].append(url)
     return dict(groups)

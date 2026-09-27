@@ -40,9 +40,18 @@ all inside the `seb-now` project itself** (unlike the DO deploy trigger,
 these don't need the personal CRM project or its vault secret, since
 they call their own project's own functions):
 
-- `fediverse-ingest` (`0 */6 * * *`) — pulls recent public posts from a
-  fixed list of Mastodon accounts (`ACCOUNTS` in
-  `supabase/functions/fediverse-ingest/index.ts`; currently
+**Followed sources live in `public.sources`, not in code** — one row per
+followed account/channel (`kind`: `youtube_channel` or `mastodon_account`,
+`identifier`, `label`, `enabled`), public-read, service_role-write. Following
+or dropping a source is a row insert/update (`enabled = false` to pause), with
+no redeploy. A check constraint validates `identifier` per kind (a
+`UC…` channel id; `handle@instance` for Mastodon), because the ingest
+functions build fetch URLs from it and a Mastodon instance becomes the request
+host. TechCrunch and Hacker News aren't rows: each is a single fixed API, and
+the function *is* the source.
+
+- `fediverse-ingest` (`0 */6 * * *`) — pulls recent public posts from the
+  enabled `mastodon_account` rows in `sources` (currently
   `@DAIR@dair-community.social` for AI ethics/policy and
   `@colossal@mastodon.art` for contemporary art/visual culture — swapped
   in for `@blendernation@mastodon.online`, which turned out to read as
@@ -60,8 +69,8 @@ they call their own project's own functions):
   is stable and simple enough that a parser dependency isn't worth it).
 - `youtube-ingest` (`45 */6 * * *`) — each channel's public Atom feed
   (`youtube.com/feeds/videos.xml?channel_id=…`, no auth, latest 15 uploads)
-  for the channels in `CHANNELS` (currently Channel 5 with Andrew Callaghan
-  and no cap on god).
+  for the enabled `youtube_channel` rows in `sources` (currently Channel 5
+  with Andrew Callaghan and no cap on god).
   Shorts (`/shorts/` links) are skipped. Videos upsert as `origin: 'feed'`
   with a canonical `watch?v=` url, `image_url` set to the video's
   `hqdefault.jpg` (letterboxed 4:3, which the 16:9 cover crop trims exactly),
@@ -352,6 +361,8 @@ per-user tokens (or OAuth once real accounts exist). It's also served at
 (`/mcp` → `rewrite: /mcp/server`), the same pattern as `/ap/inbox`. The proxy
 sends an empty body (202 notification replies) as `text/plain`, since DO's
 gateway rejects a JSON content type on a non-JSON body.
+The repo's `.mcp.json` registers it as the `seb-now` server, so Claude Code
+sessions in this repo get its tools.
 
 The DO API is reachable from a session through the personal-CRM project's
 `do-api` Edge Function (it holds the token; callers need that project's
@@ -553,3 +564,20 @@ in that test for the exact scope).
 This does not extend to every literal anywhere (`range(0, n)`, `.unsqueeze(0)`,
 a `torch.manual_seed(0)` reproducibility seed) — only to values instantiating
 a class where the choice of value is itself a design decision worth naming.
+
+## Data lives in tables, not module-level collections
+
+A list, tuple, set or dict written out at module scope is usually *data*
+(which domains are mainstream media, which channels to follow), and data
+belongs in a Supabase table the code reads — e.g. `public.sources` for the
+ingest functions, `public.domain_source_types` for `classify_source` (which
+takes the mapping as an argument; `site.py` loads it at build time).
+`tests/test_no_module_level_collections.py`
+(`test_no_list_declaration_in_outer_scope`) AST-scans `src/seb_now/*.py` and
+`examples/*.py` for module-level collection literals, including
+`frozenset({...})`-style wrappers and comprehensions. A collection that is
+genuinely code (an escape table, a security allowlist) goes in that test's
+`ALLOWED` with a one-line reason; stale `ALLOWED` entries fail the test too.
+The rule is Python-only — `ast` can't read the TypeScript Edge Functions, whose
+module-level arrays today are protocol/schema (MCP `TOOLS`, header lists), not
+data.

@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from html import escape
 from pathlib import Path
 from urllib.parse import urlsplit
-from typing import NotRequired, Sequence, TypedDict
+from typing import Mapping, NotRequired, Sequence, TypedDict
 
 from seb_now.constants import (
     ARTICLE_TOPIC_CHIPS,
@@ -30,7 +30,7 @@ from seb_now.constants import (
     SourceType,
 )
 from seb_now.auth import get_unauthenticated_client
-from seb_now.domain.models import Link, LinkTopic, Topic
+from seb_now.domain.models import DomainSourceType, Link, LinkTopic, Topic
 from seb_now.posts import load_posts, write_posts
 from seb_now.sanitize import content_security_policy, safe_http_url, script_hash, script_json
 from seb_now.source_type import classify_source, display_domain, favicon_host
@@ -123,6 +123,12 @@ def load_feed() -> list[FeedItem]:
     return feed
 
 
+def load_domain_source_types() -> dict[str, SourceType]:
+    client = get_unauthenticated_client()
+    response = client.table(DomainSourceType.__tablename__).select("domain, source_type").execute()
+    return {row["domain"]: SourceType(row["source_type"]) for row in response.data}
+
+
 def domain_with_author(domain: str, author: str) -> str:
     """The domain line: a handle stands in for the domain ("@Channel5YouTube";
     the favicon still shows the platform), a display name follows it
@@ -132,14 +138,16 @@ def domain_with_author(domain: str, author: str) -> str:
     return author if author.startswith("@") else f"{domain} · {author}"
 
 
-def build_articles(feed: Sequence[FeedItem]) -> list[Article]:
+def build_articles(
+    feed: Sequence[FeedItem], domain_source_types: Mapping[str, SourceType]
+) -> list[Article]:
     return [
         Article(
             id=item["id"],
             title=item["title"],
             url=item["url"],
             domain=domain_with_author(display_domain(item["url"]), item.get("author", "")),
-            source_type=classify_source(item["url"]),
+            source_type=classify_source(item["url"], domain_source_types),
             topics=tuple(item.get("topics", ())),
             image_url=item.get("image_url") or None,
             created_at=item.get("created_at", ""),
@@ -254,7 +262,7 @@ def _page_csp(html: str, supabase_url: str) -> str:
 
 
 def main() -> None:
-    articles = build_articles(load_feed())
+    articles = build_articles(load_feed(), load_domain_source_types())
     html = render(
         articles,
         supabase_url=os.environ["SUPABASE_URL"],

@@ -3,11 +3,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 // Public Mastodon REST API - no auth needed for public statuses. Not raw
 // ActivityPub outbox parsing: Mastodon's JSON API is simpler and stable,
-// and every account we pull from happens to be Mastodon.
-const ACCOUNTS: { instance: string; handle: string }[] = [
-  { instance: "dair-community.social", handle: "DAIR" },
-  { instance: "mastodon.art", handle: "colossal" },
-];
+// and every account we pull from happens to be Mastodon. The accounts are
+// the enabled mastodon_account rows in sources, as handle@instance.
 
 const POSTS_PER_ACCOUNT = 10;
 const IMAGE_FETCH_TIMEOUT_MS = 5000;
@@ -88,7 +85,15 @@ Deno.serve(async (_req: Request) => {
 
   const results = [];
 
-  for (const { instance, handle } of ACCOUNTS) {
+  const { data: sources, error: sourcesError } = await supabase
+    .from("sources")
+    .select("identifier")
+    .eq("kind", "mastodon_account")
+    .eq("enabled", true);
+  if (sourcesError) results.push({ sources: sourcesError.message });
+
+  for (const { identifier } of sources ?? []) {
+    const [handle, instance] = identifier.split("@");
     try {
       const lookupRes = await fetch(
         `https://${instance}/api/v1/accounts/lookup?acct=${encodeURIComponent(handle)}`,

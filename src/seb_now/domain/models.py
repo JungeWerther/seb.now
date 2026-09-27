@@ -1,4 +1,5 @@
-"""Domain models mirroring the `public.links`, `public.topics` and `public.link_topics` tables."""
+"""Domain models mirroring the `public.links`, `public.topics`, `public.link_topics`,
+`public.domain_source_types` and `public.sources` tables."""
 
 from __future__ import annotations
 
@@ -46,3 +47,22 @@ class LinkTopic(BaseModel):
     p: float
     labeled_by: Literal["manual", "jev"]
     labeled_at: datetime
+
+
+class DomainSourceType(BaseModel):
+    __tablename__: ClassVar[str] = "domain_source_types"
+
+    domain: str
+    source_type: Literal["mainstream_media", "youtube_longform"]
+    created_at: datetime
+
+
+class Source(BaseModel):
+    __tablename__: ClassVar[str] = "sources"
+
+    id: UUID
+    kind: Literal["youtube_channel", "mastodon_account"]
+    identifier: str
+    label: str | None = None
+    enabled: bool
+    created_at: datetime

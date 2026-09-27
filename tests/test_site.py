@@ -10,6 +10,11 @@ from seb_now import site
 from seb_now.constants import ARTICLE_TOPIC_CHIPS, FAVICON_URL_TEMPLATE, FEED_PAGE_SIZE, SourceType
 from seb_now.site import Article, _top_topic_names, build_articles, render
 
+DOMAIN_SOURCE_TYPES = {
+    "nytimes.com": SourceType.MAINSTREAM_MEDIA,
+    "youtube.com": SourceType.YOUTUBE_LONGFORM,
+}
+
 FEED_FIXTURE = [
     {"id": "11111111-1111-1111-1111-111111111111", "title": "Fed signals rate cut as inflation cools", "url": "https://www.nytimes.com/a"},
     {"id": "22222222-2222-2222-2222-222222222222", "title": "Fed chair explains the rate decision in full", "url": "https://www.youtube.com/watch?v=a"},
@@ -24,14 +29,14 @@ def _article_list(html: str) -> str:
 
 
 def test_build_articles_classifies_source_type() -> None:
-    articles = build_articles(FEED_FIXTURE)
+    articles = build_articles(FEED_FIXTURE, DOMAIN_SOURCE_TYPES)
 
     source_types = {article.source_type for article in articles}
     assert source_types == {SourceType.MAINSTREAM_MEDIA, SourceType.YOUTUBE_LONGFORM, SourceType.DIRECT_LINK}
 
 
 def test_build_articles_computes_display_domain() -> None:
-    articles = build_articles(FEED_FIXTURE)
+    articles = build_articles(FEED_FIXTURE, DOMAIN_SOURCE_TYPES)
 
     domains = {article.id: article.domain for article in articles}
     assert domains["11111111-1111-1111-1111-111111111111"] == "nytimes"
@@ -134,7 +139,7 @@ def test_render_shows_favicon_column_with_letter_fallback() -> None:
 def test_build_articles_keeps_feed_topics() -> None:
     feed = [{**FEED_FIXTURE[0], "topics": ["AI models", "Open source"]}, FEED_FIXTURE[1]]
 
-    articles = build_articles(feed)
+    articles = build_articles(feed, DOMAIN_SOURCE_TYPES)
 
     assert articles[0].topics == ("AI models", "Open source")
     assert articles[1].topics == ()
@@ -465,7 +470,8 @@ def test_domain_line_shows_a_handle_alone_and_follows_with_a_name() -> None:
 
 def test_render_shows_the_author_on_the_domain_line() -> None:
     articles = build_articles(
-        [{"id": "a", "title": "Iran", "url": "https://www.youtube.com/watch?v=YSLWEsv-8MM", "author": "@Channel5YouTube"}]
+        [{"id": "a", "title": "Iran", "url": "https://www.youtube.com/watch?v=YSLWEsv-8MM", "author": "@Channel5YouTube"}],
+        DOMAIN_SOURCE_TYPES,
     )
 
     html = render(articles)
