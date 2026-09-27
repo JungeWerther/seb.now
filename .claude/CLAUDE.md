@@ -361,6 +361,8 @@ per-user tokens (or OAuth once real accounts exist). It's also served at
 (`/mcp` → `rewrite: /mcp/server`), the same pattern as `/ap/inbox`. The proxy
 sends an empty body (202 notification replies) as `text/plain`, since DO's
 gateway rejects a JSON content type on a non-JSON body.
+The repo's `.mcp.json` registers it as the `seb-now` server, so Claude Code
+sessions in this repo get its tools.
 
 The DO API is reachable from a session through the personal-CRM project's
 `do-api` Edge Function (it holds the token; callers need that project's

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "seb-now": {
+      "type": "http",
+      "url": "https://seb.now/mcp"
+    }
+  }
+}
