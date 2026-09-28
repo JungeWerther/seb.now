@@ -137,6 +137,30 @@ async function signedDeliver(inboxUrl: string, body: string): Promise<Response> 
   });
 }
 
+// Servers running Mastodon's secure mode (authorized fetch) answer 401 to
+// unsigned actor fetches, so these are signed with our key too.
+async function signedGet(url: string): Promise<Response> {
+  const { privateKey } = await getKeys();
+  const target = new URL(url);
+  const date = new Date().toUTCString();
+  const headerNames = ["(request-target)", "host", "date"];
+  const values: Record<string, string> = {
+    "(request-target)": `get ${target.pathname}${target.search}`,
+    host: target.host,
+    date,
+  };
+  const signature = arrayBufferToBase64(
+    await crypto.subtle.sign("RSASSA-PKCS1-v1_5", privateKey, new TextEncoder().encode(buildSigningString(headerNames, values))),
+  );
+  return fetch(url, {
+    headers: {
+      Accept: "application/activity+json",
+      Date: date,
+      Signature: `keyId="${KEY_ID}",algorithm="rsa-sha256",headers="${headerNames.join(" ")}",signature="${signature}"`,
+    },
+  });
+}
+
 type SignatureCheck = { ok: true; actorUrl: string; actorDoc: Record<string, unknown> } | { ok: false; reason: string };
 
 async function fetchActorPublicKey(
@@ -145,8 +169,8 @@ async function fetchActorPublicKey(
   const actorUrl = keyId.split("#")[0];
   let actorDoc: Record<string, unknown>;
   try {
-    const actorRes = await fetch(actorUrl, { headers: { Accept: "application/activity+json" } });
-    if (!actorRes.ok) return { ok: false, reason: `actor fetch failed: ${actorRes.status}` };
+    const actorRes = await signedGet(actorUrl);
+    if (!actorRes.ok) return { ok: false, reason: `actor fetch for ${actorUrl} failed: ${actorRes.status}` };
     actorDoc = await actorRes.json();
   } catch (e) {
     return { ok: false, reason: `actor fetch error: ${String(e)}` };
