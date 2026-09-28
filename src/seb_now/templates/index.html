@@ -466,6 +466,7 @@
     li.article.dragging .post-swipe { overflow: visible; }
     li.article.dragging .post { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18); will-change: transform; }
     li.article.upvoted { box-shadow: inset 3px 0 0 var(--positive); }
+    li.article.pinned { margin-bottom: 1.2rem; }
     .post-swipe {
       position: relative;
       overflow: hidden;
@@ -1555,6 +1556,7 @@
       resetFeed("");
       const generation = feed.generation;
       return loadMore({ replace: true }).then(async (ok) => {
+        await pinLinkedPost();
         if (ok !== false || generation !== feed.generation || prerendered.length === 0) return;
         feed.chronological = true;
         feed.cursor = cursorOf(prerendered.at(-1));
@@ -1562,6 +1564,23 @@
         await hydrateArticles(prerendered);
         if (!feed.done && sentinelNearViewport()) loadMore();
       });
+    }
+
+    // seb.now/p/<link id> is a post's own address (the site's catch-all
+    // document serves this page there): that link goes first in the feed.
+    const POST_PATH_PATTERN = /^\/p\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/;
+    async function pinLinkedPost() {
+      const id = location.pathname.match(POST_PATH_PATTERN)?.[1];
+      if (!id) return;
+      const { data: row, error } = await (await supabaseReady).from("links").select(FEED_SELECT).eq("id", id).maybeSingle();
+      if (error || !row) return;
+      articleList.querySelector(`li.article[data-link-id="${id}"]`)?.remove();
+      const li = renderArticle(row);
+      if (!li) return;
+      li.classList.add("pinned");
+      feed.seen.add(id);
+      articleList.prepend(li);
+      await hydrateArticles([li]);
     }
 
     function setupMenu() {
@@ -1929,7 +1948,7 @@
     // Must match the replies_body_length check in the replies migration.
     const REPLY_MAX_LENGTH = 500;
     const REPLY_REMAINING_WARN_AT = 50;
-    const REPLY_SELECT = "id, link_id, body, created_at, profiles(handle)";
+    const REPLY_SELECT = "id, link_id, body, created_at, profiles(handle), remote_actors(handle)";
 
     // Reply bodies are untrusted user text: they only ever reach the DOM
     // through textContent, never innerHTML, so markup in them stays inert.
@@ -1939,7 +1958,7 @@
       item.className = "reply";
       const author = document.createElement("span");
       author.className = "reply-author";
-      author.textContent = reply.profiles?.handle || "anonymous";
+      author.textContent = reply.profiles?.handle || reply.remote_actors?.handle || "anonymous";
       const body = document.createElement("p");
       body.className = "reply-body";
       body.textContent = reply.body;
