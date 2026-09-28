@@ -169,6 +169,28 @@ in `public.link_topics` as fuzzy `p ∈ (0, 1]`, typically 1–3 per link;
 decision model, planned, not yet automated — so new ingested links
 currently arrive untagged). Both tables are public-read, service_role-write.
 
+The `economy` branch is not hand-made: it is the full JEL classification
+(Journal of Economic Literature, AEA — 1,015 codes), with JEL's own hierarchy as
+the path (L41 → `economy.L.L4.L41`, three-digit codes are the leaves; a
+"General"/"Other" heading is named after its parent so its chip reads alone).
+`topics.jel_code` holds each JEL topic's code, and for hand-made topics outside
+the branch the nearest JEL code (`business.cooperatives` → J54,
+`politics.competition_antitrust` → K21), so economics coverage maps onto one
+standard ontology. Tag an economics story with the JEL leaf, not also with a
+hand-made topic mapped to the same code (that would count the vote twice).
+
+What an article is *about* is a topic; *who* it is about is an entity.
+`public.entities` (organisations: `kind` company/cooperative/nonprofit/public_body,
+`country` ISO 3166-1, `wikidata_id`) carries each one's `nace_code` from
+`public.nace_activities`, the full NACE Rev. 2.1 tree (EU activity
+classification, 1,047 codes, `parent_code` links class → group → division →
+section). NACE 2.1 separates platforms from the service they broker: a
+ride-hailing app (NLCabs, Uber, a driver co-op) is 52.32 *intermediation for
+passenger transportation*, a taxi operator 49.33. `public.link_entities` links
+articles to the entities they cover. All three are public-read,
+service_role-write; only look up a `wikidata_id` (never recall one), and leave
+`nace_code` null rather than guess.
+
 A user's preference is derived, not stored: the
 `public.user_topic_preferences` view (`security_invoker`, so RLS on
 `votes`/`link_topics` applies) gives per `(voter_id, topic_id)` the

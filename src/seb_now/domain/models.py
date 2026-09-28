@@ -1,5 +1,6 @@
 """Domain models mirroring the `public.links`, `public.topics`, `public.link_topics`,
-`public.domain_source_types` and `public.sources` tables."""
+`public.domain_source_types`, `public.sources`, `public.nace_activities`,
+`public.entities` and `public.link_entities` tables."""
 
 from __future__ import annotations
 
@@ -36,6 +37,7 @@ class Topic(BaseModel):
     id: str
     name: str
     description: str
+    jel_code: str | None = None
     created_at: datetime
 
 
@@ -66,3 +68,33 @@ class Source(BaseModel):
     label: str | None = None
     enabled: bool
     created_at: datetime
+
+
+class NaceActivity(BaseModel):
+    __tablename__: ClassVar[str] = "nace_activities"
+
+    code: str
+    level: int
+    parent_code: str | None = None
+    title: str
+
+
+class Entity(BaseModel):
+    __tablename__: ClassVar[str] = "entities"
+
+    id: UUID
+    name: str
+    kind: Literal["company", "cooperative", "nonprofit", "public_body"]
+    nace_code: str | None = None
+    country: str | None = None
+    wikidata_id: str | None = None
+    website: str | None = None
+    description: str | None = None
+    created_at: datetime
+
+
+class LinkEntity(BaseModel):
+    __tablename__: ClassVar[str] = "link_entities"
+
+    link_id: UUID
+    entity_id: UUID
