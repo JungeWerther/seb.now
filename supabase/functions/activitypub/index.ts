@@ -19,9 +19,11 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // upvote on its link, a public reply becomes a reply, and Undo/Delete remove
 // them again. Every profile with a handle is also an account,
 // @handle@<site> (actor <site>/ap/actor?id=<profile id>, with its
-// own keypair in public.ap_actor_keys): its replies on our posts go out as
-// that account's replies (/ap/deliver-replies, called by a replies insert
-// trigger), and deleting one sends a Delete (/ap/delete-reply).
+// own keypair in public.ap_actor_keys): its comments go out as that account's
+// posts (/ap/deliver-replies, called by a replies insert trigger) - a reply
+// on one of our posts, or on any other link a post sharing that link, which
+// the site actor then boosts to its own followers - and deleting one sends a
+// Delete (/ap/delete-reply).
 // No automatic boosting yet (see the "bring your own algorithm" design
 // discussion: boosts should follow a deliberate human upvote, not
 // ingestion volume, and that's still unbuilt).
@@ -493,38 +495,79 @@ function createFor(post: ApPost): Record<string, unknown> {
   };
 }
 
-type LocalReply = { id: string; link_id: string; author_id: string; handle: string; body: string; created_at: string };
+type LocalReply = {
+  id: string;
+  link_id: string;
+  author_id: string;
+  handle: string;
+  body: string;
+  created_at: string;
+  link_url: string;
+  link_title: string;
+  // Whether the link is one of the site actor's own posts (then the comment
+  // is a reply to it) rather than any other link (then it shares the link).
+  is_post: boolean;
+};
 
 function replyNoteId(replyId: string): string {
   return `${NOTES_URL}?reply=${replyId}`;
 }
 
+function isHttpUrl(url: string): boolean {
+  try {
+    return ["http:", "https:"].includes(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
 function replyNoteFor(reply: LocalReply): Record<string, unknown> {
-  return {
+  const note = {
     id: replyNoteId(reply.id),
     type: "Note",
     attributedTo: userActorId(reply.author_id),
-    inReplyTo: `${NOTES_URL}?id=${reply.link_id}`,
     url: `${POST_PAGE_URL}/${reply.link_id}`,
-    content: `<p><span class="h-card"><a href="${SITE_ORIGIN}/" class="u-url mention">@<span>${USERNAME}</span></a></span> ` +
-      escapeHtml(reply.body).split("\n").join("<br>") + "</p>",
     published: new Date(reply.created_at).toISOString(),
     to: [PUBLIC_AUDIENCE],
-    cc: [ACTOR_ID],
-    tag: [{ type: "Mention", href: ACTOR_ID, name: `@${USERNAME}@${DOMAIN}` }],
   };
+  const body = escapeHtml(reply.body).split("\n").join("<br>");
+  if (reply.is_post) {
+    return {
+      ...note,
+      inReplyTo: `${NOTES_URL}?id=${reply.link_id}`,
+      content: `<p><span class="h-card"><a href="${SITE_ORIGIN}/" class="u-url mention">@<span>${USERNAME}</span></a></span> ${body}</p>`,
+      cc: [ACTOR_ID],
+      tag: [{ type: "Mention", href: ACTOR_ID, name: `@${USERNAME}@${DOMAIN}` }],
+    };
+  }
+  // Mastodon builds its preview card from the first link in the content.
+  const link = isHttpUrl(reply.link_url)
+    ? `<p><a href="${escapeHtml(reply.link_url)}">${escapeHtml(reply.link_title)}</a></p>`
+    : "";
+  return { ...note, content: `<p>${body}</p>${link}`, cc: [] };
 }
 
 async function handleReplyNote(replyId: string): Promise<Response> {
   if (!UUID_PATTERN.test(replyId)) return json({ error: "not_found" }, 404);
   const { data } = await supabase
     .from("replies")
-    .select("id, link_id, author_id, body, created_at, profiles(handle)")
+    .select("id, link_id, author_id, body, created_at, profiles(handle), links(url, title, ap_posts(link_id))")
     .eq("id", replyId)
     .eq("ap_state", "sent")
     .maybeSingle();
   if (!data) return json({ error: "not_found" }, 404);
-  const reply = { ...data, handle: (data.profiles as unknown as { handle: string }).handle } as LocalReply;
+  const link = data.links as unknown as { url: string; title: string; ap_posts: unknown[] | { link_id: string } | null };
+  const reply: LocalReply = {
+    id: data.id,
+    link_id: data.link_id,
+    author_id: data.author_id,
+    handle: (data.profiles as unknown as { handle: string }).handle,
+    body: data.body,
+    created_at: data.created_at,
+    link_url: link.url,
+    link_title: link.title,
+    is_post: Array.isArray(link.ap_posts) ? link.ap_posts.length > 0 : !!link.ap_posts,
+  };
   return json({ "@context": "https://www.w3.org/ns/activitystreams", ...replyNoteFor(reply) }, 200, "application/activity+json");
 }
 
@@ -542,6 +585,14 @@ async function conversationInboxes(linkId: string, authorId: string): Promise<st
     ...[...(voters ?? []), ...(repliers ?? [])].map((row) => row.remote_actors as unknown as Inboxes),
   ];
   return [...new Set(actors.map((a) => a?.shared_inbox_url ?? a?.inbox_url).filter((url): url is string => !!url))];
+}
+
+// Followers of the site actor (profileId null) or of one reader's account.
+async function followerInboxes(profileId: string | null): Promise<string[]> {
+  let query = supabase.from("ap_followers").select("inbox_url, shared_inbox_url");
+  query = profileId ? query.eq("profile_id", profileId) : query.is("profile_id", null);
+  const { data } = await query;
+  return [...new Set((data ?? []).map((f) => f.shared_inbox_url ?? f.inbox_url).filter((url): url is string => !!url))];
 }
 
 async function deliverAll(inboxes: string[], activity: Record<string, unknown>, signer: Signer): Promise<void> {
@@ -567,7 +618,23 @@ async function handleDeliverReplies(): Promise<Response> {
   for (const reply of sent) {
     const note = replyNoteFor(reply);
     const create = { id: `${note.id}#create`, type: "Create", actor: note.attributedTo, published: note.published, to: note.to, cc: note.cc, object: note };
-    await deliverAll(await conversationInboxes(reply.link_id, reply.author_id), create, await accountSigner(reply.author_id));
+    if (reply.is_post) {
+      await deliverAll(await conversationInboxes(reply.link_id, reply.author_id), create, await accountSigner(reply.author_id));
+      continue;
+    }
+    // Mastodon only shows a post to followers of its author, so the site
+    // actor boosts it to reach the site's followers too.
+    await deliverAll(await followerInboxes(reply.author_id), create, await accountSigner(reply.author_id));
+    const announce = {
+      id: `${note.id}#announce`,
+      type: "Announce",
+      actor: ACTOR_ID,
+      published: note.published,
+      to: [PUBLIC_AUDIENCE],
+      cc: [note.attributedTo],
+      object: note.id,
+    };
+    await deliverAll(await followerInboxes(null), announce, await siteSigner());
   }
   return json({ claimed: (data as unknown[]).length, sent: sent.length }, 200);
 }
