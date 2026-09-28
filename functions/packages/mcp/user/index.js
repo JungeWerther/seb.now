@@ -2,7 +2,7 @@
 // endpoint, relaying method, body and status unchanged. Unlike mcp/server it
 // forwards the client's OAuth bearer token and relays the 401 challenge that
 // tells a client where to sign in.
-const MCP_FUNCTION_URL = "https://yoxrhqlzsqwfjmsjpari.supabase.co/functions/v1/mcp/user";
+const MCP_FUNCTION_URL = `${process.env.SUPABASE_URL}/functions/v1/mcp/user`;
 const FORWARDED_REQUEST_HEADERS = ["content-type", "accept", "mcp-protocol-version", "authorization"];
 const RELAYED_RESPONSE_HEADERS = [
   "www-authenticate",

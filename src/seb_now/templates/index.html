@@ -777,7 +777,7 @@
       <input id="handle-input" type="text" placeholder="pick a handle" maxlength="30" pattern="[a-z0-9_]{1,30}" autocapitalize="none" autocomplete="off" spellcheck="false">
       <button id="handle-save">Save</button>
     </div>
-    <p id="profile-hint">Lowercase letters, numbers and _. It's also your fediverse account, <span id="profile-fediverse-name">@handle@seb.now</span>: your replies on posts from @seb@seb.now show up there too.</p>
+    <p id="profile-hint">Lowercase letters, numbers and _. It's also your fediverse account, <span id="profile-fediverse-name"></span>: your replies on this site's own posts show up there too.</p>
     <p id="profile-status"></p>
   </dialog>
   <p id="search-empty">No matching articles.</p>
@@ -1927,7 +1927,7 @@
     // Must match the profiles_handle_format check.
     const HANDLE_PATTERN = /^[a-z0-9_]{1,30}$/;
     function showFediverseName(handle) {
-      document.getElementById("profile-fediverse-name").textContent = `@${handle || "handle"}@seb.now`;
+      document.getElementById("profile-fediverse-name").textContent = `@${handle || "handle"}@${location.host}`;
     }
 
     function setupProfile() {
@@ -1952,6 +1952,7 @@
         // 23505: another profile already has this handle.
         status.textContent = !error ? "Saved." : error.code === "23505" ? "That handle is taken." : "Couldn't save.";
       };
+      showFediverseName("");
       input.addEventListener("input", () => showFediverseName(input.value.trim().toLowerCase()));
       saveBtn.addEventListener("click", save);
       input.addEventListener("keydown", (event) => {

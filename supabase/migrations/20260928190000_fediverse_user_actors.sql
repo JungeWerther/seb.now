@@ -1,6 +1,72 @@
--- Every profile with a handle is also a fediverse account, @handle@seb.now,
--- and its replies on the site's federated posts are sent out as that
+-- Every profile with a handle is also a fediverse account, @handle@<site
+-- host>, and its replies on the site's federated posts are sent out as that
 -- account's replies.
+
+-- Deployment-specific addresses live here rather than in code, filled in
+-- per environment (not by a migration): site_origin (the public site, e.g.
+-- https://example.org), site_actor_username (the site account's
+-- username) and functions_url (the Supabase project's /functions/v1 base).
+-- service_role only; SQL reads it through app_setting().
+create table public.app_settings (
+  key text primary key,
+  value text not null
+);
+
+alter table public.app_settings enable row level security;
+revoke all on public.app_settings from anon, authenticated;
+
+create function public.app_setting(setting text)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select value from public.app_settings where key = setting
+$$;
+
+revoke execute on function public.app_setting(text) from public, anon, authenticated;
+grant execute on function public.app_setting(text) to service_role;
+
+-- Earlier migrations wrote the site's and the functions' addresses inline;
+-- these replace them with the settings above.
+create or replace function public.ap_posts_request_delivery()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, net
+as $$
+begin
+  perform net.http_post(
+    url := public.app_setting('functions_url') || '/activitypub/ap/deliver',
+    body := '{}'::jsonb,
+    headers := '{"Content-Type": "application/json"}'::jsonb
+  );
+  return null;
+end;
+$$;
+
+create or replace function public.publish_post(content text)
+returns uuid
+language plpgsql
+set search_path = public
+as $$
+declare
+  new_id uuid := gen_random_uuid();
+  site text := public.app_setting('site_origin');
+begin
+  insert into public.links (id, url, title, origin, author)
+  values (
+    new_id,
+    site || '/p/' || new_id,
+    content,
+    'local',
+    '@' || public.app_setting('site_actor_username') || '@' || regexp_replace(site, '^https?://', '')
+  );
+  insert into public.ap_posts (link_id) values (new_id);
+  return new_id;
+end;
+$$;
 
 -- Handles become fediverse usernames, so they're limited to the characters
 -- every server accepts. (They were already unique.)
@@ -76,7 +142,7 @@ set search_path = public, net
 as $$
 begin
   perform net.http_post(
-    url := 'https://yoxrhqlzsqwfjmsjpari.supabase.co/functions/v1/activitypub/ap/deliver-replies',
+    url := public.app_setting('functions_url') || '/activitypub/ap/deliver-replies',
     body := '{}'::jsonb,
     headers := '{"Content-Type": "application/json"}'::jsonb
   );
@@ -99,7 +165,7 @@ set search_path = public, net
 as $$
 begin
   perform net.http_post(
-    url := 'https://yoxrhqlzsqwfjmsjpari.supabase.co/functions/v1/activitypub/ap/delete-reply',
+    url := public.app_setting('functions_url') || '/activitypub/ap/delete-reply',
     body := jsonb_build_object('reply_id', old.id, 'author_id', old.author_id, 'link_id', old.link_id),
     headers := '{"Content-Type": "application/json"}'::jsonb
   );

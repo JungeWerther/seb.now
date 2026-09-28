@@ -1,10 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// Real ActivityPub backend for seb.now: the DO Functions proxy forwards
-// seb.now/.well-known/webfinger and seb.now/ap/inbox here, and a DO ingress
-// rule 308-redirects seb.now/ap/actor straight to this function.
-// The site-wide actor (@seb@seb.now) posts; the local `follows` table is
+// Real ActivityPub backend for the site: the DO Functions proxy forwards
+// <site>/.well-known/webfinger and <site>/ap/inbox here, and a DO ingress
+// rule 308-redirects <site>/ap/actor straight to this function. The site's
+// address and its actor's username come from public.app_settings.
+// The site-wide actor (@<username>@<site>) posts; the local `follows` table is
 // unrelated (that models a profile following someone, this the world
 // following the site or one of its readers).
 //
@@ -17,20 +18,13 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // followers as a signed Create(Note). A Like or Announce of a post becomes an
 // upvote on its link, a public reply becomes a reply, and Undo/Delete remove
 // them again. Every profile with a handle is also an account,
-// @handle@seb.now (actor https://seb.now/ap/actor?id=<profile id>, with its
+// @handle@<site> (actor <site>/ap/actor?id=<profile id>, with its
 // own keypair in public.ap_actor_keys): its replies on our posts go out as
 // that account's replies (/ap/deliver-replies, called by a replies insert
 // trigger), and deleting one sends a Delete (/ap/delete-reply).
 // No automatic boosting yet (see the "bring your own algorithm" design
 // discussion: boosts should follow a deliberate human upvote, not
 // ingestion volume, and that's still unbuilt).
-const DOMAIN = "seb.now";
-const USERNAME = "seb";
-const ACTOR_ID = `https://${DOMAIN}/ap/actor`;
-const INBOX_URL = `https://${DOMAIN}/ap/inbox`;
-const OUTBOX_URL = `https://${DOMAIN}/ap/outbox`;
-const NOTES_URL = `https://${DOMAIN}/ap/notes`;
-const POST_PAGE_URL = `https://${DOMAIN}/p`;
 const PUBLIC_AUDIENCE = "https://www.w3.org/ns/activitystreams#Public";
 const OUTBOX_PAGE_SIZE = 20;
 // Must match the replies_body_length check on public.replies.
@@ -40,12 +34,46 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 // so a profile holding that handle gets no account of its own.
 const HANDLE_PATTERN = "^[a-z0-9_]{1,30}$";
 const REPLIES_FEDERATED_PER_HOUR = 5;
-const KEY_ID = `${ACTOR_ID}#main-key`;
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
+
+const BOOT_RETRY_ATTEMPTS = 4;
+const BOOT_RETRY_DELAY_MS = 500;
+
+// Runs a service_role query, retrying briefly: on a cold boot the edge
+// runtime's service_role JWT can be minted a moment ahead of PostgREST's clock
+// ("JWT issued at future"), which resolves itself within a second.
+async function withBootRetry<T>(what: string, query: () => PromiseLike<{ data: T | null; error: { message: string } | null }>): Promise<T> {
+  let lastError = "";
+  for (let attempt = 1; attempt <= BOOT_RETRY_ATTEMPTS; attempt++) {
+    const { data, error } = await query();
+    if (!error && data) return data;
+    lastError = error?.message ?? "no data";
+    if (attempt < BOOT_RETRY_ATTEMPTS) await new Promise((r) => setTimeout(r, BOOT_RETRY_DELAY_MS));
+  }
+  throw new Error(`${what} failed: ${lastError}`);
+}
+
+const settingRows = await withBootRetry("reading app_settings", () => supabase.from("app_settings").select("key, value"));
+const settings = new Map(settingRows.map((row) => [row.key, row.value]));
+function setting(key: string): string {
+  const value = settings.get(key);
+  if (!value) throw new Error(`app_settings has no ${key}`);
+  return value;
+}
+
+const SITE_ORIGIN = setting("site_origin");
+const DOMAIN = new URL(SITE_ORIGIN).host;
+const USERNAME = setting("site_actor_username");
+const ACTOR_ID = `${SITE_ORIGIN}/ap/actor`;
+const INBOX_URL = `${SITE_ORIGIN}/ap/inbox`;
+const OUTBOX_URL = `${SITE_ORIGIN}/ap/outbox`;
+const NOTES_URL = `${SITE_ORIGIN}/ap/notes`;
+const POST_PAGE_URL = `${SITE_ORIGIN}/p`;
+const KEY_ID = `${ACTOR_ID}#main-key`;
 
 // ---------------------------------------------------------------------------
 // Crypto helpers (Web Crypto API - available natively in Deno)
@@ -92,21 +120,8 @@ function buildSigningString(headerNames: string[], values: Record<string, string
 
 let cachedKeys: { privateKey: CryptoKey; publicKeyPem: string } | null = null;
 
-const KEY_FETCH_ATTEMPTS = 4;
-const KEY_FETCH_RETRY_DELAY_MS = 500;
-
 async function fetchVaultSecret(name: string): Promise<string> {
-  let lastError = "";
-  for (let attempt = 1; attempt <= KEY_FETCH_ATTEMPTS; attempt++) {
-    const { data, error } = await supabase.rpc("get_vault_secret", { secret_name: name });
-    if (!error && data) return data as string;
-    lastError = error?.message ?? "empty secret";
-    // On a cold boot the edge runtime's service_role JWT can be minted a
-    // moment ahead of PostgREST's clock ("JWT issued at future"), which
-    // resolves itself within a second.
-    if (attempt < KEY_FETCH_ATTEMPTS) await new Promise((r) => setTimeout(r, KEY_FETCH_RETRY_DELAY_MS));
-  }
-  throw new Error(`missing vault secret ${name}: ${lastError}`);
+  return await withBootRetry(`reading vault secret ${name}`, () => supabase.rpc("get_vault_secret", { secret_name: name }));
 }
 
 async function getKeys(): Promise<{ privateKey: CryptoKey; publicKeyPem: string }> {
@@ -321,7 +336,7 @@ async function verifyRfc9421Signature(req: Request, rawBody: string): Promise<Si
 
 // Verifies a draft-cavage HTTP Signature against the sending actor's
 // published public key. The request reaches this function proxied through
-// DO Functions at an internal Supabase URL, not seb.now/ap/inbox directly -
+// DO Functions at an internal Supabase URL, not <site>/ap/inbox directly -
 // (request-target)/host are reconstructed to what the real sender actually
 // signed (our own published inbox URL), not the internal proxy path.
 async function verifyCavageSignature(req: Request, rawBody: string): Promise<SignatureCheck> {
@@ -336,7 +351,7 @@ async function verifyCavageSignature(req: Request, rawBody: string): Promise<Sig
 
   const signedHeaderNames = params.headers.split(" ");
   const values: Record<string, string> = {
-    "(request-target)": "post /ap/inbox",
+    "(request-target)": `post ${new URL(INBOX_URL).pathname}`,
     host: DOMAIN,
     date: req.headers.get("date") || "",
     digest: req.headers.get("digest") || "",
@@ -384,7 +399,7 @@ async function handleWebfinger(req: Request): Promise<Response> {
       aliases: [actorId],
       links: [
         { rel: "self", type: "application/activity+json", href: actorId },
-        { rel: "http://webfinger.net/rel/profile-page", type: "text/html", href: `https://${DOMAIN}/` },
+        { rel: "http://webfinger.net/rel/profile-page", type: "text/html", href: `${SITE_ORIGIN}/` },
       ],
     },
     // Spec-correct would be application/jrd+json, but DO's OpenWhisk-based
@@ -406,13 +421,13 @@ async function handleActor(): Promise<Response> {
       type: "Person",
       preferredUsername: USERNAME,
       name: "Seb",
-      summary: "News, links, and boosts from seb.now.",
-      url: `https://${DOMAIN}/`,
+      summary: `News, links, and boosts from ${DOMAIN}.`,
+      url: `${SITE_ORIGIN}/`,
       inbox: INBOX_URL,
       outbox: OUTBOX_URL,
       publicKey: { id: KEY_ID, owner: ACTOR_ID, publicKeyPem },
     },
-    // Mastodon rejects an actor served with any other type. seb.now/ap/actor
+    // Mastodon rejects an actor served with any other type. <site>/ap/actor
     // redirects here rather than going through the DO Functions proxy, whose
     // gateway can't send this type or accept Mastodon's Accept header.
     200,
@@ -433,7 +448,7 @@ async function handleUserActor(profileId: string): Promise<Response> {
       preferredUsername: account.handle,
       name: account.handle,
       summary: `A reader of ${DOMAIN}.`,
-      url: `https://${DOMAIN}/`,
+      url: `${SITE_ORIGIN}/`,
       inbox: INBOX_URL,
       endpoints: { sharedInbox: INBOX_URL },
       publicKey: { id: `${actorId}#main-key`, owner: actorId, publicKeyPem },
@@ -452,7 +467,7 @@ function escapeHtml(text: string): string {
 
 function noteFor(post: ApPost): Record<string, unknown> {
   return {
-    // A query string, not a path segment: seb.now's DO redirect to this
+    // A query string, not a path segment: the site's DO redirect to this
     // function keeps the query but drops anything after its matched prefix.
     id: `${NOTES_URL}?id=${post.id}`,
     type: "Note",
@@ -491,7 +506,7 @@ function replyNoteFor(reply: LocalReply): Record<string, unknown> {
     attributedTo: userActorId(reply.author_id),
     inReplyTo: `${NOTES_URL}?id=${reply.link_id}`,
     url: `${POST_PAGE_URL}/${reply.link_id}`,
-    content: `<p><span class="h-card"><a href="https://${DOMAIN}/" class="u-url mention">@<span>${USERNAME}</span></a></span> ` +
+    content: `<p><span class="h-card"><a href="${SITE_ORIGIN}/" class="u-url mention">@<span>${USERNAME}</span></a></span> ` +
       escapeHtml(reply.body).split("\n").join("<br>") + "</p>",
     published: new Date(reply.created_at).toISOString(),
     to: [PUBLIC_AUDIENCE],

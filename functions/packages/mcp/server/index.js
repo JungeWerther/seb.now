@@ -1,6 +1,6 @@
 // Proxies seb.now/mcp to the `mcp` Supabase Edge Function (a stateless
 // Streamable HTTP MCP server), relaying method, body and status unchanged.
-const MCP_FUNCTION_URL = "https://yoxrhqlzsqwfjmsjpari.supabase.co/functions/v1/mcp";
+const MCP_FUNCTION_URL = `${process.env.SUPABASE_URL}/functions/v1/mcp`;
 const FORWARDED_REQUEST_HEADERS = ["content-type", "accept", "mcp-protocol-version"];
 const RELAYED_RESPONSE_HEADERS = [
   "allow",

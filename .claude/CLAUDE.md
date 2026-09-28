@@ -497,6 +497,19 @@ keypair for HTTP Signatures, a `public.ap_followers` table, and signed
   (`ap_followers.profile_id`; null = the site actor), and remote replies to a
   sent reply land on the same post.
 
+**No addresses in code.** The site's origin, its actor's username and the
+Supabase functions base URL live in `public.app_settings` (`site_origin`,
+`site_actor_username`, `functions_url`; service_role only, filled per
+environment, never by a migration). SQL reads them through
+`public.app_setting(key)` (the `ap_posts`/`replies` delivery triggers and
+`publish_post`); the `activitypub` function loads them once per boot, with
+the same cold-boot retry as its Vault read, and derives every actor, inbox,
+outbox and note URL from them; the page script uses `location.host`. The DO
+proxies build the Supabase URL from `SUPABASE_URL`, which `project.yml`
+passes through from the functions component's env in the app spec. Earlier
+migrations that inlined addresses are superseded by the functions redefined
+in `20260928190000_fediverse_user_actors.sql`.
+
 **Not built yet**: any automatic boosting. Per the earlier
 design discussion, a boost should follow a deliberate human upvote on a
 link, not ingestion volume — that wiring (upvote → signed `Announce` to

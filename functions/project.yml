@@ -16,6 +16,10 @@
 # against a working reference app (rarebit-one/rarebit-static-v3). Handlers
 # read args.http.{method,queryString,body,isBase64Encoded} under raw mode,
 # not flattened top-level params.
+# SUPABASE_URL comes from the functions component's env in the app spec, so
+# no project address is written here.
+environment:
+  SUPABASE_URL: "${SUPABASE_URL}"
 packages:
   - name: wellknown
     functions:

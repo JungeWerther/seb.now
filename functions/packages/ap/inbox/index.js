@@ -8,7 +8,7 @@
 // exact bytes the sender signed, and (request-target)/host are
 // reconstructed there against seb.now/ap/inbox (what senders actually
 // signed), not this internal proxy path.
-const ACTIVITYPUB_FUNCTION_URL = "https://yoxrhqlzsqwfjmsjpari.supabase.co/functions/v1/activitypub";
+const ACTIVITYPUB_FUNCTION_URL = `${process.env.SUPABASE_URL}/functions/v1/activitypub`;
 
 async function main(args) {
   const http = args.http || {};
