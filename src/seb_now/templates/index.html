@@ -218,16 +218,6 @@
       padding: 2.5rem 0;
     }
     #search-empty.visible { display: block; }
-    #site-posts { list-style: none; margin: 0 0 1.2rem; padding: 0; }
-    #site-posts li {
-      padding: var(--post-pad-y) var(--post-pad-x);
-      border-radius: 14px;
-      border-left: 3px solid var(--positive);
-      background: var(--post-bg);
-    }
-    #site-posts li + li { margin-top: 0.5rem; }
-    #site-posts .site-post-meta { font-size: 0.75rem; color: gray; margin-bottom: 0.25rem; }
-    #site-posts .site-post-body { white-space: pre-wrap; overflow-wrap: anywhere; }
     h1.brand { position: relative; top: calc(-1 * var(--brand-ink-offset)); margin: 0; line-height: 0; }
     /* The viewBox is trimmed to the Bricolage glyphs so the tagline can centre
        on them; overflow stays visible for a wider fallback font. */
@@ -788,7 +778,6 @@
     <p id="profile-status"></p>
   </dialog>
   <p id="search-empty">No matching articles.</p>
-  <ol id="site-posts" aria-label="Posts from @seb@seb.now" hidden></ol>
   <!--ARTICLES-->
   <div id="search-dock">
     <div id="search-bar">
@@ -827,33 +816,6 @@
     const supabaseReady = import(__SUPABASE_JS_MODULE_URL__).then(({ createClient }) =>
       createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__),
     );
-
-    // The site actor's own fediverse posts (public.ap_posts), newest first,
-    // loaded live so a new post shows without a rebuild.
-    const SITE_POSTS_LIMIT = 3;
-    const sitePostsList = document.getElementById("site-posts");
-    async function loadSitePosts() {
-      const { data, error } = await (await supabaseReady)
-        .from("ap_posts")
-        .select("id, content, published_at")
-        .order("published_at", { ascending: false })
-        .limit(SITE_POSTS_LIMIT);
-      if (error || !data?.length) return;
-      for (const post of data) {
-        const li = document.createElement("li");
-        const meta = document.createElement("div");
-        meta.className = "site-post-meta";
-        const published = new Date(post.published_at);
-        meta.textContent = `@seb@seb.now · ${published.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`;
-        const body = document.createElement("div");
-        body.className = "site-post-body";
-        body.textContent = post.content;
-        li.append(meta, body);
-        sitePostsList.append(li);
-      }
-      sitePostsList.hidden = false;
-    }
-    loadSitePosts();
 
     // Covers point at arbitrary third-party sites, so drop one that fails to
     // load rather than leave an empty frame; a favicon that fails leaves its

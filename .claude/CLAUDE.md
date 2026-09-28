@@ -448,10 +448,7 @@ keypair for HTTP Signatures, a `public.ap_followers` table, and signed
   null` in one `UPDATE … RETURNING` and sends each as a signed `Create(Note)`
   (public, content HTML-escaped) to every follower inbox, shared inbox
   preferred. `/ap/deliver` is unauthenticated since it only sends rows
-  already in the table. Posts aren't backfilled to later followers. The
-  page script also loads the newest `SITE_POSTS_LIMIT` posts into
-  `#site-posts` above the feed at page load (anon read, `textContent` only),
-  so a new post shows on seb.now without a rebuild. The actor
+  already in the table. Posts aren't backfilled to later followers. The actor
   advertises `outbox: https://seb.now/ap/outbox` and notes are
   `https://seb.now/ap/notes?id=<uuid>`, both 308-redirected to the function
   by DO ingress rules like `/ap/actor`'s. Note ids use a query string
