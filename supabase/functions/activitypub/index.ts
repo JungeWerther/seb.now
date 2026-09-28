@@ -11,9 +11,12 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // Implements: WebFinger, the actor document (with its HTTP Signature
 // public key), and an inbox that verifies signatures and handles
 // Follow/Undo(Follow). Everything else (Like, Announce, Create, Delete,
-// ...) is accepted (202) and logged, not acted on. Posts are rows in
-// public.ap_posts: an outbox lists them, and /ap/deliver (called by an
-// insert trigger) sends each new one to followers as a signed Create(Note).
+// ...) is handled only when it's about one of our posts. Posts are local
+// `links` rows marked in public.ap_posts: an outbox lists them, and
+// /ap/deliver (called by an ap_posts insert trigger) sends each new one to
+// followers as a signed Create(Note). A Like or Announce of a post becomes an
+// upvote on its link, a public reply becomes a reply, and Undo/Delete remove
+// them again.
 // No automatic boosting yet (see the "bring your own algorithm" design
 // discussion: boosts should follow a deliberate human upvote, not
 // ingestion volume, and that's still unbuilt).
@@ -23,8 +26,12 @@ const ACTOR_ID = `https://${DOMAIN}/ap/actor`;
 const INBOX_URL = `https://${DOMAIN}/ap/inbox`;
 const OUTBOX_URL = `https://${DOMAIN}/ap/outbox`;
 const NOTES_URL = `https://${DOMAIN}/ap/notes`;
+const POST_PAGE_URL = `https://${DOMAIN}/p`;
 const PUBLIC_AUDIENCE = "https://www.w3.org/ns/activitystreams#Public";
 const OUTBOX_PAGE_SIZE = 20;
+// Must match the replies_body_length check on public.replies.
+const REPLY_MAX_LENGTH = 500;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const KEY_ID = `${ACTOR_ID}#main-key`;
 
 const supabase = createClient(
@@ -333,7 +340,8 @@ async function handleActor(): Promise<Response> {
   );
 }
 
-type ApPost = { id: string; content: string; published_at: string };
+type ApPost = { id: string; title: string; created_at: string };
+const POST_SELECT = "links(id, title, created_at)";
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -346,8 +354,9 @@ function noteFor(post: ApPost): Record<string, unknown> {
     id: `${NOTES_URL}?id=${post.id}`,
     type: "Note",
     attributedTo: ACTOR_ID,
-    content: escapeHtml(post.content).split("\n").map((line) => `<p>${line}</p>`).join(""),
-    published: new Date(post.published_at).toISOString(),
+    url: `${POST_PAGE_URL}/${post.id}`,
+    content: escapeHtml(post.title).split("\n").map((line) => `<p>${line}</p>`).join(""),
+    published: new Date(post.created_at).toISOString(),
     to: [PUBLIC_AUDIENCE],
     cc: [],
   };
@@ -368,18 +377,19 @@ function createFor(post: ApPost): Record<string, unknown> {
 
 async function handleOutbox(): Promise<Response> {
   const { data, error, count } = await supabase
-    .from("ap_posts")
-    .select("id, content, published_at", { count: "exact" })
-    .order("published_at", { ascending: false })
+    .from("links")
+    .select("id, title, created_at, ap_posts!inner(link_id)", { count: "exact" })
+    .order("created_at", { ascending: false })
     .limit(OUTBOX_PAGE_SIZE);
-  if (error) throw new Error(`reading ap_posts failed: ${error.message}`);
+  if (error) throw new Error(`reading posts failed: ${error.message}`);
+  const posts = data as unknown as ApPost[];
   return json(
     {
       "@context": "https://www.w3.org/ns/activitystreams",
       id: OUTBOX_URL,
       type: "OrderedCollection",
-      totalItems: count ?? data.length,
-      orderedItems: data.map(createFor),
+      totalItems: count ?? posts.length,
+      orderedItems: posts.map(createFor),
     },
     200,
     "application/activity+json",
@@ -387,10 +397,11 @@ async function handleOutbox(): Promise<Response> {
 }
 
 async function handleNote(id: string): Promise<Response> {
-  if (!/^[0-9a-f-]{36}$/.test(id)) return json({ error: "not_found" }, 404);
-  const { data, error } = await supabase.from("ap_posts").select("id, content, published_at").eq("id", id).maybeSingle();
+  if (!UUID_PATTERN.test(id)) return json({ error: "not_found" }, 404);
+  const { data, error } = await supabase.from("ap_posts").select(POST_SELECT).eq("link_id", id).maybeSingle();
   if (error || !data) return json({ error: "not_found" }, 404);
-  return json({ "@context": "https://www.w3.org/ns/activitystreams", ...noteFor(data) }, 200, "application/activity+json");
+  const post = (data as unknown as { links: ApPost }).links;
+  return json({ "@context": "https://www.w3.org/ns/activitystreams", ...noteFor(post) }, 200, "application/activity+json");
 }
 
 // Claims every undelivered post (setting delivered_at in the same UPDATE, so
@@ -398,19 +409,20 @@ async function handleNote(id: string): Promise<Response> {
 // inbox, preferring a server's shared inbox. Unauthenticated on purpose: it
 // only ever sends posts already in the table.
 async function handleDeliver(): Promise<Response> {
-  const { data: posts, error } = await supabase
+  const { data: claimed, error } = await supabase
     .from("ap_posts")
     .update({ delivered_at: new Date().toISOString() })
     .is("delivered_at", null)
-    .select("id, content, published_at");
+    .select(POST_SELECT);
   if (error) throw new Error(`claiming ap_posts failed: ${error.message}`);
+  const posts = (claimed as unknown as { links: ApPost }[]).map((row) => row.links);
   if (!posts.length) return json({ delivered: 0 }, 200);
 
   const { data: followers, error: followersErr } = await supabase.from("ap_followers").select("inbox_url, shared_inbox_url");
   if (followersErr) throw new Error(`reading ap_followers failed: ${followersErr.message}`);
   const inboxes = [...new Set(followers.map((f) => f.shared_inbox_url ?? f.inbox_url))];
 
-  for (const post of posts.sort((a, b) => a.published_at.localeCompare(b.published_at))) {
+  for (const post of posts.sort((a, b) => a.created_at.localeCompare(b.created_at))) {
     const body = JSON.stringify({ "@context": "https://www.w3.org/ns/activitystreams", ...createFor(post) });
     await Promise.all(inboxes.map(async (inbox) => {
       try {
@@ -450,6 +462,98 @@ async function handleFollow(activity: Record<string, unknown>, actorDoc: Record<
   }
 }
 
+// The link id of one of our posts, given its note id (or an object carrying
+// it), or null when the object isn't one of our posts.
+async function ourPostId(object: unknown): Promise<string | null> {
+  const id = typeof object === "string" ? object : (object as { id?: unknown } | undefined)?.id;
+  if (typeof id !== "string" || !id.startsWith(`${NOTES_URL}?id=`)) return null;
+  const linkId = new URL(id).searchParams.get("id") ?? "";
+  if (!UUID_PATTERN.test(linkId)) return null;
+  const { data } = await supabase.from("ap_posts").select("link_id").eq("link_id", linkId).maybeSingle();
+  return data ? linkId : null;
+}
+
+async function upsertRemoteActor(actorDoc: Record<string, unknown>): Promise<string | null> {
+  const actorUrl = actorDoc.id as string;
+  const username = typeof actorDoc.preferredUsername === "string" ? actorDoc.preferredUsername : "";
+  const handle = username ? `@${username}@${new URL(actorUrl).host}` : actorUrl;
+  const { data, error } = await supabase
+    .from("remote_actors")
+    .upsert({ actor_url: actorUrl, handle: handle.slice(0, 200) }, { onConflict: "actor_url" })
+    .select("id")
+    .single();
+  if (error) {
+    console.error(`storing remote actor ${actorUrl} failed:`, error.message);
+    return null;
+  }
+  return data.id;
+}
+
+async function remoteActorId(actorUrl: string): Promise<string | null> {
+  const { data } = await supabase.from("remote_actors").select("id").eq("actor_url", actorUrl).maybeSingle();
+  return data?.id ?? null;
+}
+
+// Mastodon sends note content as HTML; replies are stored as the plain text
+// the page renders with textContent.
+function htmlToText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>\s*<p[^>]*>/gi, "\n\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    .trim()
+    .slice(0, REPLY_MAX_LENGTH);
+}
+
+function isPublic(object: Record<string, unknown>): boolean {
+  const audience = [object.to, object.cc].flat().filter((a) => typeof a === "string");
+  return audience.some((a) => a === PUBLIC_AUDIENCE || a === "as:Public" || a === "Public");
+}
+
+async function handleReaction(activity: Record<string, unknown>, actorDoc: Record<string, unknown>): Promise<void> {
+  const linkId = await ourPostId(activity.object);
+  if (!linkId) return;
+  const actorId = await upsertRemoteActor(actorDoc);
+  if (!actorId) return;
+  const { error } = await supabase
+    .from("votes")
+    .upsert({ link_id: linkId, remote_actor_id: actorId, value: 1 }, { onConflict: "link_id,remote_actor_id" });
+  if (error) console.error(`storing ${activity.type} on ${linkId} failed:`, error.message);
+}
+
+async function handleReply(activity: Record<string, unknown>, actorDoc: Record<string, unknown>): Promise<void> {
+  const note = activity.object as Record<string, unknown> | undefined;
+  if (!note || typeof note !== "object" || note.type !== "Note" || typeof note.id !== "string") return;
+  const linkId = await ourPostId(note.inReplyTo);
+  if (!linkId || !isPublic(note)) return;
+  const body = htmlToText(typeof note.content === "string" ? note.content : "");
+  if (!body) return;
+  const actorId = await upsertRemoteActor(actorDoc);
+  if (!actorId) return;
+  const { error } = await supabase
+    .from("replies")
+    .upsert({ link_id: linkId, remote_actor_id: actorId, body, ap_object_id: note.id }, { onConflict: "ap_object_id" });
+  if (error) console.error(`storing reply ${note.id} failed:`, error.message);
+}
+
+async function handleUndoReaction(object: Record<string, unknown>, actorUrl: string): Promise<void> {
+  const linkId = await ourPostId(object.object);
+  const actorId = await remoteActorId(actorUrl);
+  if (!linkId || !actorId) return;
+  await supabase.from("votes").delete().eq("link_id", linkId).eq("remote_actor_id", actorId);
+}
+
+async function handleDelete(object: unknown, actorUrl: string): Promise<void> {
+  const objectId = typeof object === "string" ? object : (object as { id?: unknown } | undefined)?.id;
+  const actorId = await remoteActorId(actorUrl);
+  if (typeof objectId !== "string" || !actorId) return;
+  await supabase.from("replies").delete().eq("ap_object_id", objectId).eq("remote_actor_id", actorId);
+}
+
 async function handleInbox(req: Request): Promise<Response> {
   const rawBody = await req.text();
   const verified = await verifyInboundSignature(req, rawBody);
@@ -475,10 +579,26 @@ async function handleInbox(req: Request): Promise<Response> {
     return new Response(null, { status: 202 });
   }
 
-  const object = activity.object as { type?: string } | undefined;
+  const object = activity.object as Record<string, unknown> | undefined;
   if (activity.type === "Undo" && object?.type === "Follow") {
     const { error } = await supabase.from("ap_followers").delete().eq("actor_url", activityActor);
     if (error) console.error(`removing follower ${activityActor} failed:`, error.message);
+    return new Response(null, { status: 202 });
+  }
+  if (activity.type === "Like" || activity.type === "Announce") {
+    await handleReaction(activity, verified.actorDoc);
+    return new Response(null, { status: 202 });
+  }
+  if (activity.type === "Undo" && (object?.type === "Like" || object?.type === "Announce")) {
+    await handleUndoReaction(object, activityActor);
+    return new Response(null, { status: 202 });
+  }
+  if (activity.type === "Create") {
+    await handleReply(activity, verified.actorDoc);
+    return new Response(null, { status: 202 });
+  }
+  if (activity.type === "Delete") {
+    await handleDelete(activity.object, activityActor);
     return new Response(null, { status: 202 });
   }
 

@@ -191,7 +191,9 @@ arrives, and fetches further pages as you scroll (infinite scroll via an
 `IntersectionObserver` on `#feed-sentinel`, no page numbers). Ranking is the
 `public.ranked_feed(as_of, page_offset, page_size)` SQL function (security
 invoker, so `auth.uid()` is the viewer):
-`rank = taste * (1 + ups) / (2 + ups + downs) * 0.5 ^ (age_hours / 24)` —
+`rank = taste * (1 + ups) / (2 + ups + downs) * 0.5 ^ (age_hours / 24)`
+(age capped at 1000 days, since 0.5 raised to a years-old YouTube upload's age
+underflows a double and Postgres errors rather than rounding to 0) —
 `taste` is the viewer's p-weighted mean topic score over the link's topics (their
 `topic_overrides` score if they set one, else the `user_topic_preferences` one) (a never-voted topic falls back to its parent, then 0.5;
 untagged links are 0.5), `ups`/`downs` are everyone's votes on the link, and
@@ -430,8 +432,14 @@ keypair for HTTP Signatures, a `public.ap_followers` table, and signed
   GET (servers in Mastodon's secure mode 401 an unsigned one), then:
   `Follow` → upserts into `ap_followers` and delivers a signed `Accept`
   back to the follower's inbox; `Undo` of a `Follow` → deletes the
-  follower row. Everything else (`Like`, `Announce`, `Create`, `Delete`,
-  ...) is accepted (202) and logged, not acted on.
+  follower row. A `Like` or `Announce` of one of our posts → an upvote on
+  its link from a `public.remote_actors` row (the sender, with its
+  `@user@host` handle); `Undo` of either removes that vote (so undoing one
+  of a like+boost removes both's upvote). A public `Create(Note)` whose
+  `inReplyTo` is one of our posts → a `replies` row (HTML content reduced
+  to plain text, `ap_object_id` = the note's id); a `Delete` of it removes
+  the reply. Followers-only/direct replies are ignored, since replies are
+  public. Anything else is accepted (202) and logged.
 - **Keys** — a 2048-bit RSA keypair (PKCS8 private / SPKI public PEM),
   generated once with `openssl` and stored in the `seb-now` project's
   Supabase Vault as `ap-actor-private-key` / `ap-actor-public-key`, read
@@ -441,14 +449,24 @@ keypair for HTTP Signatures, a `public.ap_followers` table, and signed
   secrets and redeploying — nothing else references the key material
   directly.
 
-- **Posts** — `public.ap_posts` (`content`, `published_at`, `delivered_at`;
-  public-read, service_role-write). Inserting a row publishes it: a
-  statement trigger (`ap_posts_request_delivery`) `pg_net`-POSTs the
-  function's `/ap/deliver`, which claims every row with `delivered_at is
-  null` in one `UPDATE … RETURNING` and sends each as a signed `Create(Note)`
-  (public, content HTML-escaped) to every follower inbox, shared inbox
-  preferred. `/ap/deliver` is unauthenticated since it only sends rows
-  already in the table. Posts aren't backfilled to later followers. The actor
+- **Posts are links.** A post is an ordinary `links` row (`origin:
+  'local'`, the text as `title`, `author: '@seb@seb.now'`, `url:
+  https://seb.now/p/<id>`), so it's ranked, voted on and replied to like any
+  link; `public.ap_posts(link_id, delivered_at)` marks which local links are
+  federated. Publish with `select public.publish_post('text')`
+  (service_role only), which inserts both rows. No deploy is needed: the feed
+  is ranked client-side, and `seb.now/p/<id>` is served by the static site's
+  catch-all document, whose page script pins that link to the top of the
+  feed. The `ap_posts` insert trigger (`ap_posts_request_delivery`)
+  `pg_net`-POSTs the function's `/ap/deliver`, which claims every row with
+  `delivered_at is null` in one `UPDATE … RETURNING` and sends each as a
+  signed `Create(Note)` (public, content HTML-escaped, `url` = the post page)
+  to every follower inbox, shared inbox preferred. `/ap/deliver` is
+  unauthenticated since it only sends rows already in the table. Posts aren't
+  backfilled to later followers. `votes.voter_id`/`replies.author_id` are
+  nullable for this: each row has exactly one of a local profile or a
+  `remote_actor_id` (check constraints), and RLS still only lets users write
+  their own. The actor
   advertises `outbox: https://seb.now/ap/outbox` and notes are
   `https://seb.now/ap/notes?id=<uuid>`, both 308-redirected to the function
   by DO ingress rules like `/ap/actor`'s. Note ids use a query string
