@@ -438,7 +438,21 @@ keypair for HTTP Signatures, a `public.ap_followers` table, and signed
   secrets and redeploying — nothing else references the key material
   directly.
 
-**Not built yet**: an outbox, or any automatic boosting. Per the earlier
+- **Posts** — `public.ap_posts` (`content`, `published_at`, `delivered_at`;
+  public-read, service_role-write). Inserting a row publishes it: a
+  statement trigger (`ap_posts_request_delivery`) `pg_net`-POSTs the
+  function's `/ap/deliver`, which claims every row with `delivered_at is
+  null` in one `UPDATE … RETURNING` and sends each as a signed `Create(Note)`
+  (public, content HTML-escaped) to every follower inbox, shared inbox
+  preferred. `/ap/deliver` is unauthenticated since it only sends rows
+  already in the table. Posts aren't backfilled to later followers. The actor
+  advertises `outbox: https://seb.now/ap/outbox` and notes are
+  `https://seb.now/ap/notes?id=<uuid>`, both 308-redirected to the function
+  by DO ingress rules like `/ap/actor`'s. Note ids use a query string
+  because a DO redirect keeps the query but drops the path after its
+  matched prefix (`/ap/notes/<uuid>` would arrive as `/ap/notes`).
+
+**Not built yet**: any automatic boosting. Per the earlier
 design discussion, a boost should follow a deliberate human upvote on a
 link, not ingestion volume — that wiring (upvote → signed `Announce` to
 followers) doesn't exist yet. Also unbuilt: replay/nonce protection on
@@ -517,7 +531,8 @@ succeeds:
   `/ap/inbox` → `rewrite: /ap/inbox`, `/mcp` → `rewrite: /mcp/server`,
   `/mcp/user` → `rewrite: /mcp/user` —
   one exact-match rule per function, not one broader rule per package
-  (plus the `/ap/actor` redirect rule, and `/` → the static site last).
+  (plus the `/ap/actor`, `/ap/outbox` and `/ap/notes` redirect rules, and
+  `/` → the static site last).
 
 Both of these were confirmed by testing against a real, independently
 working app with the same shape (not guessed blindly) — if either changes
