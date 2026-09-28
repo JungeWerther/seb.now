@@ -11,14 +11,20 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // Implements: WebFinger, the actor document (with its HTTP Signature
 // public key), and an inbox that verifies signatures and handles
 // Follow/Undo(Follow). Everything else (Like, Announce, Create, Delete,
-// ...) is accepted (202) and logged, not acted on - there's no outbox or
-// automatic boosting yet (see the "bring your own algorithm" design
+// ...) is accepted (202) and logged, not acted on. Posts are rows in
+// public.ap_posts: an outbox lists them, and /ap/deliver (called by an
+// insert trigger) sends each new one to followers as a signed Create(Note).
+// No automatic boosting yet (see the "bring your own algorithm" design
 // discussion: boosts should follow a deliberate human upvote, not
 // ingestion volume, and that's still unbuilt).
 const DOMAIN = "seb.now";
 const USERNAME = "seb";
 const ACTOR_ID = `https://${DOMAIN}/ap/actor`;
 const INBOX_URL = `https://${DOMAIN}/ap/inbox`;
+const OUTBOX_URL = `https://${DOMAIN}/ap/outbox`;
+const NOTES_URL = `https://${DOMAIN}/ap/notes`;
+const PUBLIC_AUDIENCE = "https://www.w3.org/ns/activitystreams#Public";
+const OUTBOX_PAGE_SIZE = 20;
 const KEY_ID = `${ACTOR_ID}#main-key`;
 
 const supabase = createClient(
@@ -71,14 +77,29 @@ function buildSigningString(headerNames: string[], values: Record<string, string
 
 let cachedKeys: { privateKey: CryptoKey; publicKeyPem: string } | null = null;
 
+const KEY_FETCH_ATTEMPTS = 4;
+const KEY_FETCH_RETRY_DELAY_MS = 500;
+
+async function fetchVaultSecret(name: string): Promise<string> {
+  let lastError = "";
+  for (let attempt = 1; attempt <= KEY_FETCH_ATTEMPTS; attempt++) {
+    const { data, error } = await supabase.rpc("get_vault_secret", { secret_name: name });
+    if (!error && data) return data as string;
+    lastError = error?.message ?? "empty secret";
+    // On a cold boot the edge runtime's service_role JWT can be minted a
+    // moment ahead of PostgREST's clock ("JWT issued at future"), which
+    // resolves itself within a second.
+    if (attempt < KEY_FETCH_ATTEMPTS) await new Promise((r) => setTimeout(r, KEY_FETCH_RETRY_DELAY_MS));
+  }
+  throw new Error(`missing vault secret ${name}: ${lastError}`);
+}
+
 async function getKeys(): Promise<{ privateKey: CryptoKey; publicKeyPem: string }> {
   if (cachedKeys) return cachedKeys;
-  const [{ data: privatePem, error: privErr }, { data: publicPem, error: pubErr }] = await Promise.all([
-    supabase.rpc("get_vault_secret", { secret_name: "ap-actor-private-key" }),
-    supabase.rpc("get_vault_secret", { secret_name: "ap-actor-public-key" }),
+  const [privatePem, publicPem] = await Promise.all([
+    fetchVaultSecret("ap-actor-private-key"),
+    fetchVaultSecret("ap-actor-public-key"),
   ]);
-  if (privErr || !privatePem) throw new Error(`missing actor private key: ${privErr?.message}`);
-  if (pubErr || !publicPem) throw new Error(`missing actor public key: ${pubErr?.message}`);
   cachedKeys = { privateKey: await importPrivateKey(privatePem), publicKeyPem: publicPem };
   return cachedKeys;
 }
@@ -116,25 +137,12 @@ async function signedDeliver(inboxUrl: string, body: string): Promise<Response> 
   });
 }
 
-// Verifies an inbound activity's HTTP Signature against the sending actor's
-// published public key. The request reaches this function proxied through
-// DO Functions at an internal Supabase URL, not seb.now/ap/inbox directly -
-// (request-target)/host are reconstructed to what the real sender actually
-// signed (our own published inbox URL), not the internal proxy path.
-async function verifyInboundSignature(
-  req: Request,
-  rawBody: string,
-): Promise<{ ok: true; actorUrl: string; actorDoc: Record<string, unknown> } | { ok: false; reason: string }> {
-  const sigHeader = req.headers.get("signature");
-  if (!sigHeader) return { ok: false, reason: "missing signature header" };
+type SignatureCheck = { ok: true; actorUrl: string; actorDoc: Record<string, unknown> } | { ok: false; reason: string };
 
-  const params: Record<string, string> = {};
-  for (const m of sigHeader.matchAll(/(\w+)="([^"]*)"/g)) params[m[1]] = m[2];
-  if (!params.keyId || !params.signature || !params.headers) {
-    return { ok: false, reason: "malformed signature header" };
-  }
-
-  const actorUrl = params.keyId.split("#")[0];
+async function fetchActorPublicKey(
+  keyId: string,
+): Promise<{ ok: true; actorUrl: string; actorDoc: Record<string, unknown>; publicKey: CryptoKey } | { ok: false; reason: string }> {
+  const actorUrl = keyId.split("#")[0];
   let actorDoc: Record<string, unknown>;
   try {
     const actorRes = await fetch(actorUrl, { headers: { Accept: "application/activity+json" } });
@@ -143,9 +151,84 @@ async function verifyInboundSignature(
   } catch (e) {
     return { ok: false, reason: `actor fetch error: ${String(e)}` };
   }
-
   const publicKeyPem = (actorDoc?.publicKey as { publicKeyPem?: string } | undefined)?.publicKeyPem;
   if (!publicKeyPem) return { ok: false, reason: "actor has no publicKey" };
+  return { ok: true, actorUrl: (actorDoc.id as string) || actorUrl, actorDoc, publicKey: await importPublicKey(publicKeyPem) };
+}
+
+// Senders use one of two schemes: RFC 9421 HTTP Message Signatures (a
+// Signature-Input header, which mastodon.social now sends) or the older
+// draft-cavage one (a single Signature header with keyId="...").
+async function verifyInboundSignature(req: Request, rawBody: string): Promise<SignatureCheck> {
+  if (req.headers.get("signature-input")) return await verifyRfc9421Signature(req, rawBody);
+  return await verifyCavageSignature(req, rawBody);
+}
+
+// Derived components are rebuilt against our public inbox URL, for the same
+// reason as in verifyCavageSignature.
+async function verifyRfc9421Signature(req: Request, rawBody: string): Promise<SignatureCheck> {
+  const inputMatch = (req.headers.get("signature-input") ?? "").match(/^\s*([\w-]+)=(\([^)]*\)[^,]*)/);
+  if (!inputMatch) return { ok: false, reason: "malformed signature-input header" };
+  const [, label, signatureParams] = inputMatch;
+
+  const sigMatch = (req.headers.get("signature") ?? "").match(new RegExp(`(?:^|,)\\s*${label}=:([^:]+):`));
+  if (!sigMatch) return { ok: false, reason: `no signature labelled ${label}` };
+
+  const keyId = signatureParams.match(/;\s*keyid="([^"]+)"/)?.[1];
+  if (!keyId) return { ok: false, reason: "signature-input has no keyid" };
+  const alg = signatureParams.match(/;\s*alg="([^"]+)"/)?.[1];
+  if (alg && alg !== "rsa-v1_5-sha256") return { ok: false, reason: `unsupported alg ${alg}` };
+
+  const components = [...signatureParams.slice(0, signatureParams.indexOf(")")).matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  if (!components.includes("content-digest")) return { ok: false, reason: "content-digest not signed" };
+
+  const contentDigest = req.headers.get("content-digest") ?? "";
+  if (!contentDigest.includes(`sha-256=:${await sha256Base64(rawBody)}:`)) return { ok: false, reason: "content-digest mismatch" };
+
+  const inbox = new URL(INBOX_URL);
+  const derived: Record<string, string> = {
+    "@method": "POST",
+    "@target-uri": INBOX_URL,
+    "@authority": inbox.host,
+    "@scheme": "https",
+    "@path": inbox.pathname,
+    "@request-target": inbox.pathname,
+    host: inbox.host,
+  };
+  const lines: string[] = [];
+  for (const name of components) {
+    const value = derived[name] ?? req.headers.get(name)?.trim();
+    if (value === undefined) return { ok: false, reason: `signed component ${name} missing` };
+    lines.push(`"${name}": ${value}`);
+  }
+  lines.push(`"@signature-params": ${signatureParams.trim()}`);
+
+  const actor = await fetchActorPublicKey(keyId);
+  if (!actor.ok) return actor;
+  const valid = await crypto.subtle.verify(
+    "RSASSA-PKCS1-v1_5",
+    actor.publicKey,
+    base64ToArrayBuffer(sigMatch[1]),
+    new TextEncoder().encode(lines.join("\n")),
+  );
+  if (!valid) return { ok: false, reason: "signature verification failed" };
+  return { ok: true, actorUrl: actor.actorUrl, actorDoc: actor.actorDoc };
+}
+
+// Verifies a draft-cavage HTTP Signature against the sending actor's
+// published public key. The request reaches this function proxied through
+// DO Functions at an internal Supabase URL, not seb.now/ap/inbox directly -
+// (request-target)/host are reconstructed to what the real sender actually
+// signed (our own published inbox URL), not the internal proxy path.
+async function verifyCavageSignature(req: Request, rawBody: string): Promise<SignatureCheck> {
+  const sigHeader = req.headers.get("signature");
+  if (!sigHeader) return { ok: false, reason: "missing signature header" };
+
+  const params: Record<string, string> = {};
+  for (const m of sigHeader.matchAll(/(\w+)="([^"]*)"/g)) params[m[1]] = m[2];
+  if (!params.keyId || !params.signature || !params.headers) {
+    return { ok: false, reason: "malformed signature header" };
+  }
 
   const signedHeaderNames = params.headers.split(" ");
   const values: Record<string, string> = {
@@ -160,16 +243,17 @@ async function verifyInboundSignature(
     if (values.digest !== expectedDigest) return { ok: false, reason: "digest mismatch" };
   }
 
-  const publicKey = await importPublicKey(publicKeyPem);
+  const actor = await fetchActorPublicKey(params.keyId);
+  if (!actor.ok) return actor;
   const valid = await crypto.subtle.verify(
     "RSASSA-PKCS1-v1_5",
-    publicKey,
+    actor.publicKey,
     base64ToArrayBuffer(params.signature),
     new TextEncoder().encode(buildSigningString(signedHeaderNames, values)),
   );
   if (!valid) return { ok: false, reason: "signature verification failed" };
 
-  return { ok: true, actorUrl: (actorDoc.id as string) || actorUrl, actorDoc };
+  return { ok: true, actorUrl: actor.actorUrl, actorDoc: actor.actorDoc };
 }
 
 // ---------------------------------------------------------------------------
@@ -214,6 +298,7 @@ async function handleActor(): Promise<Response> {
       summary: "News, links, and boosts from seb.now.",
       url: `https://${DOMAIN}/`,
       inbox: INBOX_URL,
+      outbox: OUTBOX_URL,
       publicKey: { id: KEY_ID, owner: ACTOR_ID, publicKeyPem },
     },
     // Mastodon rejects an actor served with any other type. seb.now/ap/actor
@@ -222,6 +307,97 @@ async function handleActor(): Promise<Response> {
     200,
     "application/activity+json",
   );
+}
+
+type ApPost = { id: string; content: string; published_at: string };
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function noteFor(post: ApPost): Record<string, unknown> {
+  return {
+    // A query string, not a path segment: seb.now's DO redirect to this
+    // function keeps the query but drops anything after its matched prefix.
+    id: `${NOTES_URL}?id=${post.id}`,
+    type: "Note",
+    attributedTo: ACTOR_ID,
+    content: escapeHtml(post.content).split("\n").map((line) => `<p>${line}</p>`).join(""),
+    published: new Date(post.published_at).toISOString(),
+    to: [PUBLIC_AUDIENCE],
+    cc: [],
+  };
+}
+
+function createFor(post: ApPost): Record<string, unknown> {
+  const note = noteFor(post);
+  return {
+    id: `${note.id}#create`,
+    type: "Create",
+    actor: ACTOR_ID,
+    published: note.published,
+    to: note.to,
+    cc: note.cc,
+    object: note,
+  };
+}
+
+async function handleOutbox(): Promise<Response> {
+  const { data, error, count } = await supabase
+    .from("ap_posts")
+    .select("id, content, published_at", { count: "exact" })
+    .order("published_at", { ascending: false })
+    .limit(OUTBOX_PAGE_SIZE);
+  if (error) throw new Error(`reading ap_posts failed: ${error.message}`);
+  return json(
+    {
+      "@context": "https://www.w3.org/ns/activitystreams",
+      id: OUTBOX_URL,
+      type: "OrderedCollection",
+      totalItems: count ?? data.length,
+      orderedItems: data.map(createFor),
+    },
+    200,
+    "application/activity+json",
+  );
+}
+
+async function handleNote(id: string): Promise<Response> {
+  if (!/^[0-9a-f-]{36}$/.test(id)) return json({ error: "not_found" }, 404);
+  const { data, error } = await supabase.from("ap_posts").select("id, content, published_at").eq("id", id).maybeSingle();
+  if (error || !data) return json({ error: "not_found" }, 404);
+  return json({ "@context": "https://www.w3.org/ns/activitystreams", ...noteFor(data) }, 200, "application/activity+json");
+}
+
+// Claims every undelivered post (setting delivered_at in the same UPDATE, so
+// concurrent calls never deliver one twice) and sends each to every follower
+// inbox, preferring a server's shared inbox. Unauthenticated on purpose: it
+// only ever sends posts already in the table.
+async function handleDeliver(): Promise<Response> {
+  const { data: posts, error } = await supabase
+    .from("ap_posts")
+    .update({ delivered_at: new Date().toISOString() })
+    .is("delivered_at", null)
+    .select("id, content, published_at");
+  if (error) throw new Error(`claiming ap_posts failed: ${error.message}`);
+  if (!posts.length) return json({ delivered: 0 }, 200);
+
+  const { data: followers, error: followersErr } = await supabase.from("ap_followers").select("inbox_url, shared_inbox_url");
+  if (followersErr) throw new Error(`reading ap_followers failed: ${followersErr.message}`);
+  const inboxes = [...new Set(followers.map((f) => f.shared_inbox_url ?? f.inbox_url))];
+
+  for (const post of posts.sort((a, b) => a.published_at.localeCompare(b.published_at))) {
+    const body = JSON.stringify({ "@context": "https://www.w3.org/ns/activitystreams", ...createFor(post) });
+    await Promise.all(inboxes.map(async (inbox) => {
+      try {
+        const res = await signedDeliver(inbox, body);
+        if (!res.ok) console.error(`post ${post.id} delivery to ${inbox} failed: ${res.status} ${await res.text()}`);
+      } catch (e) {
+        console.error(`post ${post.id} delivery to ${inbox} threw:`, String(e));
+      }
+    }));
+  }
+  return json({ delivered: posts.length, inboxes: inboxes.length }, 200);
 }
 
 async function handleFollow(activity: Record<string, unknown>, actorDoc: Record<string, unknown>): Promise<void> {
@@ -293,6 +469,9 @@ Deno.serve(async (req: Request) => {
     if (req.method === "GET" && path === "/.well-known/webfinger") return handleWebfinger(req);
     if (req.method === "GET" && path === "/ap/actor") return await handleActor();
     if (req.method === "POST" && path === "/ap/inbox") return await handleInbox(req);
+    if (req.method === "GET" && path === "/ap/outbox") return await handleOutbox();
+    if (req.method === "POST" && path === "/ap/deliver") return await handleDeliver();
+    if (req.method === "GET" && path === "/ap/notes") return await handleNote(new URL(req.url).searchParams.get("id") ?? "");
   } catch (e) {
     console.error("activitypub handler error:", e);
     return json({ error: "internal_error" }, 500);

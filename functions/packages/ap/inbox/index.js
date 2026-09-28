@@ -2,8 +2,9 @@
 // activitypub Supabase Edge Function, forwarding the raw request body
 // unchanged - real HTTP Signature verification needs byte-for-byte
 // fidelity, which `web: raw` preserves (unlike `web: true`'s
-// auto-parsed-into-params body). The Date/Digest/Signature headers are
-// forwarded too, unmodified - the Supabase function verifies against the
+// auto-parsed-into-params body). The signature headers of both schemes
+// (Date/Digest/Signature, and RFC 9421's Signature-Input/Content-Digest) and
+// Content-Type are forwarded too, unmodified - the Supabase function verifies against the
 // exact bytes the sender signed, and (request-target)/host are
 // reconstructed there against seb.now/ap/inbox (what senders actually
 // signed), not this internal proxy path.
@@ -17,8 +18,8 @@ async function main(args) {
   }
 
   const incomingHeaders = http.headers || {};
-  const forwardHeaders = { "Content-Type": "application/json" };
-  for (const name of ["date", "digest", "signature"]) {
+  const forwardHeaders = { "content-type": "application/json" };
+  for (const name of ["date", "digest", "signature", "signature-input", "content-digest", "content-type"]) {
     if (incomingHeaders[name]) forwardHeaders[name] = incomingHeaders[name];
   }
 
