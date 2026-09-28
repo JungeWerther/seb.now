@@ -481,15 +481,20 @@ keypair for HTTP Signatures, a `public.ap_followers` table, and signed
   actor. WebFinger answers any such handle; the actor is
   `https://seb.now/ap/actor?id=<profile id>` (a query string, for the same
   DO-redirect reason as note ids), with a keypair generated on first use and
-  stored in `public.ap_actor_keys` (service_role only). A local reply on a
-  federated post is sent as that account's `Create(Note)` (`id:
-  https://seb.now/ap/notes?reply=<reply id>`, `inReplyTo` the post, mentioning
-  `@seb`) to the site's followers, the author's followers and every remote
-  actor already voting or replying on that post (`remote_actors.inbox_url` /
-  `shared_inbox_url`): a statement trigger on `replies` calls
-  `/ap/deliver-replies`, which runs `claim_federated_replies()` to mark each
-  pending reply `ap_state = 'sent'` or `'local'` (not a federated post, no
-  usable handle, or over `REPLIES_FEDERATED_PER_HOUR` per author).
+  stored in `public.ap_actor_keys` (service_role only). Every local comment
+  (a `replies` row) is sent as that account's `Create(Note)` (`id:
+  https://seb.now/ap/notes?reply=<reply id>`). On a federated post it's a
+  reply (`inReplyTo` the post, mentioning `@seb`) sent to the site's
+  followers, the author's followers and every remote actor already voting or
+  replying on that post (`remote_actors.inbox_url` / `shared_inbox_url`). On
+  any other link it's the reader's own post sharing the link (their text,
+  then the link, which Mastodon turns into a preview card), sent to the
+  author's followers, and the site actor then `Announce`s it to the site's
+  followers, since Mastodon only shows a post to followers of its author. A
+  statement trigger on `replies` calls `/ap/deliver-replies`, which runs
+  `claim_federated_replies()` to mark each pending comment `ap_state =
+  'sent'` or `'local'` (no usable handle, or over
+  `REPLIES_FEDERATED_PER_HOUR` per author) and return its link.
   Deleting a sent reply triggers `/ap/delete-reply`, which sends a `Delete`
   only once the row is really gone. Both reply triggers are `security
   definer`, since site users insert/delete replies through RLS and can't
