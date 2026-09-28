@@ -422,9 +422,12 @@ keypair for HTTP Signatures, a `public.ap_followers` table, and signed
   returns a real JRD pointing at the actor.
 - **Actor document** (`/ap/actor`) — a `Person` with `publicKey` (fetched
   from Vault at request time, not embedded in source).
-- **Inbox** (`POST /ap/inbox`) — verifies the sender's HTTP Signature
-  (draft-cavage, RSA-SHA256 over `(request-target) host date digest`,
-  fetching the sender's own actor doc for their public key), then:
+- **Inbox** (`POST /ap/inbox`) — verifies the sender's HTTP Signature in
+  either scheme: RFC 9421 HTTP Message Signatures (`Signature-Input`,
+  `Signature: sig1=:…:`, `Content-Digest` — what mastodon.social sends) or
+  draft-cavage (RSA-SHA256 over `(request-target) host date digest`),
+  fetching the sender's own actor doc for their public key with a signed
+  GET (servers in Mastodon's secure mode 401 an unsigned one), then:
   `Follow` → upserts into `ap_followers` and delivers a signed `Accept`
   back to the follower's inbox; `Undo` of a `Follow` → deletes the
   follower row. Everything else (`Like`, `Announce`, `Create`, `Delete`,
