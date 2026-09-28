@@ -261,7 +261,9 @@ overlay closes (then the feed re-ranks) or the page is hidden; reopening the
 overlay flushes the queue before reading back. Above the list a code block shows the feed's ranking formula (see "Feed
 pagination, ranking and search"), so keep it in sync with `ranked_feed`.
 **My Profile** (`#profile-overlay`) edits `profiles.handle`, the name shown on
-replies.
+replies and the reader's fediverse username (`@handle@seb.now`, previewed live
+under the field); the page lowercases it and checks the same pattern as the
+DB before saving.
 
 **Tagline.** Under the wordmark (its SVG `viewBox` is trimmed to the glyphs so
 the tagline centres on the letters) the page loads "your own feed", and
@@ -472,6 +474,28 @@ keypair for HTTP Signatures, a `public.ap_followers` table, and signed
   by DO ingress rules like `/ap/actor`'s. Note ids use a query string
   because a DO redirect keeps the query but drops the path after its
   matched prefix (`/ap/notes/<uuid>` would arrive as `/ap/notes`).
+
+- **Readers are accounts too.** Every profile whose `handle` matches
+  `^[a-z0-9_]{1,30}$` (the `profiles_handle_format` check; handles were
+  already unique) is `@handle@seb.now`, except `seb`, reserved for the site
+  actor. WebFinger answers any such handle; the actor is
+  `https://seb.now/ap/actor?id=<profile id>` (a query string, for the same
+  DO-redirect reason as note ids), with a keypair generated on first use and
+  stored in `public.ap_actor_keys` (service_role only). A local reply on a
+  federated post is sent as that account's `Create(Note)` (`id:
+  https://seb.now/ap/notes?reply=<reply id>`, `inReplyTo` the post, mentioning
+  `@seb`) to the site's followers, the author's followers and every remote
+  actor already voting or replying on that post (`remote_actors.inbox_url` /
+  `shared_inbox_url`): a statement trigger on `replies` calls
+  `/ap/deliver-replies`, which runs `claim_federated_replies()` to mark each
+  pending reply `ap_state = 'sent'` or `'local'` (not a federated post, no
+  usable handle, or over `REPLIES_FEDERATED_PER_HOUR` per author).
+  Deleting a sent reply triggers `/ap/delete-reply`, which sends a `Delete`
+  only once the row is really gone. Both reply triggers are `security
+  definer`, since site users insert/delete replies through RLS and can't
+  call `pg_net`. Remote actors can follow a reader's account too
+  (`ap_followers.profile_id`; null = the site actor), and remote replies to a
+  sent reply land on the same post.
 
 **Not built yet**: any automatic boosting. Per the earlier
 design discussion, a boost should follow a deliberate human upvote on a
