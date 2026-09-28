@@ -1,12 +1,13 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// Real ActivityPub backend for seb.now: the DO Functions proxy forwards
-// seb.now/.well-known/webfinger and seb.now/ap/inbox here, and a DO ingress
-// rule 308-redirects seb.now/ap/actor straight to this function.
-// A single site-wide actor (@seb@seb.now), not per-profile - the local
-// `profiles`/`follows` tables are unrelated (those model a profile
-// following someone; this models the world following the site).
+// Real ActivityPub backend for the site: the DO Functions proxy forwards
+// <site>/.well-known/webfinger and <site>/ap/inbox here, and a DO ingress
+// rule 308-redirects <site>/ap/actor straight to this function. The site's
+// address and its actor's username come from public.app_settings.
+// The site-wide actor (@<username>@<site>) posts; the local `follows` table is
+// unrelated (that models a profile following someone, this the world
+// following the site or one of its readers).
 //
 // Implements: WebFinger, the actor document (with its HTTP Signature
 // public key), and an inbox that verifies signatures and handles
@@ -16,28 +17,63 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // /ap/deliver (called by an ap_posts insert trigger) sends each new one to
 // followers as a signed Create(Note). A Like or Announce of a post becomes an
 // upvote on its link, a public reply becomes a reply, and Undo/Delete remove
-// them again.
+// them again. Every profile with a handle is also an account,
+// @handle@<site> (actor <site>/ap/actor?id=<profile id>, with its
+// own keypair in public.ap_actor_keys): its replies on our posts go out as
+// that account's replies (/ap/deliver-replies, called by a replies insert
+// trigger), and deleting one sends a Delete (/ap/delete-reply).
 // No automatic boosting yet (see the "bring your own algorithm" design
 // discussion: boosts should follow a deliberate human upvote, not
 // ingestion volume, and that's still unbuilt).
-const DOMAIN = "seb.now";
-const USERNAME = "seb";
-const ACTOR_ID = `https://${DOMAIN}/ap/actor`;
-const INBOX_URL = `https://${DOMAIN}/ap/inbox`;
-const OUTBOX_URL = `https://${DOMAIN}/ap/outbox`;
-const NOTES_URL = `https://${DOMAIN}/ap/notes`;
-const POST_PAGE_URL = `https://${DOMAIN}/p`;
 const PUBLIC_AUDIENCE = "https://www.w3.org/ns/activitystreams#Public";
 const OUTBOX_PAGE_SIZE = 20;
 // Must match the replies_body_length check on public.replies.
 const REPLY_MAX_LENGTH = 500;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const KEY_ID = `${ACTOR_ID}#main-key`;
+// Must match the profiles_handle_format check. USERNAME is the site actor's,
+// so a profile holding that handle gets no account of its own.
+const HANDLE_PATTERN = "^[a-z0-9_]{1,30}$";
+const REPLIES_FEDERATED_PER_HOUR = 5;
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
+
+const BOOT_RETRY_ATTEMPTS = 4;
+const BOOT_RETRY_DELAY_MS = 500;
+
+// Runs a service_role query, retrying briefly: on a cold boot the edge
+// runtime's service_role JWT can be minted a moment ahead of PostgREST's clock
+// ("JWT issued at future"), which resolves itself within a second.
+async function withBootRetry<T>(what: string, query: () => PromiseLike<{ data: T | null; error: { message: string } | null }>): Promise<T> {
+  let lastError = "";
+  for (let attempt = 1; attempt <= BOOT_RETRY_ATTEMPTS; attempt++) {
+    const { data, error } = await query();
+    if (!error && data) return data;
+    lastError = error?.message ?? "no data";
+    if (attempt < BOOT_RETRY_ATTEMPTS) await new Promise((r) => setTimeout(r, BOOT_RETRY_DELAY_MS));
+  }
+  throw new Error(`${what} failed: ${lastError}`);
+}
+
+const settingRows = await withBootRetry("reading app_settings", () => supabase.from("app_settings").select("key, value"));
+const settings = new Map(settingRows.map((row) => [row.key, row.value]));
+function setting(key: string): string {
+  const value = settings.get(key);
+  if (!value) throw new Error(`app_settings has no ${key}`);
+  return value;
+}
+
+const SITE_ORIGIN = setting("site_origin");
+const DOMAIN = new URL(SITE_ORIGIN).host;
+const USERNAME = setting("site_actor_username");
+const ACTOR_ID = `${SITE_ORIGIN}/ap/actor`;
+const INBOX_URL = `${SITE_ORIGIN}/ap/inbox`;
+const OUTBOX_URL = `${SITE_ORIGIN}/ap/outbox`;
+const NOTES_URL = `${SITE_ORIGIN}/ap/notes`;
+const POST_PAGE_URL = `${SITE_ORIGIN}/p`;
+const KEY_ID = `${ACTOR_ID}#main-key`;
 
 // ---------------------------------------------------------------------------
 // Crypto helpers (Web Crypto API - available natively in Deno)
@@ -84,21 +120,8 @@ function buildSigningString(headerNames: string[], values: Record<string, string
 
 let cachedKeys: { privateKey: CryptoKey; publicKeyPem: string } | null = null;
 
-const KEY_FETCH_ATTEMPTS = 4;
-const KEY_FETCH_RETRY_DELAY_MS = 500;
-
 async function fetchVaultSecret(name: string): Promise<string> {
-  let lastError = "";
-  for (let attempt = 1; attempt <= KEY_FETCH_ATTEMPTS; attempt++) {
-    const { data, error } = await supabase.rpc("get_vault_secret", { secret_name: name });
-    if (!error && data) return data as string;
-    lastError = error?.message ?? "empty secret";
-    // On a cold boot the edge runtime's service_role JWT can be minted a
-    // moment ahead of PostgREST's clock ("JWT issued at future"), which
-    // resolves itself within a second.
-    if (attempt < KEY_FETCH_ATTEMPTS) await new Promise((r) => setTimeout(r, KEY_FETCH_RETRY_DELAY_MS));
-  }
-  throw new Error(`missing vault secret ${name}: ${lastError}`);
+  return await withBootRetry(`reading vault secret ${name}`, () => supabase.rpc("get_vault_secret", { secret_name: name }));
 }
 
 async function getKeys(): Promise<{ privateKey: CryptoKey; publicKeyPem: string }> {
@@ -111,11 +134,18 @@ async function getKeys(): Promise<{ privateKey: CryptoKey; publicKeyPem: string 
   return cachedKeys;
 }
 
-// Signs and delivers an activity to a remote inbox using our own key -
-// draft-cavage-http-signatures over (request-target)/host/date/digest, the
-// scheme Mastodon and most of the fediverse use for federation.
-async function signedDeliver(inboxUrl: string, body: string): Promise<Response> {
-  const { privateKey } = await getKeys();
+type Signer = { keyId: string; privateKey: CryptoKey };
+
+async function siteSigner(): Promise<Signer> {
+  return { keyId: KEY_ID, privateKey: (await getKeys()).privateKey };
+}
+
+// Signs and delivers an activity to a remote inbox - draft-cavage-http-
+// signatures over (request-target)/host/date/digest, the scheme Mastodon and
+// most of the fediverse use for federation. The site actor signs unless
+// another account's signer is given.
+async function signedDeliver(inboxUrl: string, body: string, signer?: Signer): Promise<Response> {
+  const { keyId, privateKey } = signer ?? await siteSigner();
   const target = new URL(inboxUrl);
   const date = new Date().toUTCString();
   const digest = `SHA-256=${await sha256Base64(body)}`;
@@ -129,7 +159,7 @@ async function signedDeliver(inboxUrl: string, body: string): Promise<Response> 
   const signature = arrayBufferToBase64(
     await crypto.subtle.sign("RSASSA-PKCS1-v1_5", privateKey, new TextEncoder().encode(buildSigningString(headerNames, values))),
   );
-  const signatureHeader = `keyId="${KEY_ID}",algorithm="rsa-sha256",headers="${headerNames.join(" ")}",signature="${signature}"`;
+  const signatureHeader = `keyId="${keyId}",algorithm="rsa-sha256",headers="${headerNames.join(" ")}",signature="${signature}"`;
 
   return fetch(inboxUrl, {
     method: "POST",
@@ -142,6 +172,64 @@ async function signedDeliver(inboxUrl: string, body: string): Promise<Response> 
     },
     body,
   });
+}
+
+type LocalAccount = { id: string; handle: string };
+
+function userActorId(profileId: string): string {
+  return `${ACTOR_ID}?id=${profileId}`;
+}
+
+// The account for a profile id or handle, or null when that profile has no
+// usable handle.
+async function localAccount(by: { id?: string; handle?: string }): Promise<LocalAccount | null> {
+  let query = supabase.from("profiles").select("id, handle");
+  if (by.id) {
+    if (!UUID_PATTERN.test(by.id)) return null;
+    query = query.eq("id", by.id);
+  } else {
+    query = query.eq("handle", by.handle ?? "");
+  }
+  const { data } = await query.maybeSingle();
+  if (!data?.handle || !new RegExp(HANDLE_PATTERN).test(data.handle) || data.handle === USERNAME) return null;
+  return { id: data.id, handle: data.handle };
+}
+
+async function exportPem(key: CryptoKey, format: "pkcs8" | "spki", label: string): Promise<string> {
+  const b64 = arrayBufferToBase64(await crypto.subtle.exportKey(format, key));
+  return `-----BEGIN ${label}-----\n${b64.match(/.{1,64}/g)!.join("\n")}\n-----END ${label}-----\n`;
+}
+
+const accountKeys = new Map<string, { privateKey: CryptoKey; publicKeyPem: string }>();
+
+// An account's keypair, generated and stored the first time it's needed. If
+// two requests race, the insert that loses is ignored and both use the stored
+// pair.
+async function getAccountKeys(profileId: string): Promise<{ privateKey: CryptoKey; publicKeyPem: string }> {
+  const cached = accountKeys.get(profileId);
+  if (cached) return cached;
+  let { data } = await supabase.from("ap_actor_keys").select("public_key_pem, private_key_pem").eq("profile_id", profileId).maybeSingle();
+  if (!data) {
+    const pair = await crypto.subtle.generateKey(
+      { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+      true,
+      ["sign", "verify"],
+    ) as CryptoKeyPair;
+    const generated = {
+      profile_id: profileId,
+      public_key_pem: await exportPem(pair.publicKey, "spki", "PUBLIC KEY"),
+      private_key_pem: await exportPem(pair.privateKey, "pkcs8", "PRIVATE KEY"),
+    };
+    await supabase.from("ap_actor_keys").upsert(generated, { onConflict: "profile_id", ignoreDuplicates: true });
+    ({ data } = await supabase.from("ap_actor_keys").select("public_key_pem, private_key_pem").eq("profile_id", profileId).single());
+  }
+  const keys = { privateKey: await importPrivateKey(data!.private_key_pem), publicKeyPem: data!.public_key_pem };
+  accountKeys.set(profileId, keys);
+  return keys;
+}
+
+async function accountSigner(profileId: string): Promise<Signer> {
+  return { keyId: `${userActorId(profileId)}#main-key`, privateKey: (await getAccountKeys(profileId)).privateKey };
 }
 
 // Servers running Mastodon's secure mode (authorized fetch) answer 401 to
@@ -248,7 +336,7 @@ async function verifyRfc9421Signature(req: Request, rawBody: string): Promise<Si
 
 // Verifies a draft-cavage HTTP Signature against the sending actor's
 // published public key. The request reaches this function proxied through
-// DO Functions at an internal Supabase URL, not seb.now/ap/inbox directly -
+// DO Functions at an internal Supabase URL, not <site>/ap/inbox directly -
 // (request-target)/host are reconstructed to what the real sender actually
 // signed (our own published inbox URL), not the internal proxy path.
 async function verifyCavageSignature(req: Request, rawBody: string): Promise<SignatureCheck> {
@@ -263,7 +351,7 @@ async function verifyCavageSignature(req: Request, rawBody: string): Promise<Sig
 
   const signedHeaderNames = params.headers.split(" ");
   const values: Record<string, string> = {
-    "(request-target)": "post /ap/inbox",
+    "(request-target)": `post ${new URL(INBOX_URL).pathname}`,
     host: DOMAIN,
     date: req.headers.get("date") || "",
     digest: req.headers.get("digest") || "",
@@ -295,16 +383,23 @@ function json(body: unknown, status: number, contentType = "application/json"): 
   return new Response(JSON.stringify(body, null, 2), { status, headers: { "Content-Type": contentType } });
 }
 
-function handleWebfinger(req: Request): Response {
-  const resource = new URL(req.url).searchParams.get("resource");
-  if (resource !== `acct:${USERNAME}@${DOMAIN}`) return json({ error: "not_found" }, 404);
+async function handleWebfinger(req: Request): Promise<Response> {
+  const resource = new URL(req.url).searchParams.get("resource") ?? "";
+  const handle = resource.match(new RegExp(`^acct:([^@]+)@${DOMAIN.replace(".", "\\.")}$`))?.[1];
+  if (!handle) return json({ error: "not_found" }, 404);
+  let actorId = ACTOR_ID;
+  if (handle !== USERNAME) {
+    const account = await localAccount({ handle });
+    if (!account) return json({ error: "not_found" }, 404);
+    actorId = userActorId(account.id);
+  }
   return json(
     {
-      subject: `acct:${USERNAME}@${DOMAIN}`,
-      aliases: [ACTOR_ID],
+      subject: `acct:${handle}@${DOMAIN}`,
+      aliases: [actorId],
       links: [
-        { rel: "self", type: "application/activity+json", href: ACTOR_ID },
-        { rel: "http://webfinger.net/rel/profile-page", type: "text/html", href: `https://${DOMAIN}/` },
+        { rel: "self", type: "application/activity+json", href: actorId },
+        { rel: "http://webfinger.net/rel/profile-page", type: "text/html", href: `${SITE_ORIGIN}/` },
       ],
     },
     // Spec-correct would be application/jrd+json, but DO's OpenWhisk-based
@@ -326,15 +421,38 @@ async function handleActor(): Promise<Response> {
       type: "Person",
       preferredUsername: USERNAME,
       name: "Seb",
-      summary: "News, links, and boosts from seb.now.",
-      url: `https://${DOMAIN}/`,
+      summary: `News, links, and boosts from ${DOMAIN}.`,
+      url: `${SITE_ORIGIN}/`,
       inbox: INBOX_URL,
       outbox: OUTBOX_URL,
       publicKey: { id: KEY_ID, owner: ACTOR_ID, publicKeyPem },
     },
-    // Mastodon rejects an actor served with any other type. seb.now/ap/actor
+    // Mastodon rejects an actor served with any other type. <site>/ap/actor
     // redirects here rather than going through the DO Functions proxy, whose
     // gateway can't send this type or accept Mastodon's Accept header.
+    200,
+    "application/activity+json",
+  );
+}
+
+async function handleUserActor(profileId: string): Promise<Response> {
+  const account = await localAccount({ id: profileId });
+  if (!account) return json({ error: "not_found" }, 404);
+  const actorId = userActorId(account.id);
+  const { publicKeyPem } = await getAccountKeys(account.id);
+  return json(
+    {
+      "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+      id: actorId,
+      type: "Person",
+      preferredUsername: account.handle,
+      name: account.handle,
+      summary: `A reader of ${DOMAIN}.`,
+      url: `${SITE_ORIGIN}/`,
+      inbox: INBOX_URL,
+      endpoints: { sharedInbox: INBOX_URL },
+      publicKey: { id: `${actorId}#main-key`, owner: actorId, publicKeyPem },
+    },
     200,
     "application/activity+json",
   );
@@ -349,7 +467,7 @@ function escapeHtml(text: string): string {
 
 function noteFor(post: ApPost): Record<string, unknown> {
   return {
-    // A query string, not a path segment: seb.now's DO redirect to this
+    // A query string, not a path segment: the site's DO redirect to this
     // function keeps the query but drops anything after its matched prefix.
     id: `${NOTES_URL}?id=${post.id}`,
     type: "Note",
@@ -373,6 +491,101 @@ function createFor(post: ApPost): Record<string, unknown> {
     cc: note.cc,
     object: note,
   };
+}
+
+type LocalReply = { id: string; link_id: string; author_id: string; handle: string; body: string; created_at: string };
+
+function replyNoteId(replyId: string): string {
+  return `${NOTES_URL}?reply=${replyId}`;
+}
+
+function replyNoteFor(reply: LocalReply): Record<string, unknown> {
+  return {
+    id: replyNoteId(reply.id),
+    type: "Note",
+    attributedTo: userActorId(reply.author_id),
+    inReplyTo: `${NOTES_URL}?id=${reply.link_id}`,
+    url: `${POST_PAGE_URL}/${reply.link_id}`,
+    content: `<p><span class="h-card"><a href="${SITE_ORIGIN}/" class="u-url mention">@<span>${USERNAME}</span></a></span> ` +
+      escapeHtml(reply.body).split("\n").join("<br>") + "</p>",
+    published: new Date(reply.created_at).toISOString(),
+    to: [PUBLIC_AUDIENCE],
+    cc: [ACTOR_ID],
+    tag: [{ type: "Mention", href: ACTOR_ID, name: `@${USERNAME}@${DOMAIN}` }],
+  };
+}
+
+async function handleReplyNote(replyId: string): Promise<Response> {
+  if (!UUID_PATTERN.test(replyId)) return json({ error: "not_found" }, 404);
+  const { data } = await supabase
+    .from("replies")
+    .select("id, link_id, author_id, body, created_at, profiles(handle)")
+    .eq("id", replyId)
+    .eq("ap_state", "sent")
+    .maybeSingle();
+  if (!data) return json({ error: "not_found" }, 404);
+  const reply = { ...data, handle: (data.profiles as unknown as { handle: string }).handle } as LocalReply;
+  return json({ "@context": "https://www.w3.org/ns/activitystreams", ...replyNoteFor(reply) }, 200, "application/activity+json");
+}
+
+// Everyone who should see a reply on this post: the site's followers, the
+// author's followers, and the remote accounts already in the conversation.
+async function conversationInboxes(linkId: string, authorId: string): Promise<string[]> {
+  const [{ data: followers }, { data: voters }, { data: repliers }] = await Promise.all([
+    supabase.from("ap_followers").select("inbox_url, shared_inbox_url").or(`profile_id.is.null,profile_id.eq.${authorId}`),
+    supabase.from("votes").select("remote_actors(inbox_url, shared_inbox_url)").eq("link_id", linkId).not("remote_actor_id", "is", null),
+    supabase.from("replies").select("remote_actors(inbox_url, shared_inbox_url)").eq("link_id", linkId).not("remote_actor_id", "is", null),
+  ]);
+  type Inboxes = { inbox_url: string | null; shared_inbox_url: string | null } | null;
+  const actors: Inboxes[] = [
+    ...(followers ?? []),
+    ...[...(voters ?? []), ...(repliers ?? [])].map((row) => row.remote_actors as unknown as Inboxes),
+  ];
+  return [...new Set(actors.map((a) => a?.shared_inbox_url ?? a?.inbox_url).filter((url): url is string => !!url))];
+}
+
+async function deliverAll(inboxes: string[], activity: Record<string, unknown>, signer: Signer): Promise<void> {
+  const body = JSON.stringify({ "@context": "https://www.w3.org/ns/activitystreams", ...activity });
+  await Promise.all(inboxes.map(async (inbox) => {
+    try {
+      const res = await signedDeliver(inbox, body, signer);
+      if (!res.ok) console.error(`${activity.type} ${activity.id} delivery to ${inbox} failed: ${res.status} ${await res.text()}`);
+    } catch (e) {
+      console.error(`${activity.type} ${activity.id} delivery to ${inbox} threw:`, String(e));
+    }
+  }));
+}
+
+async function handleDeliverReplies(): Promise<Response> {
+  const { data, error } = await supabase.rpc("claim_federated_replies", {
+    handle_pattern: HANDLE_PATTERN,
+    reserved_handle: USERNAME,
+    per_hour: REPLIES_FEDERATED_PER_HOUR,
+  });
+  if (error) throw new Error(`claiming replies failed: ${error.message}`);
+  const sent = (data as (LocalReply & { ap_state: string })[]).filter((r) => r.ap_state === "sent");
+  for (const reply of sent) {
+    const note = replyNoteFor(reply);
+    const create = { id: `${note.id}#create`, type: "Create", actor: note.attributedTo, published: note.published, to: note.to, cc: note.cc, object: note };
+    await deliverAll(await conversationInboxes(reply.link_id, reply.author_id), create, await accountSigner(reply.author_id));
+  }
+  return json({ claimed: (data as unknown[]).length, sent: sent.length }, 200);
+}
+
+// Called by the replies delete trigger. Only sends the Delete once the reply
+// is really gone, so a caller can't retract a reply that still exists.
+async function handleDeleteReply(req: Request): Promise<Response> {
+  const { reply_id, author_id, link_id } = await req.json().catch(() => ({}));
+  if (![reply_id, author_id, link_id].every((v) => typeof v === "string" && UUID_PATTERN.test(v))) {
+    return json({ error: "bad_request" }, 400);
+  }
+  const { data: stillThere } = await supabase.from("replies").select("id").eq("id", reply_id).maybeSingle();
+  if (stillThere) return json({ error: "reply still exists" }, 409);
+  const noteId = replyNoteId(reply_id);
+  const actorId = userActorId(author_id);
+  const del = { id: `${noteId}#delete`, type: "Delete", actor: actorId, to: [PUBLIC_AUDIENCE], object: { id: noteId, type: "Tombstone" } };
+  await deliverAll(await conversationInboxes(link_id, author_id), del, await accountSigner(author_id));
+  return json({ deleted: noteId }, 200);
 }
 
 async function handleOutbox(): Promise<Response> {
@@ -418,7 +631,10 @@ async function handleDeliver(): Promise<Response> {
   const posts = (claimed as unknown as { links: ApPost }[]).map((row) => row.links);
   if (!posts.length) return json({ delivered: 0 }, 200);
 
-  const { data: followers, error: followersErr } = await supabase.from("ap_followers").select("inbox_url, shared_inbox_url");
+  const { data: followers, error: followersErr } = await supabase
+    .from("ap_followers")
+    .select("inbox_url, shared_inbox_url")
+    .is("profile_id", null);
   if (followersErr) throw new Error(`reading ap_followers failed: ${followersErr.message}`);
   const inboxes = [...new Set(followers.map((f) => f.shared_inbox_url ?? f.inbox_url))];
 
@@ -436,26 +652,43 @@ async function handleDeliver(): Promise<Response> {
   return json({ delivered: posts.length, inboxes: inboxes.length }, 200);
 }
 
+// Which of our actors an activity targets: the site actor (profile null), a
+// profile's account, or none of ours.
+async function followedAccount(target: unknown): Promise<{ profileId: string | null } | null> {
+  const id = typeof target === "string" ? target : (target as { id?: unknown } | undefined)?.id;
+  if (id === ACTOR_ID) return { profileId: null };
+  if (typeof id !== "string" || !id.startsWith(`${ACTOR_ID}?id=`)) return null;
+  const account = await localAccount({ id: new URL(id).searchParams.get("id") ?? "" });
+  return account ? { profileId: account.id } : null;
+}
+
 async function handleFollow(activity: Record<string, unknown>, actorDoc: Record<string, unknown>): Promise<void> {
+  const followed = await followedAccount(activity.object);
+  if (!followed) return;
   const actorUrl = actorDoc.id as string;
   const inboxUrl = actorDoc.inbox as string;
   const sharedInbox = (actorDoc.endpoints as { sharedInbox?: string } | undefined)?.sharedInbox ?? null;
 
   const { error } = await supabase
     .from("ap_followers")
-    .upsert({ actor_url: actorUrl, inbox_url: inboxUrl, shared_inbox_url: sharedInbox }, { onConflict: "actor_url" });
+    .upsert(
+      { actor_url: actorUrl, inbox_url: inboxUrl, shared_inbox_url: sharedInbox, profile_id: followed.profileId },
+      { onConflict: "actor_url,profile_id" },
+    );
   if (error) console.error(`storing follower ${actorUrl} failed:`, error.message);
 
+  const followedId = followed.profileId ? userActorId(followed.profileId) : ACTOR_ID;
   const accept = {
     "@context": "https://www.w3.org/ns/activitystreams",
-    id: `${ACTOR_ID}/activities/${crypto.randomUUID()}`,
+    id: `${followedId}#accepts/${crypto.randomUUID()}`,
     type: "Accept",
-    actor: ACTOR_ID,
+    actor: followedId,
     object: activity,
   };
 
   try {
-    const res = await signedDeliver(inboxUrl, JSON.stringify(accept));
+    const signer = followed.profileId ? await accountSigner(followed.profileId) : undefined;
+    const res = await signedDeliver(inboxUrl, JSON.stringify(accept), signer);
     if (!res.ok) console.error(`Accept delivery to ${inboxUrl} failed: ${res.status} ${await res.text()}`);
   } catch (e) {
     console.error(`Accept delivery to ${inboxUrl} threw:`, String(e));
@@ -464,8 +697,14 @@ async function handleFollow(activity: Record<string, unknown>, actorDoc: Record<
 
 // The link id of one of our posts, given its note id (or an object carrying
 // it), or null when the object isn't one of our posts.
-async function ourPostId(object: unknown): Promise<string | null> {
+async function ourPostId(object: unknown, { viaReply = false } = {}): Promise<string | null> {
   const id = typeof object === "string" ? object : (object as { id?: unknown } | undefined)?.id;
+  if (viaReply && typeof id === "string" && id.startsWith(`${NOTES_URL}?reply=`)) {
+    const replyId = new URL(id).searchParams.get("reply") ?? "";
+    if (!UUID_PATTERN.test(replyId)) return null;
+    const { data } = await supabase.from("replies").select("link_id").eq("id", replyId).eq("ap_state", "sent").maybeSingle();
+    return data?.link_id ?? null;
+  }
   if (typeof id !== "string" || !id.startsWith(`${NOTES_URL}?id=`)) return null;
   const linkId = new URL(id).searchParams.get("id") ?? "";
   if (!UUID_PATTERN.test(linkId)) return null;
@@ -477,9 +716,14 @@ async function upsertRemoteActor(actorDoc: Record<string, unknown>): Promise<str
   const actorUrl = actorDoc.id as string;
   const username = typeof actorDoc.preferredUsername === "string" ? actorDoc.preferredUsername : "";
   const handle = username ? `@${username}@${new URL(actorUrl).host}` : actorUrl;
+  const inboxUrl = typeof actorDoc.inbox === "string" ? actorDoc.inbox : null;
+  const sharedInbox = (actorDoc.endpoints as { sharedInbox?: unknown } | undefined)?.sharedInbox;
   const { data, error } = await supabase
     .from("remote_actors")
-    .upsert({ actor_url: actorUrl, handle: handle.slice(0, 200) }, { onConflict: "actor_url" })
+    .upsert(
+      { actor_url: actorUrl, handle: handle.slice(0, 200), inbox_url: inboxUrl, shared_inbox_url: typeof sharedInbox === "string" ? sharedInbox : null },
+      { onConflict: "actor_url" },
+    )
     .select("id")
     .single();
   if (error) {
@@ -528,7 +772,7 @@ async function handleReaction(activity: Record<string, unknown>, actorDoc: Recor
 async function handleReply(activity: Record<string, unknown>, actorDoc: Record<string, unknown>): Promise<void> {
   const note = activity.object as Record<string, unknown> | undefined;
   if (!note || typeof note !== "object" || note.type !== "Note" || typeof note.id !== "string") return;
-  const linkId = await ourPostId(note.inReplyTo);
+  const linkId = await ourPostId(note.inReplyTo, { viaReply: true });
   if (!linkId || !isPublic(note)) return;
   const body = htmlToText(typeof note.content === "string" ? note.content : "");
   if (!body) return;
@@ -581,7 +825,12 @@ async function handleInbox(req: Request): Promise<Response> {
 
   const object = activity.object as Record<string, unknown> | undefined;
   if (activity.type === "Undo" && object?.type === "Follow") {
-    const { error } = await supabase.from("ap_followers").delete().eq("actor_url", activityActor);
+    const followed = await followedAccount(object.object);
+    let unfollow = supabase.from("ap_followers").delete().eq("actor_url", activityActor);
+    if (followed) {
+      unfollow = followed.profileId ? unfollow.eq("profile_id", followed.profileId) : unfollow.is("profile_id", null);
+    }
+    const { error } = await unfollow;
     if (error) console.error(`removing follower ${activityActor} failed:`, error.message);
     return new Response(null, { status: 202 });
   }
@@ -610,12 +859,20 @@ Deno.serve(async (req: Request) => {
   const path = new URL(req.url).pathname.replace(/^\/(functions\/v1\/)?activitypub/, "") || "/";
 
   try {
-    if (req.method === "GET" && path === "/.well-known/webfinger") return handleWebfinger(req);
-    if (req.method === "GET" && path === "/ap/actor") return await handleActor();
+    if (req.method === "GET" && path === "/.well-known/webfinger") return await handleWebfinger(req);
+    if (req.method === "GET" && path === "/ap/actor") {
+      const profileId = new URL(req.url).searchParams.get("id");
+      return profileId ? await handleUserActor(profileId) : await handleActor();
+    }
     if (req.method === "POST" && path === "/ap/inbox") return await handleInbox(req);
     if (req.method === "GET" && path === "/ap/outbox") return await handleOutbox();
     if (req.method === "POST" && path === "/ap/deliver") return await handleDeliver();
-    if (req.method === "GET" && path === "/ap/notes") return await handleNote(new URL(req.url).searchParams.get("id") ?? "");
+    if (req.method === "GET" && path === "/ap/notes") {
+      const params = new URL(req.url).searchParams;
+      return params.has("reply") ? await handleReplyNote(params.get("reply") ?? "") : await handleNote(params.get("id") ?? "");
+    }
+    if (req.method === "POST" && path === "/ap/deliver-replies") return await handleDeliverReplies();
+    if (req.method === "POST" && path === "/ap/delete-reply") return await handleDeleteReply(req);
   } catch (e) {
     console.error("activitypub handler error:", e);
     return json({ error: "internal_error" }, 500);

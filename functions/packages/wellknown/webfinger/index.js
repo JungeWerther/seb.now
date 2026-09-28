@@ -3,7 +3,7 @@
 // seb.now itself - WebFinger resolution for an acct: handle is defined
 // as a request to https://<host>/.well-known/webfinger on that same host,
 // so this can't be relocated to a subdomain or the Supabase URL directly.
-const ACTIVITYPUB_FUNCTION_URL = "https://yoxrhqlzsqwfjmsjpari.supabase.co/functions/v1/activitypub";
+const ACTIVITYPUB_FUNCTION_URL = `${process.env.SUPABASE_URL}/functions/v1/activitypub`;
 
 async function main(args) {
   const qs = (args.http && args.http.queryString) || "";

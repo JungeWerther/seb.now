@@ -367,6 +367,7 @@
       cursor: pointer;
     }
     #handle-save:disabled { opacity: 0.5; cursor: default; }
+    #profile-hint { font-size: 0.8rem; color: gray; margin: 0.5rem 0 0; }
     #profile-status { font-size: 0.8rem; color: gray; min-height: 1.2em; margin: 0.4rem 0 0; }
     #taste-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
     .taste-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.3rem 0.75rem; font-size: 0.85rem; }
@@ -773,9 +774,10 @@
     </div>
     <label for="handle-input">Handle</label>
     <div class="row">
-      <input id="handle-input" type="text" placeholder="pick a handle" maxlength="40" autocomplete="off">
+      <input id="handle-input" type="text" placeholder="pick a handle" maxlength="30" pattern="[a-z0-9_]{1,30}" autocapitalize="none" autocomplete="off" spellcheck="false">
       <button id="handle-save">Save</button>
     </div>
+    <p id="profile-hint">Lowercase letters, numbers and _. It's also your fediverse account, <span id="profile-fediverse-name"></span>: your replies on this site's own posts show up there too.</p>
     <p id="profile-status"></p>
   </dialog>
   <p id="search-empty">No matching articles.</p>
@@ -1919,6 +1921,13 @@
       const { data } = await (await supabaseReady)
         .from("profiles").select("handle").eq("id", session.user.id).single();
       input.value = data?.handle ?? "";
+      showFediverseName(input.value);
+    }
+
+    // Must match the profiles_handle_format check.
+    const HANDLE_PATTERN = /^[a-z0-9_]{1,30}$/;
+    function showFediverseName(handle) {
+      document.getElementById("profile-fediverse-name").textContent = `@${handle || "handle"}@${location.host}`;
     }
 
     function setupProfile() {
@@ -1928,15 +1937,23 @@
       const save = async () => {
         const session = await pendingSession;
         if (!session) return;
+        const handle = input.value.trim().toLowerCase();
+        if (handle && !HANDLE_PATTERN.test(handle)) {
+          status.textContent = "Use only lowercase letters, numbers and _ (up to 30).";
+          return;
+        }
         saveBtn.disabled = true;
         status.textContent = "Saving…";
         const { error } = await (await supabaseReady)
           .from("profiles")
-          .update({ handle: input.value.trim() || null })
+          .update({ handle: handle || null })
           .eq("id", session.user.id);
         saveBtn.disabled = false;
-        status.textContent = error ? "Couldn't save." : "Saved.";
+        // 23505: another profile already has this handle.
+        status.textContent = !error ? "Saved." : error.code === "23505" ? "That handle is taken." : "Couldn't save.";
       };
+      showFediverseName("");
+      input.addEventListener("input", () => showFediverseName(input.value.trim().toLowerCase()));
       saveBtn.addEventListener("click", save);
       input.addEventListener("keydown", (event) => {
         if (event.key === "Enter") save();
