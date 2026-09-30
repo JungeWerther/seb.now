@@ -119,10 +119,16 @@ const TOOLS = [
     name: "list_topics",
     title: "List topics",
     description:
-      "The topic taxonomy links are tagged with. Ids are dotted paths (ai.agents); a parent id " +
-      "(ai) covers all its children. Each has a description of what belongs in it, and topics " +
-      "contributed by users name their proposer.",
-    inputSchema: { type: "object", properties: {} },
+      "One level of the topic taxonomy links are tagged with: the top-level topics, or the direct " +
+      "children of parent. Ids are dotted paths (ai.agents); a parent id (ai) covers all its children. " +
+      "Each has a description of what belongs in it and its number of children (browse down by passing " +
+      "its id as parent), and topics contributed by users name their proposer.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        parent: { type: "string", description: "A topic id whose children to list. Omit for the top level." },
+      },
+    },
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
@@ -392,17 +398,19 @@ async function searchLinks(args: Row, { db }: Context) {
   return { query, links: await withVotes(db, data) };
 }
 
-async function listTopics(_args: Row, { db }: Context) {
-  const { data, error } = await db
-    .from("topics")
-    .select("id, name, description, profiles!topics_proposed_by_fkey(handle)")
-    .order("id");
+async function listTopics(args: Row, { db }: Context) {
+  const parent = args.parent == null ? null : stringArg(args, "parent").toLowerCase();
+  if (parent !== null) {
+    if (!TOPIC_ID.test(parent)) throw new InvalidParams(`Unknown topic '${parent}'; see list_topics`);
+    const { data: topic, error } = await db.from("topics").select("id").eq("id", parent).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!topic) throw new InvalidParams(`Unknown topic '${parent}'; see list_topics`);
+  }
+  const { data, error } = await db.rpc("topic_children", parent === null ? {} : { parent });
   if (error) throw new Error(error.message);
   return {
-    topics: data.map(({ profiles, ...t }: Row) => ({
-      ...t,
-      ...(profiles ? { proposed_by: profiles.handle ?? "anonymous" } : {}),
-    })),
+    ...(parent !== null ? { parent } : {}),
+    topics: data.map(({ proposed_by, ...t }: Row) => ({ ...t, ...(proposed_by ? { proposed_by } : {}) })),
   };
 }
 
@@ -448,6 +456,8 @@ async function getLinksByTopic(args: Row, { db }: Context) {
   if (linksError) throw new Error(linksError.message);
   return { topic, links: await withVotes(db, data.map(({ tagged: _, ...link }: Row) => link)) };
 }
+
+const TOPIC_ID = /^[a-z0-9_]+(\.[a-z0-9_]+)*$/;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

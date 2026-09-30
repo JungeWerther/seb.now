@@ -367,7 +367,10 @@ pending session promise and send once it resolves.
 `activitypub`: Streamable HTTP, stateless (each POST is one JSON-RPC message
 answered with plain JSON; GET/DELETE are 405, no SSE, no sessions). Read-only
 tools: `get_feed` (`ranked_feed` as a logged-out visitor, so taste is a neutral
-0.5), `search_links` (same `search_text` ilike as the page), `list_topics`,
+0.5), `search_links` (same `search_text` ilike as the page), `list_topics`
+(one level at a time — the top level, or a `parent`'s children, each with a
+child count — via the `public.topic_children(parent)` SQL function, since the
+taxonomy is over PostgREST's max-rows cap and PostgREST has no ltree operators),
 `get_links_by_topic` (a topic id and all its children), `get_link` (with vote
 counts and replies), `list_topic_proposals`. It queries with the **anon key**, never `service_role`, so
 RLS limits it to exactly what a logged-out visitor sees. It's deployed with
