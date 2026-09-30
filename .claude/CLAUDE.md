@@ -332,16 +332,10 @@ replies and the reader's fediverse username (`@handle@seb.now`, previewed live
 under the field); the page lowercases it and checks the same pattern as the
 DB before saving.
 
-**Tagline.** Under the wordmark (its SVG `viewBox` is trimmed to the glyphs so
-the tagline centres on the letters) the page loads "your own feed", and
-`swapTagline()` swaps the first two words on every load, as the last thing
-that happens (after the feed's first page is in, fonts are ready and the
-page's `load` event, capped at `TAGLINE_MAX_LOAD_WAIT_MS` after the feed): "your" dips down a
-semicircle into second place while "own" glides left over it (Web Animations
-API, FLIP from the measured positions; an instant swap under
-`prefers-reduced-motion`). The wordmark-plus-tagline ink block is centred
-in the header with `--header-brand-gap` above and below it, and the menu icon
-is centred vertically.
+**Wordmark.** The header's SVG wordmark has its `viewBox` trimmed to the
+glyphs; its ink (`--brand-ink-height`, lifted by `--brand-ink-offset`) is
+centred in the header with `--header-brand-gap` above and below it, and the
+menu icon is centred vertically. There's no tagline.
 
 **Replies.** `public.replies` (`link_id`, `author_id` → `profiles`,
 `body`, `created_at`): publicly readable; any signed-in user (anonymous
