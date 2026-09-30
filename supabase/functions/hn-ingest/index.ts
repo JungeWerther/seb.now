@@ -4,7 +4,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // Hacker News's public Firebase API - no auth, no rate-limit key needed.
 // topstories.json is already ranked; we just take the top N.
 const STORIES_LIMIT = 25;
-const IMAGE_FETCH_TIMEOUT_MS = 5000;
+const PAGE_FETCH_TIMEOUT_MS = 5000;
 
 // HN's API returns titles HTML-escaped (e.g. "Foo &amp; Bar", "&#x27;").
 function decodeEntities(s: string): string {
@@ -23,23 +23,38 @@ function decodeEntities(s: string): string {
 // on a random page is as likely a logo or tracking pixel as a cover.
 function metaContent(html: string, key: string): string | undefined {
   return (
-    html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${key}["'][^>]+content=["']([^"']+)["']`, "i"))?.[1] ??
-    html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${key}["']`, "i"))?.[1]
+    html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${key}["'][^>]+content=(["'])(.+?)\\1`, "i"))?.[2] ??
+    html.match(new RegExp(`<meta[^>]+content=(["'])(.+?)\\1[^>]+(?:property|name)=["']${key}["']`, "i"))?.[2]
   );
 }
 
-async function scrapePreviewImage(pageUrl: string): Promise<string | null> {
+// HN submitters often retitle a Substack post with its subtitle; Substack
+// pages (custom domains included) load assets from substackcdn.com, so they
+// can be told apart and their author's own og:title used instead.
+function isSubstackPage(pageUrl: string, html: string): boolean {
+  return new URL(pageUrl).hostname.endsWith(".substack.com") || html.includes("substackcdn.com");
+}
+
+type PagePreview = { imageUrl: string | null; title: string | null };
+
+async function scrapePage(pageUrl: string): Promise<PagePreview> {
+  const none = { imageUrl: null, title: null };
   try {
-    const res = await fetch(pageUrl, { signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS) });
-    if (!res.ok) return null;
-    if (!(res.headers.get("content-type") ?? "").includes("text/html")) return null;
+    const res = await fetch(pageUrl, { signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT_MS) });
+    if (!res.ok) return none;
+    if (!(res.headers.get("content-type") ?? "").includes("text/html")) return none;
     const html = await res.text();
+    const ogTitle = isSubstackPage(pageUrl, html) ? metaContent(html, "og:title") : undefined;
+    const title = ogTitle ? decodeEntities(ogTitle).trim() || null : null;
     const declared = metaContent(html, "og:image") ?? metaContent(html, "twitter:image");
-    if (!declared) return null;
+    if (!declared) return { imageUrl: null, title };
     const imageUrl = new URL(decodeEntities(declared), pageUrl);
-    return imageUrl.protocol === "https:" || imageUrl.protocol === "http:" ? imageUrl.toString() : null;
+    return {
+      imageUrl: imageUrl.protocol === "https:" || imageUrl.protocol === "http:" ? imageUrl.toString() : null,
+      title,
+    };
   } catch {
-    return null;
+    return none;
   }
 }
 
@@ -64,13 +79,13 @@ Deno.serve(async (_req: Request) => {
       if (!item || item.type !== "story" || !item.title) return;
       const threadUrl = `https://news.ycombinator.com/item?id=${item.id}`;
       const url = item.url ?? threadUrl;
-      const imageUrl = item.url ? await scrapePreviewImage(item.url) : null;
+      const { imageUrl, title } = item.url ? await scrapePage(item.url) : { imageUrl: null, title: null };
 
       // Omitted rather than null when there's no image, so a flaky fetch keeps an earlier one.
       const row = {
         url,
         thread_url: threadUrl,
-        title: decodeEntities(item.title),
+        title: title ?? decodeEntities(item.title),
         origin: "feed",
         submitted_by: null,
         ...(imageUrl ? { image_url: imageUrl } : {}),
