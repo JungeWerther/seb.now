@@ -280,8 +280,11 @@ plain words in a code block; keep the two in sync.
 
 Scrolling back up (`DOCK_ACTIONS_REVEAL_PX` since the last scroll down, and
 past `DOCK_ACTIONS_MIN_SCROLL_Y`) reveals a row of round icon buttons
-(`#dock-actions`) right-aligned above the search bar; scrolling down hides it.
-The first, back-to-top (`#back-to-top`), scrolls to the top and restarts the
+(`#dock-actions`) right-aligned above the search bar, fading in; scrolling down
+`DOCK_ACTIONS_HIDE_PX` fades it out, and it stays tappable until fully gone.
+The first, back-to-top (`#back-to-top`, a large soft-green circle), fires on
+`pointerdown` rather than `click` — during a momentum scroll a touch only stops
+the scroll and never produces a click — and scrolls to the top and restarts the
 feed with a fresh `as_of` (the current search, if any, from its newest result),
 keeping the old list until the new first page arrives.
 

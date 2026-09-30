@@ -110,28 +110,31 @@
       display: flex;
       gap: 0.5rem;
       opacity: 0;
-      transform: translateY(0.5rem);
-      transition: opacity 0.18s ease, transform 0.18s ease;
-      pointer-events: none;
+      visibility: hidden;
+      transition: opacity 0.45s ease, visibility 0s linear 0.45s;
     }
-    #dock-actions.visible { opacity: 1; transform: none; pointer-events: auto; }
+    /* visibility (not pointer-events) hides it, so it stays tappable for as
+       long as any of it is still showing while it fades out. */
+    #dock-actions.visible { opacity: 1; visibility: visible; transition: opacity 0.45s ease; }
     .dock-action {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 2.5rem;
-      height: 2.5rem;
+      width: 3.25rem;
+      height: 3.25rem;
       padding: 0;
-      border: 1px solid var(--positive);
+      border: none;
       border-radius: 50%;
-      background: var(--bg);
+      background: var(--positive-soft);
       color: var(--positive);
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+      opacity: 0.9;
       cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
-    .dock-action:hover { background: var(--positive-soft); }
+    .dock-action:hover { opacity: 1; }
     @media (prefers-reduced-motion: reduce) {
-      #dock-actions { transition: none; }
+      #dock-actions, #dock-actions.visible { transition: none; }
     }
     #search-bar { position: relative; width: 100%; max-width: 480px; pointer-events: auto; }
     #search-input {
@@ -862,7 +865,7 @@
     <div id="dock-inner">
     <div id="dock-actions">
       <button type="button" class="dock-action" id="back-to-top" aria-label="Back to top of a fresh feed" title="Back to top">
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="m17 11-5-5-5 5"/>
           <path d="m17 18-5-5-5 5"/>
         </svg>
@@ -2408,8 +2411,9 @@
     }
 
     // Scrolling back up at least this far (px, since the last scroll down)
-    // reveals the dock's actions; any scroll down hides them again.
+    // reveals the dock's actions; scrolling down this far hides them again.
     const DOCK_ACTIONS_REVEAL_PX = 60;
+    const DOCK_ACTIONS_HIDE_PX = 40;
     // Hidden this close to the top, where there's nothing to go back to.
     const DOCK_ACTIONS_MIN_SCROLL_Y = 400;
 
@@ -2418,16 +2422,25 @@
       const backToTop = document.getElementById("back-to-top");
       let lastY = window.scrollY;
       let upTravel = 0;
+      let downTravel = 0;
       let scheduled = false;
 
       function update() {
         scheduled = false;
         const y = window.scrollY;
-        if (y > lastY) upTravel = 0;
-        else upTravel += lastY - y;
+        if (y > lastY) {
+          downTravel += y - lastY;
+          upTravel = 0;
+        } else {
+          upTravel += lastY - y;
+          downTravel = 0;
+        }
         lastY = y;
-        const show = y > DOCK_ACTIONS_MIN_SCROLL_Y && upTravel >= DOCK_ACTIONS_REVEAL_PX;
-        actions.classList.toggle("visible", show);
+        if (y <= DOCK_ACTIONS_MIN_SCROLL_Y || downTravel >= DOCK_ACTIONS_HIDE_PX) {
+          actions.classList.remove("visible");
+        } else if (upTravel >= DOCK_ACTIONS_REVEAL_PX) {
+          actions.classList.add("visible");
+        }
       }
 
       window.addEventListener("scroll", () => {
@@ -2438,13 +2451,25 @@
 
       // Back to the top of a freshly ranked feed (or the current search from
       // its newest result). The old list stays until the new page arrives.
-      backToTop.addEventListener("click", () => {
+      function goToTop() {
         actions.classList.remove("visible");
         backToTop.blur();
         const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         window.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
         resetFeed(feed.query);
         loadMore({ replace: true });
+      }
+
+      // Fired on pointerdown: it shows while the page is still scrolling, and
+      // a touch then only stops the scroll, never producing a click.
+      backToTop.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        goToTop();
+      });
+      // Keyboard activation (detail 0); pointer clicks were handled above.
+      backToTop.addEventListener("click", (event) => {
+        if (event.detail === 0) goToTop();
       });
     }
 
