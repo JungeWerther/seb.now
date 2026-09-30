@@ -173,8 +173,26 @@ children without a recursive query. `description` is the definition a
 classifier reads for each label. Links are tagged with leaf topics only,
 in `public.link_topics` as fuzzy `p ∈ (0, 1]`, typically 1–3 per link;
 `labeled_by` is `manual` (hand labels) or `jev` (the TypeSafe Jev
-decision model, planned, not yet automated — so new ingested links
-currently arrive untagged). Both tables are public-read, service_role-write.
+decision model, see below). Both tables are public-read, service_role-write.
+
+**Automatic topic labels — `topic-label`.** An Edge Function labels every link
+that has no `link_topics` rows yet (so hand labels are never touched), up to 60
+per run, on its own `pg_cron` job (`55 */3 * * *`; URL and anon key read from
+`app_settings`' `functions_url`/`anon_key` at run time). It walks the topic
+tree top-down with Jev (`jev-1.13.0`, pinned; key from Vault as
+`typesafe-ai-token` via `get_vault_secret`): each node is one Choice over its
+children, with the topics' `name: description` as the options (the root adds
+a "none of these"), and the 3 best paths are kept (beam search) by the
+geometric mean of their edge probabilities, so a shallow and a deep leaf
+compare fairly. The distinct leaves of the final beam scoring ≥ 0.5 become
+`labeled_by = 'jev'` rows with `p` = that score. The state is only the
+link's title, host and (when set) description. `POST {"link_ids": [...],
+"dry_run": true}` returns labels without writing, for evaluation: on 60
+hand-labelled links the top Jev label matched a hand label (same topic, or
+one an ancestor of the other) for 46, any Jev label for 49, and the top-level
+area for 52, at ~1,600 input tokens and 2 requests per link. `jev.ts` beside it
+is a small typed System One client. To undo: `delete from link_topics where
+labeled_by = 'jev'`.
 
 A user's preference is derived, not stored: the
 `public.user_topic_preferences` view (`security_invoker`, so RLS on
