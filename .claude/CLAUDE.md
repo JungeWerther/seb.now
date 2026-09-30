@@ -27,7 +27,8 @@ this repo — `.env` is git-ignored here. It's kept in two places instead:
 a local, untracked `.env` (`SUPABASE_URL` + `SUPABASE_ANON_KEY`) for local
 dev/test, and GitHub Actions repository **variables** (not secrets, since
 it isn't one) of the same names, which `.github/workflows/ci.yml` reads
-for the integration test. The static site itself (browser client, and
+for the integration test (falling back to a secret of the same name when
+no variable is set). The static site itself (browser client, and
 `site.py`'s build-time read) never uses `service_role` — every user
 write goes through RLS as an authenticated (including anonymous) user.
 The one exception is `service_role` inside the three ingestion Edge
