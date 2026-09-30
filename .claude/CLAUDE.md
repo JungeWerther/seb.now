@@ -374,11 +374,20 @@ round tag button (`.details-btn`, left of the reply button) opens it with
 Back steps between pages, Forward returns, and closing (✕, backdrop, Escape)
 jumps straight back to the feed; visiting the address directly opens it at
 depth 0 and closing replaces the address with `/`. Related links come from
-`public.related_links(link, max_results)` (security invoker): shared entities
-count double, shared leaf topics once, each weighted p × p, newest first on
-ties; it returns the shared names, shown under each related link ("Shares
-OpenAI, AI industry"), and each related link has its own tag button to go a
-level deeper. Its lists use `.link-list`, not `.articles`: the feed is found
+`public.related_links(link, max_results, page_offset)` (security invoker):
+shared entities count double, shared leaf topics once, each weighted p × p,
+newest first on ties, then id, so pages never skip or repeat; it returns the
+shared names, shown under each related link ("Shares OpenAI, AI industry"),
+and each related link has its own tag button to go a level deeper. They load
+a page (`RELATED_PAGE_SIZE`) at a time as you scroll, through an
+IntersectionObserver on `#link-related-sentinel` rooted at the dialog, and
+fill a grid that widens with the box: scrolling sets `--grow` (0 → 1 over
+`LINK_PAGE_GROW_DISTANCE_PX`), which interpolates the dialog from its normal
+size to the full viewport and fades its corners and border. The post stays at
+the top of the same scroll, so scrolling back up (or the sticky header's ↑,
+`#link-up`, shown past `LINK_PAGE_UP_AFTER_PX`) returns to it and shrinks the
+box again. `#link-up` is `.overlay-up`, not `.overlay-close`: the menu wires
+the first `.overlay-close` in each dialog to close it. Its lists use `.link-list`, not `.articles`: the feed is found
 with `querySelector("ul.articles")`.
 
 Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the

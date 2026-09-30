@@ -348,7 +348,8 @@
     }
     .overlay-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
     .overlay-title { font-size: 1.2rem; font-weight: 700; margin: 0; }
-    .overlay-close {
+    .overlay-close,
+    .overlay-up {
       display: flex;
       padding: 0.3rem;
       border: none;
@@ -358,8 +359,11 @@
       opacity: 0.6;
       cursor: pointer;
     }
-    .overlay-close:hover { opacity: 1; background: var(--post-bg); }
-    .overlay-close svg { width: 1.1rem; height: 1.1rem; }
+    .overlay-close:hover,
+    .overlay-up:hover { opacity: 1; background: var(--post-bg); }
+    .overlay-close svg,
+    .overlay-up svg { width: 1.1rem; height: 1.1rem; }
+    .overlay-up[hidden] { display: none; }
     #profile-overlay label { display: block; font-size: 0.8rem; color: gray; margin-bottom: 0.3rem; }
     #profile-overlay .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
     #handle-input {
@@ -634,7 +638,29 @@
     }
     .swipe-content .reply-btn:hover,
     .swipe-content .details-btn:hover { color: var(--fg); border-color: rgba(128, 128, 128, 0.6); }
-    #link-overlay { width: min(560px, calc(100vw - 2 * var(--gutter))); }
+    #link-overlay {
+      --grow: 0;
+      --base-width: min(560px, calc(100vw - 2 * var(--gutter)));
+      --base-height: calc(100dvh - 2 * var(--header-height));
+      width: calc(var(--base-width) + (100vw - var(--base-width)) * var(--grow));
+      max-width: 100vw;
+      max-height: calc(var(--base-height) + (100dvh - var(--base-height)) * var(--grow));
+      border-radius: calc(16px * (1 - var(--grow)));
+      border-width: calc(1px * (1 - var(--grow)));
+      padding-top: 0;
+    }
+    #link-overlay > * { max-width: 1100px; margin-inline: auto; }
+    #link-overlay .overlay-head {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      gap: 0.25rem;
+      margin-bottom: 0.5rem;
+      padding: 1.25rem 0 0.5rem;
+      background: var(--bg);
+    }
+    #link-overlay .overlay-title { margin-right: auto; }
+    #link-related-sentinel { height: 1px; }
     .link-list { list-style: none; margin: 0; padding: 0; }
     #link-overlay .swipe-bg,
     #link-overlay .post-footer .score,
@@ -662,7 +688,7 @@
     }
     .tag.entity { border-color: var(--positive); }
     .tag .tag-detail { margin-left: 0.35rem; font-size: 0.65rem; color: gray; }
-    .related-list li.article + li.article { margin-top: 0.9rem; }
+    .related-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 0.9rem 1.25rem; }
     .related-why { margin: 0.4rem 0 0; font-size: 0.7rem; color: gray; }
     #link-overlay .link-main li.article { margin-bottom: 0; }
     li.article.replying .reply-btn { color: var(--positive); border-color: var(--positive); }
@@ -845,6 +871,7 @@
   <dialog id="link-overlay" class="overlay" aria-labelledby="link-title">
     <div class="overlay-head">
       <p class="overlay-title" id="link-title">Post</p>
+      <button id="link-up" class="overlay-up" aria-label="Back to the post" hidden><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></button>
       <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     </div>
     <p id="link-status"></p>
@@ -855,6 +882,7 @@
     <ul class="tag-list" id="link-topics"></ul>
     <p class="link-section-title" id="link-related-title" hidden>Related</p>
     <ul class="link-list related-list" id="link-related"></ul>
+    <div id="link-related-sentinel" aria-hidden="true"></div>
   </dialog>
   <p id="search-empty">No matching articles.</p>
   <!--ARTICLES-->
@@ -1684,17 +1712,28 @@
     }
 
     // A link's own page, seb.now/p/<id>: the link with all its entities and
-    // topics, and the links most related to it (related_links, which says what
-    // they share). It opens over the feed from an article's tag button, pushed
-    // onto history with its depth (how many pages deep from the feed), so Back
-    // steps between pages and closing returns to the feed in one go; visiting
-    // the address directly opens it at depth 0.
+    // topics, and the links related to it (related_links, which says what they
+    // share), loaded a page at a time as you scroll. The further you scroll, the
+    // more the box grows, until it fills the screen (--grow, 0 to 1 over
+    // LINK_PAGE_GROW_DISTANCE_PX); the post stays at the top of the same scroll,
+    // so scrolling back up (or the ↑ button) returns to it and shrinks the box
+    // again. It opens over the feed from an article's tag button, pushed onto
+    // history with its depth (how many pages deep from the feed), so Back steps
+    // between pages and closing returns to the feed in one go; visiting the
+    // address directly opens it at depth 0.
     const LINK_PAGE_SELECT = `${FEED_SELECT}, link_entities(p, entities(name, kind))`;
-    const RELATED_LINKS = 10;
+    const RELATED_PAGE_SIZE = 10;
+    const RELATED_PREFETCH_MARGIN_PX = 800;
+    const LINK_PAGE_GROW_DISTANCE_PX = 900;
+    const LINK_PAGE_UP_AFTER_PX = 600;
     const linkOverlay = document.getElementById("link-overlay");
+    const relatedList = document.getElementById("link-related");
+    const relatedSentinel = document.getElementById("link-related-sentinel");
+    const linkUpButton = document.getElementById("link-up");
     let linkPageGeneration = 0;
     let linkPageDepth = 0;
     let closingFromHistory = false;
+    const relatedFeed = { id: null, offset: 0, done: true, loading: false, seen: new Set() };
 
     function linkIdFromPath() {
       return location.pathname.match(POST_PATH_PATTERN)?.[1] ?? null;
@@ -1720,6 +1759,70 @@
       document.getElementById(`${listId}-title`).hidden = items.length === 0;
     }
 
+    function relatedItem(row, shared) {
+      const item = renderArticle(row);
+      if (!item) return null;
+      const why = document.createElement("p");
+      why.className = "related-why";
+      why.textContent = `Shares ${shared.join(", ")}`;
+      item.querySelector(".post-footer").before(why);
+      return item;
+    }
+
+    function relatedSentinelNear() {
+      const bottom = linkOverlay.getBoundingClientRect().bottom;
+      return relatedSentinel.getBoundingClientRect().top < bottom + RELATED_PREFETCH_MARGIN_PX;
+    }
+
+    async function loadMoreRelated() {
+      const generation = linkPageGeneration;
+      if (relatedFeed.loading || relatedFeed.done) return;
+      relatedFeed.loading = true;
+      const client = await supabaseReady;
+      const { data: related, error } = await client.rpc("related_links", {
+        link: relatedFeed.id,
+        max_results: RELATED_PAGE_SIZE,
+        page_offset: relatedFeed.offset,
+      });
+      if (generation !== linkPageGeneration) return;
+      relatedFeed.loading = false;
+      if (error) {
+        console.error("failed to load related links", error);
+        relatedFeed.done = true;
+        return;
+      }
+      relatedFeed.offset += related.length;
+      if (related.length < RELATED_PAGE_SIZE) relatedFeed.done = true;
+      const fresh = related.filter((r) => !relatedFeed.seen.has(r.link_id));
+      for (const r of fresh) relatedFeed.seen.add(r.link_id);
+      if (fresh.length > 0) {
+        const ids = fresh.map((r) => r.link_id);
+        const { data: rows, error: rowsError } = await client.from("links").select(FEED_SELECT).in("id", ids);
+        if (generation !== linkPageGeneration) return;
+        if (rowsError) {
+          console.error("failed to load related links", rowsError);
+          relatedFeed.done = true;
+          return;
+        }
+        const byId = new Map(rows.map((row) => [row.id, row]));
+        relatedList.append(
+          ...fresh
+            .map((r) => byId.get(r.link_id) && relatedItem(byId.get(r.link_id), [...r.shared_entities, ...r.shared_topics]))
+            .filter(Boolean),
+        );
+        document.getElementById("link-related-title").hidden = relatedList.children.length === 0;
+      }
+      // A short page may leave the sentinel in view, and the observer only
+      // fires when it enters.
+      if (!relatedFeed.done && relatedSentinelNear()) loadMoreRelated();
+    }
+
+    function updateLinkPageGrowth() {
+      const scrolled = linkOverlay.scrollTop;
+      linkOverlay.style.setProperty("--grow", Math.min(1, scrolled / LINK_PAGE_GROW_DISTANCE_PX).toFixed(3));
+      linkUpButton.hidden = scrolled < LINK_PAGE_UP_AFTER_PX;
+    }
+
     async function loadLinkPage(id) {
       const generation = ++linkPageGeneration;
       const status = document.getElementById("link-status");
@@ -1727,13 +1830,12 @@
       status.textContent = "Loading…";
       main.replaceChildren();
       for (const listId of ["link-entities", "link-topics", "link-related"]) showLinkSection(listId, []);
+      Object.assign(relatedFeed, { id, offset: 0, done: true, loading: false, seen: new Set([id]) });
       linkOverlay.scrollTop = 0;
+      updateLinkPageGrowth();
 
       const client = await supabaseReady;
-      const [{ data: row, error }, { data: related, error: relatedError }] = await Promise.all([
-        client.from("links").select(LINK_PAGE_SELECT).eq("id", id).maybeSingle(),
-        client.rpc("related_links", { link: id, max_results: RELATED_LINKS }),
-      ]);
+      const { data: row, error } = await client.from("links").select(LINK_PAGE_SELECT).eq("id", id).maybeSingle();
       if (generation !== linkPageGeneration) return;
       const li = row && renderArticle(row);
       if (error || !li) {
@@ -1756,33 +1858,8 @@
           .sort((a, b) => b.p - a.p)
           .map((lt) => tagItem(lt.topics.name, "", "topic")),
       );
-
-      if (relatedError) console.error("failed to load related links", relatedError);
-      if (relatedError || related.length === 0) return;
-      const ids = related.map((r) => r.link_id);
-      const { data: rows, error: rowsError } = await client.from("links").select(FEED_SELECT).in("id", ids);
-      if (generation !== linkPageGeneration) return;
-      if (rowsError) {
-        console.error("failed to load related links", rowsError);
-        return;
-      }
-      const shared = new Map(related.map((r) => [r.link_id, [...r.shared_entities, ...r.shared_topics]]));
-      const position = new Map(ids.map((relatedId, i) => [relatedId, i]));
-      rows.sort((a, b) => position.get(a.id) - position.get(b.id));
-      showLinkSection(
-        "link-related",
-        rows
-          .map((relatedRow) => {
-            const item = renderArticle(relatedRow);
-            if (!item) return null;
-            const why = document.createElement("p");
-            why.className = "related-why";
-            why.textContent = `Shares ${shared.get(relatedRow.id).join(", ")}`;
-            item.querySelector(".post-footer").before(why);
-            return item;
-          })
-          .filter(Boolean),
-      );
+      relatedFeed.done = false;
+      loadMoreRelated();
     }
 
     function openLinkPage(id, { push = true } = {}) {
@@ -1795,6 +1872,22 @@
     }
 
     function setupLinkPage() {
+      new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) loadMoreRelated();
+      }, { root: linkOverlay, rootMargin: `0px 0px ${RELATED_PREFETCH_MARGIN_PX}px 0px` }).observe(relatedSentinel);
+      let growthFrame = 0;
+      linkOverlay.addEventListener("scroll", () => {
+        if (!growthFrame) {
+          growthFrame = requestAnimationFrame(() => {
+            growthFrame = 0;
+            updateLinkPageGrowth();
+          });
+        }
+      }, { passive: true });
+      linkUpButton.addEventListener("click", () => {
+        const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        linkOverlay.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
+      });
       document.addEventListener("click", (event) => {
         const button = event.target.closest(".details-btn");
         const id = button?.closest("li.article")?.dataset.linkId;
@@ -1802,6 +1895,7 @@
       });
       linkOverlay.addEventListener("close", () => {
         linkPageGeneration++;
+        linkOverlay.style.setProperty("--grow", "0");
         if (closingFromHistory) {
           closingFromHistory = false;
           return;
