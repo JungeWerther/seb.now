@@ -255,10 +255,7 @@ def test_render_includes_svg_wordmark() -> None:
 
     assert '<h1 class="brand">' in html
     assert '<svg class="wordmark"' in html
-    tagline = html[html.index('<span class="tagline">') :]
-    assert tagline.startswith(
-        '<span class="tagline"><span class="tagline-word">your</span> <span class="tagline-word">own</span> feed</span>'
-    )
+    assert "tagline" not in html
     assert 'aria-label="seb.now"' in html
     assert ">seb<" in html
     assert ">now<" in html
