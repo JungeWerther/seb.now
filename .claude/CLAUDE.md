@@ -369,29 +369,30 @@ client-side and listed under the post. No moderation or rate limiting
 yet — anyone with an anonymous session can post.
 
 **A link's own page.** Every link has a page at `seb.now/p/<id>` (the same
-address a federated post links to, served by the catch-all document): a
-`<dialog id="link-overlay">` over the feed showing the link, all its entities
-(with their kind) and topics as chips, and its related links. Each article's
-round tag button (`.details-btn`, left of the reply button) opens it with
-`history.pushState`, storing how many pages deep it is (`linkPageDepth`), so
-Back steps between pages, Forward returns, and closing (✕, backdrop, Escape)
-jumps straight back to the feed; visiting the address directly opens it at
-depth 0 and closing replaces the address with `/`. Related links come from
-`public.related_links(link, max_results, page_offset)` (security invoker):
-shared entities count double, shared leaf topics once, each weighted p × p,
-newest first on ties, then id, so pages never skip or repeat; it returns the
-shared names, shown under each related link ("Shares OpenAI, AI industry"),
-and each related link has its own tag button to go a level deeper. They load
-a page (`RELATED_PAGE_SIZE`) at a time as you scroll, through an
-IntersectionObserver on `#link-related-sentinel` rooted at the dialog, and
-fill a grid that widens with the box: scrolling sets `--grow` (0 → 1 over
-`LINK_PAGE_GROW_DISTANCE_PX`), which interpolates the dialog from its normal
-size to the full viewport and fades its corners and border. The post stays at
-the top of the same scroll, so scrolling back up (or the sticky header's ↑,
-`#link-up`, shown past `LINK_PAGE_UP_AFTER_PX`) returns to it and shrinks the
-box again. `#link-up` is `.overlay-up`, not `.overlay-close`: the menu wires
-the first `.overlay-close` in each dialog to close it. Its lists use `.link-list`, not `.articles`: the feed is found
-with `querySelector("ul.articles")`.
+address a federated post links to, served by the catch-all document). Tapping a
+post's card (`.post`) anywhere but its links and buttons opens it in place
+(`focusLink`), not in a dialog: the card flies (FLIP, `FOCUS_MOVE_MS`) into
+`#focus` at the top of the page, above the feed list, followed by all its
+entities (with their kind) and topics as chips; `html.focused` fades in a black
+band behind it (`--focus-dark`, a registered `@property`, so the gradient can
+transition) that fades back to the page colour over a screen's height below
+`--focus-end`, the section's bottom (kept current by a ResizeObserver). The feed
+list itself is swapped for the related links (`feed.related`, the same
+`loadMore`/infinite scroll/hydration as the ranked feed, so they're voteable and
+repliable), from `public.related_links(link, max_results, page_offset)`
+(security invoker): shared entities count double, shared leaf topics once, each
+weighted p × p, newest first on ties, then id, so pages never skip or repeat;
+the shared names show under each ("Shares OpenAI, AI industry"), and tapping one
+goes a level deeper. Each step is `history.pushState`d with its depth
+(`focusDepth`), so Back steps between posts; the ← Feed button goes back all
+the way at once, and the feed returns exactly as it was left (its items and
+`feed` state saved on the way in, scroll position included, the card flying
+back into its slot). A direct visit opens at depth 0 and leaving starts a fresh
+feed. A search leaves the focused view; back-to-top there just scrolls up. The
+swipe handler swallows the click after any gesture past `SWIPE_CAPTURE_SLOP_PX`,
+so a swipe or scroll never opens a card. Rows are transparent while the band
+shows (`.swipe-content` normally paints `--bg`). `#focus-main` is a `.link-list`,
+not `.articles`: the feed is found with `querySelector("ul.articles")`.
 
 Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the
 vote tints (`.swipe-bg`) and the `.post` that slides over them, so the
