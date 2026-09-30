@@ -56,9 +56,3 @@ export class JevClient {
   }
 }
 
-// `link_enrichment` embedded in a `links` select: PostgREST returns the one-to-one
-// row as an object (or null), while supabase-js types it as an array.
-export function enrichedAt(embed: unknown, key: "topics_at" | "entities_at"): string | null {
-  const row = Array.isArray(embed) ? embed[0] : embed;
-  return (row as Record<string, string | null> | null)?.[key] ?? null;
-}

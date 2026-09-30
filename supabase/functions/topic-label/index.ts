@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { ChoiceQuestion, enrichedAt, JevClient } from "../_shared/jev.ts";
+import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
 
 // Labels links with leaf topics by walking the topic tree with Jev: at each
 // node one Choice over its children, keeping the BEAM_WIDTH best paths by
@@ -162,16 +162,13 @@ async function pool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>)
 }
 
 async function unlabelledLinks(db: SupabaseClient): Promise<Link[]> {
-  const { data, error } = await db
-    .from("links")
-    .select("id, title, url, description, link_topics(link_id), link_enrichment(topics_at)")
-    .order("created_at", { ascending: false })
-    .limit(LINKS_PER_RUN * 10);
+  const { data: rows, error } = await db.rpc("links_to_enrich", { step: "topics", max_results: LINKS_PER_RUN });
   if (error) throw new Error(error.message);
-  return data
-    .filter((l) => !l.link_topics.length && !enrichedAt(l.link_enrichment, "topics_at"))
-    .slice(0, LINKS_PER_RUN)
-    .map(({ link_topics: _, link_enrichment: __, ...l }) => l as Link);
+  const ids = (rows as { link_id: string }[]).map((r) => r.link_id);
+  if (!ids.length) return [];
+  const { data, error: linksError } = await db.from("links").select("id, title, url, description").in("id", ids);
+  if (linksError) throw new Error(linksError.message);
+  return data;
 }
 
 Deno.serve(async (req: Request) => {

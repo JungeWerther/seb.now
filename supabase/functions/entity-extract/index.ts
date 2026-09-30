@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { ChoiceQuestion, enrichedAt, JevClient, JsonValue } from "../_shared/jev.ts";
+import { ChoiceQuestion, JevClient, JsonValue } from "../_shared/jev.ts";
 import { candidates } from "./candidates.ts";
 
 // Finds the named entities a link's title mentions and links each to a row in
@@ -23,7 +23,7 @@ const TYPESAFE_KEY_SECRET = "typesafe-ai-token";
 const NAME_MIN_P = 0.8;
 const MATCH_MIN_P = 0.5;
 const CANDIDATE_ENTITIES = 8;
-const LINKS_PER_RUN = 20;
+const LINKS_PER_RUN = 30;
 const MAX_LINK_IDS = 50;
 const NEW_ENTITY = "new";
 
@@ -197,16 +197,13 @@ async function createEntity(db: SupabaseClient, name: string, kind: Kind): Promi
 }
 
 async function unprocessedLinks(db: SupabaseClient): Promise<Link[]> {
-  const { data, error } = await db
-    .from("links")
-    .select("id, title, url, link_enrichment(entities_at)")
-    .order("created_at", { ascending: false })
-    .limit(LINKS_PER_RUN * 10);
+  const { data: rows, error } = await db.rpc("links_to_enrich", { step: "entities", max_results: LINKS_PER_RUN });
   if (error) throw new Error(error.message);
-  return data
-    .filter((l) => !enrichedAt(l.link_enrichment, "entities_at"))
-    .slice(0, LINKS_PER_RUN)
-    .map(({ link_enrichment: _, ...l }) => l as Link);
+  const ids = (rows as { link_id: string }[]).map((r) => r.link_id);
+  if (!ids.length) return [];
+  const { data, error: linksError } = await db.from("links").select("id, title, url").in("id", ids);
+  if (linksError) throw new Error(linksError.message);
+  return data;
 }
 
 Deno.serve(async (req: Request) => {
