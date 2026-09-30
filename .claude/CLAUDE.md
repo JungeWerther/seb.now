@@ -138,8 +138,9 @@ After it comes the post's date, `links.created_at` (`posted_label` in
 `site.py`, `postedLabel` in the page script: "Sep 27", plus the year when it
 isn't this year's, in UTC), in a `<time class="posted">` that stays in the
 flex row even when empty, since it's what pushes the topic chips right.
-`created_at` is the original publication date for YouTube and `web_feed`
-links; for the other ingests it's when the link was first ingested.
+`created_at` is the original publication date for YouTube, `web_feed` and
+TechCrunch links (its RSS `pubDate`); for the other ingests it's when the link
+was first ingested.
 
 Both upsert into `links` as `origin: 'feed'`, `onConflict: 'url'` (falling
 back to the HN item's own discussion-page URL when a story has no

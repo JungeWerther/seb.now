@@ -27,6 +27,13 @@ function extractTag(block: string, tag: string): string | null {
   return match ? decodeEntities(match[1]) : null;
 }
 
+// A future or unparseable date is left out, so the link keeps ingest time.
+function pastDate(raw: string | null): string | null {
+  if (!raw) return null;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) || date.getTime() > Date.now() ? null : date.toISOString();
+}
+
 // The feed carries no images, so read each article's og:image cover.
 async function scrapeCoverImage(pageUrl: string): Promise<string | null> {
   try {
@@ -56,13 +63,25 @@ Deno.serve(async (_req: Request) => {
   const errors: unknown[] = [];
 
   const items = itemBlocks.slice(0, ITEMS_LIMIT)
-    .map((block) => ({ title: extractTag(block, "title"), link: extractTag(block, "link") }))
-    .filter((item): item is { title: string; link: string } => !!item.title && !!item.link);
+    .map((block) => ({
+      title: extractTag(block, "title"),
+      link: extractTag(block, "link"),
+      published: pastDate(extractTag(block, "pubDate")),
+    }))
+    .filter((item): item is { title: string; link: string; published: string | null } => !!item.title && !!item.link);
   const images = await Promise.all(items.map((item) => scrapeCoverImage(item.link)));
 
-  for (const [i, { title, link }] of items.entries()) {
-    // Omitted rather than null when the scrape fails, so a flaky fetch keeps an earlier image.
-    const row = { url: link, title, origin: "feed", submitted_by: null, ...(images[i] ? { image_url: images[i] } : {}) };
+  for (const [i, { title, link, published }] of items.entries()) {
+    // Omitted rather than null when missing, so a flaky fetch keeps an earlier image
+    // and an undated item keeps the time it was first ingested.
+    const row = {
+      url: link,
+      title,
+      origin: "feed",
+      submitted_by: null,
+      ...(published ? { created_at: published } : {}),
+      ...(images[i] ? { image_url: images[i] } : {}),
+    };
     const { error } = await supabase.from("links").upsert(row, { onConflict: "url" });
     if (error) errors.push({ link, error: error.message });
     else upserted++;
