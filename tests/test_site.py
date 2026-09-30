@@ -222,12 +222,28 @@ def test_link_page_shows_tags_and_related_links_at_the_links_own_address() -> No
         assert f'id="{list_id}-title" hidden' in html
     script = html[html.index('<script type="module">') :]
     assert 'rpc("related_links"' in script
+    assert "page_offset: relatedFeed.offset" in script
     assert "link_entities(p, entities(name, kind))" in script
     assert "history.pushState" in script and "`/p/${id}`" in script
     assert "setupLinkPage();" in script
     # The feed is found with querySelector("ul.articles"), so no other list may
     # carry that class.
     assert html.count('<ul class="articles') == 1
+
+
+def test_link_page_scrolls_related_links_in_and_grows_to_full_screen() -> None:
+    html = render([])
+
+    dialog = html[html.index('<dialog id="link-overlay"') : html.index("</dialog>", html.index('<dialog id="link-overlay"'))]
+    assert '<div id="link-related-sentinel" aria-hidden="true"></div>' in dialog
+    # The back-to-post button must not carry .overlay-close: the menu wires the
+    # first .overlay-close in each dialog to close it.
+    assert '<button id="link-up" class="overlay-up" aria-label="Back to the post" hidden>' in dialog
+    assert dialog.index('id="link-up"') < dialog.index('class="overlay-close"')
+    assert "width: calc(var(--base-width) + (100vw - var(--base-width)) * var(--grow));" in html
+    script = html[html.index('<script type="module">') :]
+    assert "root: linkOverlay" in script
+    assert 'setProperty("--grow"' in script
 
 
 def test_render_includes_reply_composer_in_the_dock() -> None:
