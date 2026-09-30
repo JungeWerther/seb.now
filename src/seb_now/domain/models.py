@@ -84,7 +84,10 @@ class Entity(BaseModel):
 
     id: UUID
     name: str
-    kind: Literal["company", "cooperative", "nonprofit", "public_body"]
+    kind: Literal[
+        "company", "cooperative", "nonprofit", "public_body",
+        "person", "product", "place", "event", "work", "other",
+    ]
     nace_code: str | None = None
     country: str | None = None
     wikidata_id: str | None = None
@@ -98,3 +101,7 @@ class LinkEntity(BaseModel):
 
     link_id: UUID
     entity_id: UUID
+    surface: str | None = None
+    p: float
+    labeled_by: Literal["manual", "jev"]
+    created_at: datetime

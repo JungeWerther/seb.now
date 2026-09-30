@@ -1,13 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { ChoiceQuestion, JevClient } from "./jev.ts";
+import { ChoiceQuestion, enrichedAt, JevClient } from "../_shared/jev.ts";
 
 // Labels links with leaf topics by walking the topic tree with Jev: at each
 // node one Choice over its children, keeping the BEAM_WIDTH best paths by
 // geometric-mean edge probability (so a shallow leaf and a deep one compare
 // fairly), and labelling the distinct leaves of the final beam that score at
 // least MIN_LABEL_SCORE, with p = that score. Only links with no labels at all
-// are picked up, so hand labels are never touched or doubled.
+// are picked up, so hand labels are never touched or doubled, and each processed
+// link gets `link_enrichment.topics_at`, so one that no path fitted isn't retried.
 //
 // POST {} labels up to LINKS_PER_RUN unlabelled links, newest first.
 // POST {"link_ids": [...], "dry_run": true} returns labels without writing
@@ -163,14 +164,14 @@ async function pool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>)
 async function unlabelledLinks(db: SupabaseClient): Promise<Link[]> {
   const { data, error } = await db
     .from("links")
-    .select("id, title, url, description, link_topics(link_id)")
+    .select("id, title, url, description, link_topics(link_id), link_enrichment(topics_at)")
     .order("created_at", { ascending: false })
     .limit(LINKS_PER_RUN * 10);
   if (error) throw new Error(error.message);
   return data
-    .filter((l: Link & { link_topics: unknown[] }) => !l.link_topics.length)
+    .filter((l) => !l.link_topics.length && !enrichedAt(l.link_enrichment, "topics_at"))
     .slice(0, LINKS_PER_RUN)
-    .map(({ link_topics: _, ...l }: Link & { link_topics: unknown[] }) => l);
+    .map(({ link_topics: _, link_enrichment: __, ...l }) => l as Link);
 }
 
 Deno.serve(async (req: Request) => {
@@ -216,6 +217,11 @@ Deno.serve(async (req: Request) => {
       const { error } = await db.from("link_topics").upsert(rows, { onConflict: "link_id,topic_id", ignoreDuplicates: true });
       if (error) errors.push({ write: error.message });
       else written = rows.length;
+    }
+    if (results.length) {
+      const at = new Date().toISOString();
+      const { error } = await db.from("link_enrichment").upsert(results.map((r) => ({ link_id: r!.link_id, topics_at: at })));
+      if (error) errors.push({ enrichment: error.message });
     }
   }
 

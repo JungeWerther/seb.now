@@ -190,9 +190,9 @@ link's title, host and (when set) description. `POST {"link_ids": [...],
 "dry_run": true}` returns labels without writing, for evaluation: on 60
 hand-labelled links the top Jev label matched a hand label (same topic, or
 one an ancestor of the other) for 46, any Jev label for 49, and the top-level
-area for 52, at ~1,600 input tokens and 2 requests per link. `jev.ts` beside it
-is a small typed System One client. To undo: `delete from link_topics where
-labeled_by = 'jev'`.
+area for 52, at ~1,600 input tokens and 2 requests per link.
+`functions/_shared/jev.ts` is a small typed System One client. To undo:
+`delete from link_topics where labeled_by = 'jev'`.
 
 The `economy` branch is not hand-made: it is the full JEL classification
 (Journal of Economic Literature, AEA — 1,015 codes), with JEL's own hierarchy as
@@ -215,6 +215,26 @@ passenger transportation*, a taxi operator 49.33. `public.link_entities` links
 articles to the entities they cover. All three are public-read,
 service_role-write; only look up a `wikidata_id` (never recall one), and leave
 `nace_code` null rather than guess.
+
+Entities aren't only organisations: `kind` also allows person, product, place,
+event, work and other (`nace_code` stays for organisations). The
+**`entity-extract`** Edge Function fills them from titles, invoked by hand for
+now (no cron yet): `candidates.ts` proposes phrases (compromise's noun chunks,
+whole and split at connecting words and possessives, plus capitalised runs, their
+two-word windows and camel-case words; pronouns, leading number words and
+phrases with a possessive inside dropped); one Jev request
+per link asks of each whether it's a name, a concept or neither, and its kind;
+names with p ≥ 0.8 are matched against existing entities by
+`public.entity_candidates(phrase)` (trigram similarity on names and past
+mention texts) — an exact name is taken, otherwise Jev picks one of the
+candidates or "none", and none creates the entity. Links run one at a time so
+a new entity is matchable by the next link. Jev's mentions land in
+`link_entities` with `surface` (the text as written, which doubles as an
+alias), `p` and `labeled_by = 'jev'`; hand rows default to `manual`, p 1.
+`public.link_enrichment (link_id, topics_at, entities_at)` records when each
+automatic step last ran on a link (service_role only), so `topic-label` and
+`entity-extract` don't retry links that yielded nothing. Both functions share
+`functions/_shared/jev.ts`.
 
 A user's preference is derived, not stored: the
 `public.user_topic_preferences` view (`security_invoker`, so RLS on
