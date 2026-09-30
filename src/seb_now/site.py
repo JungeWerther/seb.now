@@ -1,5 +1,8 @@
 """Render index.html: a flat list of articles, each tagged with its top topics.
 
+Each article's tag button opens its own page (seb.now/p/<id>): the page script
+shows the link with all its topics and entities, and its related links.
+
 Feed: the `links` table in Supabase (title + url per row), read with the
 public anon client, with each link's `link_topics` labels embedded. Each
 article shows its ARTICLE_TOPIC_CHIPS highest-p topics as chips. Only the
@@ -233,6 +236,14 @@ def _render_article(article: Article) -> str:
         f'<span class="score-value">0</span>'
         f"</span>"
         f'<span class="reply-count" hidden></span>'
+        f'<button type="button" class="details-btn" aria-label="Tags and related links">'
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" '
+        f'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        f'<path d="m15 5 6.3 6.3a2.4 2.4 0 0 1 0 3.4L17 19"/>'
+        f'<path d="M9.586 5.586A2 2 0 0 0 8.172 5H3a1 1 0 0 0-1 1v5.172a2 2 0 0 0 .586 1.414L8.29 18.29a2.426 2.426 0 0 0 3.42 0l3.58-3.58a2.426 2.426 0 0 0 0-3.42z"/>'
+        f'<circle cx="6.5" cy="9.5" r=".5" fill="currentColor"/>'
+        f"</svg>"
+        f"</button>"
         f'<button type="button" class="reply-btn" aria-label="Reply">'
         f'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" '
         f'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'

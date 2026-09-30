@@ -360,6 +360,22 @@ bar for a reply composer in the same dock; replies are loaded
 client-side and listed under the post. No moderation or rate limiting
 yet — anyone with an anonymous session can post.
 
+**A link's own page.** Every link has a page at `seb.now/p/<id>` (the same
+address a federated post links to, served by the catch-all document): a
+`<dialog id="link-overlay">` over the feed showing the link, all its entities
+(with their kind) and topics as chips, and its related links. Each article's
+round tag button (`.details-btn`, left of the reply button) opens it with
+`history.pushState`, storing how many pages deep it is (`linkPageDepth`), so
+Back steps between pages, Forward returns, and closing (✕, backdrop, Escape)
+jumps straight back to the feed; visiting the address directly opens it at
+depth 0 and closing replaces the address with `/`. Related links come from
+`public.related_links(link, max_results)` (security invoker): shared entities
+count double, shared leaf topics once, each weighted p × p, newest first on
+ties; it returns the shared names, shown under each related link ("Shares
+OpenAI, AI industry"), and each related link has its own tag button to go a
+level deeper. Its lists use `.link-list`, not `.articles`: the feed is found
+with `querySelector("ul.articles")`.
+
 Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the
 vote tints (`.swipe-bg`) and the `.post` that slides over them, so the
 favicon, domain/chips line and replies don't react. While dragged, the

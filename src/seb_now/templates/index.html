@@ -602,7 +602,8 @@
     }
     .post-footer .score.positive { color: var(--positive); }
     .post-footer .score.negative { color: var(--negative); }
-    .swipe-content .reply-btn {
+    .swipe-content .reply-btn,
+    .swipe-content .details-btn {
       display: flex;
       align-items: center;
       justify-content: center;
@@ -615,7 +616,39 @@
       color: gray;
       cursor: pointer;
     }
-    .swipe-content .reply-btn:hover { color: var(--fg); border-color: rgba(128, 128, 128, 0.6); }
+    .swipe-content .reply-btn:hover,
+    .swipe-content .details-btn:hover { color: var(--fg); border-color: rgba(128, 128, 128, 0.6); }
+    #link-overlay { width: min(560px, calc(100vw - 2 * var(--gutter))); }
+    .link-list { list-style: none; margin: 0; padding: 0; }
+    #link-overlay .swipe-bg,
+    #link-overlay .post-footer .score,
+    #link-overlay .reply-count,
+    #link-overlay .reply-btn,
+    #link-overlay .replies,
+    #link-overlay .link-main .post-footer { display: none; }
+    #link-status { color: gray; font-size: 0.85rem; margin: 0; }
+    #link-status:empty { display: none; }
+    .link-section-title {
+      margin: 1.2rem 0 0.45rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: gray;
+    }
+    .tag-list { display: flex; flex-wrap: wrap; gap: 0.35rem; list-style: none; margin: 0; padding: 0; }
+    .tag {
+      font-size: 0.75rem;
+      line-height: 1.5;
+      padding: 0.05rem 0.6rem;
+      border: 1px solid rgba(128, 128, 128, 0.35);
+      border-radius: 999px;
+    }
+    .tag.entity { border-color: var(--positive); }
+    .tag .tag-detail { margin-left: 0.35rem; font-size: 0.65rem; color: gray; }
+    .related-list li.article + li.article { margin-top: 0.9rem; }
+    .related-why { margin: 0.4rem 0 0; font-size: 0.7rem; color: gray; }
+    #link-overlay .link-main li.article { margin-bottom: 0; }
     li.article.replying .reply-btn { color: var(--positive); border-color: var(--positive); }
     .swipe-content .replies {
       list-style: none;
@@ -793,6 +826,20 @@
     </div>
     <p id="profile-hint">Lowercase letters, numbers and _. It's also your fediverse account, <span id="profile-fediverse-name"></span>: your comments are posted there too, and a comment on a link shares that link.</p>
     <p id="profile-status"></p>
+  </dialog>
+  <dialog id="link-overlay" class="overlay" aria-labelledby="link-title">
+    <div class="overlay-head">
+      <p class="overlay-title" id="link-title">Post</p>
+      <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
+    <p id="link-status"></p>
+    <ul class="link-list link-main"></ul>
+    <p class="link-section-title" id="link-entities-title" hidden>Entities</p>
+    <ul class="tag-list" id="link-entities"></ul>
+    <p class="link-section-title" id="link-topics-title" hidden>Topics</p>
+    <ul class="tag-list" id="link-topics"></ul>
+    <p class="link-section-title" id="link-related-title" hidden>Related</p>
+    <ul class="link-list related-list" id="link-related"></ul>
   </dialog>
   <p id="search-empty">No matching articles.</p>
   <!--ARTICLES-->
@@ -1611,6 +1658,151 @@
       await hydrateArticles([li]);
     }
 
+    // A link's own page, seb.now/p/<id>: the link with all its entities and
+    // topics, and the links most related to it (related_links, which says what
+    // they share). It opens over the feed from an article's tag button, pushed
+    // onto history with its depth (how many pages deep from the feed), so Back
+    // steps between pages and closing returns to the feed in one go; visiting
+    // the address directly opens it at depth 0.
+    const LINK_PAGE_SELECT = `${FEED_SELECT}, link_entities(p, entities(name, kind))`;
+    const RELATED_LINKS = 10;
+    const linkOverlay = document.getElementById("link-overlay");
+    let linkPageGeneration = 0;
+    let linkPageDepth = 0;
+    let closingFromHistory = false;
+
+    function linkIdFromPath() {
+      return location.pathname.match(POST_PATH_PATTERN)?.[1] ?? null;
+    }
+
+    function tagItem(name, detail, kind) {
+      const item = document.createElement("li");
+      item.className = `tag ${kind}`;
+      const label = document.createElement("span");
+      label.textContent = name;
+      item.append(label);
+      if (detail) {
+        const extra = document.createElement("span");
+        extra.className = "tag-detail";
+        extra.textContent = detail;
+        item.append(extra);
+      }
+      return item;
+    }
+
+    function showLinkSection(listId, items) {
+      document.getElementById(listId).replaceChildren(...items);
+      document.getElementById(`${listId}-title`).hidden = items.length === 0;
+    }
+
+    async function loadLinkPage(id) {
+      const generation = ++linkPageGeneration;
+      const status = document.getElementById("link-status");
+      const main = linkOverlay.querySelector(".link-main");
+      status.textContent = "Loading…";
+      main.replaceChildren();
+      for (const listId of ["link-entities", "link-topics", "link-related"]) showLinkSection(listId, []);
+      linkOverlay.scrollTop = 0;
+
+      const client = await supabaseReady;
+      const [{ data: row, error }, { data: related, error: relatedError }] = await Promise.all([
+        client.from("links").select(LINK_PAGE_SELECT).eq("id", id).maybeSingle(),
+        client.rpc("related_links", { link: id, max_results: RELATED_LINKS }),
+      ]);
+      if (generation !== linkPageGeneration) return;
+      const li = row && renderArticle(row);
+      if (error || !li) {
+        status.textContent = error ? "Couldn't load this post." : "This post doesn't exist.";
+        return;
+      }
+      status.textContent = "";
+      main.append(li);
+      showLinkSection(
+        "link-entities",
+        (row.link_entities || [])
+          .filter((le) => le.entities)
+          .sort((a, b) => b.p - a.p)
+          .map((le) => tagItem(le.entities.name, le.entities.kind.replace("_", " "), "entity")),
+      );
+      showLinkSection(
+        "link-topics",
+        (row.link_topics || [])
+          .filter((lt) => lt.topics)
+          .sort((a, b) => b.p - a.p)
+          .map((lt) => tagItem(lt.topics.name, "", "topic")),
+      );
+
+      if (relatedError) console.error("failed to load related links", relatedError);
+      if (relatedError || related.length === 0) return;
+      const ids = related.map((r) => r.link_id);
+      const { data: rows, error: rowsError } = await client.from("links").select(FEED_SELECT).in("id", ids);
+      if (generation !== linkPageGeneration) return;
+      if (rowsError) {
+        console.error("failed to load related links", rowsError);
+        return;
+      }
+      const shared = new Map(related.map((r) => [r.link_id, [...r.shared_entities, ...r.shared_topics]]));
+      const position = new Map(ids.map((relatedId, i) => [relatedId, i]));
+      rows.sort((a, b) => position.get(a.id) - position.get(b.id));
+      showLinkSection(
+        "link-related",
+        rows
+          .map((relatedRow) => {
+            const item = renderArticle(relatedRow);
+            if (!item) return null;
+            const why = document.createElement("p");
+            why.className = "related-why";
+            why.textContent = `Shares ${shared.get(relatedRow.id).join(", ")}`;
+            item.querySelector(".post-footer").before(why);
+            return item;
+          })
+          .filter(Boolean),
+      );
+    }
+
+    function openLinkPage(id, { push = true } = {}) {
+      if (push && linkIdFromPath() !== id) {
+        linkPageDepth++;
+        history.pushState({ linkPageDepth }, "", `/p/${id}`);
+      }
+      if (!linkOverlay.open) linkOverlay.showModal();
+      loadLinkPage(id);
+    }
+
+    function setupLinkPage() {
+      document.addEventListener("click", (event) => {
+        const button = event.target.closest(".details-btn");
+        const id = button?.closest("li.article")?.dataset.linkId;
+        if (id) openLinkPage(id);
+      });
+      linkOverlay.addEventListener("close", () => {
+        linkPageGeneration++;
+        if (closingFromHistory) {
+          closingFromHistory = false;
+          return;
+        }
+        if (linkPageDepth > 0) {
+          const depth = linkPageDepth;
+          linkPageDepth = 0;
+          history.go(-depth);
+        } else if (linkIdFromPath()) {
+          history.replaceState(null, "", "/");
+        }
+      });
+      window.addEventListener("popstate", () => {
+        const id = linkIdFromPath();
+        linkPageDepth = history.state?.linkPageDepth ?? 0;
+        if (id) {
+          openLinkPage(id, { push: false });
+        } else if (linkOverlay.open) {
+          closingFromHistory = true;
+          linkOverlay.close();
+        }
+      });
+      const id = linkIdFromPath();
+      if (id) openLinkPage(id, { push: false });
+    }
+
     function setupMenu() {
       const btn = document.getElementById("menu-btn");
       const bubbles = document.getElementById("menu-bubbles");
@@ -2306,6 +2498,7 @@
     setupProfile();
     setupSearch();
     setupReplies();
+    setupLinkPage();
     setupViewportPinning();
   </script>
 </body>
