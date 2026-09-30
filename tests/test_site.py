@@ -198,6 +198,38 @@ def test_render_gives_each_article_a_reply_button_and_empty_reply_list() -> None
     assert html.index('class="reply-btn"') < html.index('class="replies"')
 
 
+def test_render_gives_each_article_a_tag_button_before_its_reply_button() -> None:
+    article = Article(
+        id="a1",
+        title="Wire story",
+        url="https://www.reuters.com/a",
+        domain="reuters",
+        source_type=SourceType.MAINSTREAM_MEDIA,
+    )
+
+    html = render([article])
+
+    assert '<button type="button" class="details-btn" aria-label="Tags and related links">' in html
+    assert html.index('class="details-btn"') < html.index('class="reply-btn"')
+
+
+def test_link_page_shows_tags_and_related_links_at_the_links_own_address() -> None:
+    html = render([])
+
+    assert '<dialog id="link-overlay" class="overlay"' in html
+    for list_id in ("link-entities", "link-topics", "link-related"):
+        assert f'id="{list_id}"' in html
+        assert f'id="{list_id}-title" hidden' in html
+    script = html[html.index('<script type="module">') :]
+    assert 'rpc("related_links"' in script
+    assert "link_entities(p, entities(name, kind))" in script
+    assert "history.pushState" in script and "`/p/${id}`" in script
+    assert "setupLinkPage();" in script
+    # The feed is found with querySelector("ul.articles"), so no other list may
+    # carry that class.
+    assert html.count('<ul class="articles') == 1
+
+
 def test_render_includes_reply_composer_in_the_dock() -> None:
     html = render([])
 

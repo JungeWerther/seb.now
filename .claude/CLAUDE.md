@@ -27,7 +27,8 @@ this repo — `.env` is git-ignored here. It's kept in two places instead:
 a local, untracked `.env` (`SUPABASE_URL` + `SUPABASE_ANON_KEY`) for local
 dev/test, and GitHub Actions repository **variables** (not secrets, since
 it isn't one) of the same names, which `.github/workflows/ci.yml` reads
-for the integration test. The static site itself (browser client, and
+for the integration test (falling back to a secret of the same name when
+no variable is set). The static site itself (browser client, and
 `site.py`'s build-time read) never uses `service_role` — every user
 write goes through RLS as an authenticated (including anonymous) user.
 The one exception is `service_role` inside the three ingestion Edge
@@ -173,8 +174,68 @@ children without a recursive query. `description` is the definition a
 classifier reads for each label. Links are tagged with leaf topics only,
 in `public.link_topics` as fuzzy `p ∈ (0, 1]`, typically 1–3 per link;
 `labeled_by` is `manual` (hand labels) or `jev` (the TypeSafe Jev
-decision model, planned, not yet automated — so new ingested links
-currently arrive untagged). Both tables are public-read, service_role-write.
+decision model, see below). Both tables are public-read, service_role-write.
+
+**Automatic topic labels — `topic-label`.** An Edge Function labels every link
+that has no `link_topics` rows yet (so hand labels are never touched), up to 60
+per run, on its own `pg_cron` job (`55 */3 * * *`; URL and anon key read from
+`app_settings`' `functions_url`/`anon_key` at run time). It walks the topic
+tree top-down with Jev (`jev-1.13.0`, pinned; key from Vault as
+`typesafe-ai-token` via `get_vault_secret`): each node is one Choice over its
+children, with the topics' `name: description` as the options (the root adds
+a "none of these"), and the 3 best paths are kept (beam search) by the
+geometric mean of their edge probabilities, so a shallow and a deep leaf
+compare fairly. The distinct leaves of the final beam scoring ≥ 0.5 become
+`labeled_by = 'jev'` rows with `p` = that score. The state is only the
+link's title, host and (when set) description. `POST {"link_ids": [...],
+"dry_run": true}` returns labels without writing, for evaluation: on 60
+hand-labelled links the top Jev label matched a hand label (same topic, or
+one an ancestor of the other) for 46, any Jev label for 49, and the top-level
+area for 52, at ~1,600 input tokens and 2 requests per link.
+`functions/_shared/jev.ts` is a small typed System One client. To undo:
+`delete from link_topics where labeled_by = 'jev'`.
+
+The `economy` branch is not hand-made: it is the full JEL classification
+(Journal of Economic Literature, AEA — 1,015 codes), with JEL's own hierarchy as
+the path (L41 → `economy.L.L4.L41`, three-digit codes are the leaves; a
+"General"/"Other" heading is named after its parent so its chip reads alone).
+`topics.jel_code` holds each JEL topic's code, and for hand-made topics outside
+the branch the nearest JEL code (`business.cooperatives` → J54,
+`politics.competition_antitrust` → K21), so economics coverage maps onto one
+standard ontology. Tag an economics story with the JEL leaf, not also with a
+hand-made topic mapped to the same code (that would count the vote twice).
+
+What an article is *about* is a topic; *who* it is about is an entity.
+`public.entities` (organisations: `kind` company/cooperative/nonprofit/public_body,
+`country` ISO 3166-1, `wikidata_id`) carries each one's `nace_code` from
+`public.nace_activities`, the full NACE Rev. 2.1 tree (EU activity
+classification, 1,047 codes, `parent_code` links class → group → division →
+section). NACE 2.1 separates platforms from the service they broker: a
+ride-hailing app (NLCabs, Uber, a driver co-op) is 52.32 *intermediation for
+passenger transportation*, a taxi operator 49.33. `public.link_entities` links
+articles to the entities they cover. All three are public-read,
+service_role-write; only look up a `wikidata_id` (never recall one), and leave
+`nace_code` null rather than guess.
+
+Entities aren't only organisations: `kind` also allows person, product, place,
+event, work and other (`nace_code` stays for organisations). The
+**`entity-extract`** Edge Function fills them from titles, invoked by hand for
+now (no cron yet): `candidates.ts` proposes phrases (compromise's noun chunks,
+whole and split at connecting words and possessives, plus capitalised runs, their
+two-word windows and camel-case words; pronouns, leading number words and
+phrases with a possessive inside dropped); one Jev request
+per link asks of each whether it's a name, a concept or neither, and its kind;
+names with p ≥ 0.8 are matched against existing entities by
+`public.entity_candidates(phrase)` (trigram similarity on names and past
+mention texts) — an exact name is taken, otherwise Jev picks one of the
+candidates or "none", and none creates the entity. Links run one at a time so
+a new entity is matchable by the next link. Jev's mentions land in
+`link_entities` with `surface` (the text as written, which doubles as an
+alias), `p` and `labeled_by = 'jev'`; hand rows default to `manual`, p 1.
+`public.link_enrichment (link_id, topics_at, entities_at)` records when each
+automatic step last ran on a link (service_role only), so `topic-label` and
+`entity-extract` don't retry links that yielded nothing. Both functions share
+`functions/_shared/jev.ts`.
 
 A user's preference is derived, not stored: the
 `public.user_topic_preferences` view (`security_invoker`, so RLS on
@@ -293,6 +354,22 @@ round reply button (below the post box, right-aligned, outside `.post-swipe` so 
 bar for a reply composer in the same dock; replies are loaded
 client-side and listed under the post. No moderation or rate limiting
 yet — anyone with an anonymous session can post.
+
+**A link's own page.** Every link has a page at `seb.now/p/<id>` (the same
+address a federated post links to, served by the catch-all document): a
+`<dialog id="link-overlay">` over the feed showing the link, all its entities
+(with their kind) and topics as chips, and its related links. Each article's
+round tag button (`.details-btn`, left of the reply button) opens it with
+`history.pushState`, storing how many pages deep it is (`linkPageDepth`), so
+Back steps between pages, Forward returns, and closing (✕, backdrop, Escape)
+jumps straight back to the feed; visiting the address directly opens it at
+depth 0 and closing replaces the address with `/`. Related links come from
+`public.related_links(link, max_results)` (security invoker): shared entities
+count double, shared leaf topics once, each weighted p × p, newest first on
+ties; it returns the shared names, shown under each related link ("Shares
+OpenAI, AI industry"), and each related link has its own tag button to go a
+level deeper. Its lists use `.link-list`, not `.articles`: the feed is found
+with `querySelector("ul.articles")`.
 
 Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the
 vote tints (`.swipe-bg`) and the `.post` that slides over them, so the

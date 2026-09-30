@@ -14,6 +14,8 @@ jobs:
           enable-cache: true
       - run: uv run ruff check .
       - run: uv run pytest -q
+        # Repository variables (the anon key isn't secret); a secret of the same
+        # name is used when no variable is set.
         env:
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL || secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY || secrets.SUPABASE_ANON_KEY }}
