@@ -219,8 +219,9 @@ service_role-write; only look up a `wikidata_id` (never recall one), and leave
 
 Entities aren't only organisations: `kind` also allows person, product, place,
 event, work and other (`nace_code` stays for organisations). The
-**`entity-extract`** Edge Function fills them from titles, invoked by hand for
-now (no cron yet): `candidates.ts` proposes phrases (compromise's noun chunks,
+**`entity-extract`** Edge Function fills them from titles, on its own `pg_cron`
+job (`*/5 * * * *`, up to 30 links a run, which takes a minute or two, so runs
+don't overlap and links stay one at a time): `candidates.ts` proposes phrases (compromise's noun chunks,
 whole and split at connecting words and possessives, plus capitalised runs, their
 two-word windows and camel-case words; pronouns, leading number words and
 phrases with a possessive inside dropped); one Jev request
@@ -234,7 +235,9 @@ a new entity is matchable by the next link. Jev's mentions land in
 alias), `p` and `labeled_by = 'jev'`; hand rows default to `manual`, p 1.
 `public.link_enrichment (link_id, topics_at, entities_at)` records when each
 automatic step last ran on a link (service_role only), so `topic-label` and
-`entity-extract` don't retry links that yielded nothing. Both functions share
+`entity-extract` don't retry links that yielded nothing; both pick their next
+links with `public.links_to_enrich(step, max_results)` (newest first over the
+whole table; execute revoked from clients). Both functions share
 `functions/_shared/jev.ts`.
 
 A user's preference is derived, not stored: the
