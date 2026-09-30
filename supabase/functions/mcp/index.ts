@@ -37,7 +37,8 @@ const MAX_TOPIC_DESCRIPTION_LENGTH = 300;
 const PROPOSAL_STATUSES = ["open", "accepted", "rejected"];
 const PROPOSAL_SELECT =
   "id, topic_id, parent_id, name, description, rationale, status, created_at, decided_at, " +
-  "profiles(handle), topic_proposal_endorsements(count), topic_proposal_examples(p, links(id, title, url))";
+  "profiles!topic_proposals_proposed_by_fkey(handle), topic_proposal_endorsements(count), " +
+  "topic_proposal_examples(p, links(id, title, url))";
 const LINK_SELECT = "id, title, url, author, created_at, link_topics(p, topic_id, topics(name))";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -392,7 +393,10 @@ async function searchLinks(args: Row, { db }: Context) {
 }
 
 async function listTopics(_args: Row, { db }: Context) {
-  const { data, error } = await db.from("topics").select("id, name, description, profiles(handle)").order("id");
+  const { data, error } = await db
+    .from("topics")
+    .select("id, name, description, profiles!topics_proposed_by_fkey(handle)")
+    .order("id");
   if (error) throw new Error(error.message);
   return {
     topics: data.map(({ profiles, ...t }: Row) => ({
