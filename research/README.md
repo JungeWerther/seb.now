@@ -11,6 +11,8 @@ from here.
 - `train_compositional_embedding.py` — trains a tiny attention model with the
   homomorphism law as its loss, then re-checks it.
 - `test_*.py` — collected by the normal `pytest` run.
+- `jev/` — prototype: noun-phrase relations judged by TypeSafe's Jev, emitted
+  as PLN links in MeTTa. See its own README.
 
 The scripts need the `research` dependency group:
 
