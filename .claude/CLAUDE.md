@@ -275,6 +275,13 @@ call — fine at hundreds of links, needs a precomputed score or a recency cut-o
 before tens of thousands. The My Algorithm overlay spells this formula out in
 plain words in a code block; keep the two in sync.
 
+Scrolling back up (`DOCK_ACTIONS_REVEAL_PX` since the last scroll down, and
+past `DOCK_ACTIONS_MIN_SCROLL_Y`) reveals a row of round icon buttons
+(`#dock-actions`) right-aligned above the search bar; scrolling down hides it.
+The first, back-to-top (`#back-to-top`), scrolls to the top and restarts the
+feed with a fresh `as_of` (the current search, if any, from its newest result),
+keeping the old list until the new first page arrives.
+
 Search is server-side and newest-first: a debounced `ilike` on
 `links.search_text`, a stored generated column (lowercased title + host
 without `www.`) with a `pg_trgm` GIN index, keyset-paged on
