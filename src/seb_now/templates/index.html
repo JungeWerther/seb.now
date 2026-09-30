@@ -490,7 +490,6 @@
     li.article.dragging .post-swipe { overflow: visible; }
     li.article.dragging .post { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18); will-change: transform; }
     li.article.upvoted { box-shadow: inset 3px 0 0 var(--positive); }
-    li.article.pinned { margin-bottom: 1.2rem; }
     .post-swipe {
       position: relative;
       overflow: hidden;
@@ -625,8 +624,7 @@
     }
     .post-footer .score.positive { color: var(--positive); }
     .post-footer .score.negative { color: var(--negative); }
-    .swipe-content .reply-btn,
-    .swipe-content .details-btn {
+    .swipe-content .reply-btn {
       display: flex;
       align-items: center;
       justify-content: center;
@@ -639,40 +637,52 @@
       color: gray;
       cursor: pointer;
     }
-    .swipe-content .reply-btn:hover,
-    .swipe-content .details-btn:hover { color: var(--fg); border-color: rgba(128, 128, 128, 0.6); }
-    #link-overlay {
-      --grow: 0;
-      --base-width: min(560px, calc(100vw - 2 * var(--gutter)));
-      --base-height: calc(100dvh - 2 * var(--header-height));
-      width: calc(var(--base-width) + (100vw - var(--base-width)) * var(--grow));
-      max-width: 100vw;
-      max-height: calc(var(--base-height) + (100dvh - var(--base-height)) * var(--grow));
-      border-radius: calc(16px * (1 - var(--grow)));
-      border-width: calc(1px * (1 - var(--grow)));
-      padding-top: 0;
+    .swipe-content .reply-btn:hover { color: var(--fg); border-color: rgba(128, 128, 128, 0.6); }
+    /* A focused post sits on a black band that fades back to the page colour
+       a screen's height below it (--focus-end is the band's bottom, in page
+       coordinates); --focus-dark animates the band in and out. */
+    @property --focus-dark { syntax: "<number>"; inherits: true; initial-value: 0; }
+    html { --focus-end: 0px; transition: --focus-dark 0.6s ease; }
+    html.focused { --focus-dark: 1; }
+    html.focus-bg {
+      --focus-shade: color-mix(in srgb, #000 calc(var(--focus-dark) * 100%), var(--bg));
+      background: linear-gradient(var(--focus-shade) var(--focus-end), var(--bg) calc(var(--focus-end) + 100vh)) var(--bg);
     }
-    #link-overlay > * { max-width: 1100px; margin-inline: auto; }
-    #link-overlay .overlay-head {
-      position: sticky;
-      top: 0;
-      z-index: 1;
-      gap: 0.25rem;
-      margin-bottom: 0.5rem;
-      padding: 1.25rem 0 0.5rem;
-      background: var(--bg);
+    html.focus-bg body,
+    html.focus-bg .swipe-content { background: transparent; }
+    #focus { color: #e8e8e8; padding-bottom: 1.25rem; }
+    #focus[hidden] { display: none; }
+    #focus-head { display: flex; align-items: center; margin-bottom: 0.5rem; }
+    #focus-back {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.25rem 0.7rem 0.25rem 0.45rem;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 999px;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      font-size: 0.8rem;
+      cursor: pointer;
     }
-    #link-overlay .overlay-title { margin-right: auto; }
-    #link-related-sentinel { height: 1px; }
+    #focus-back svg { width: 16px; height: 16px; }
+    #focus-back:hover { border-color: rgba(255, 255, 255, 0.5); }
+    #focus .post { color: var(--fg); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14); }
     .link-list { list-style: none; margin: 0; padding: 0; }
-    #link-overlay .swipe-bg,
-    #link-overlay .post-footer .score,
-    #link-overlay .reply-count,
-    #link-overlay .reply-btn,
-    #link-overlay .replies,
-    #link-overlay .link-main .post-footer { display: none; }
-    #link-status { color: gray; font-size: 0.85rem; margin: 0; }
-    #link-status:empty { display: none; }
+    ul.articles .post { cursor: pointer; }
+    ul.articles .post :is(a, button) { cursor: pointer; }
+    html.focused ul.articles .domain { color: gray; }
+    html.focused ul.articles li.article { animation: focus-in 0.45s ease both; }
+    @keyframes focus-in {
+      from { opacity: 0; transform: translateY(12px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { transition: none; }
+      html.focused ul.articles li.article { animation: none; }
+    }
+    #focus-status { color: gray; font-size: 0.85rem; margin: 0; }
+    #focus-status:empty { display: none; }
     .link-section-title {
       margin: 1.2rem 0 0.45rem;
       font-size: 0.7rem;
@@ -691,9 +701,7 @@
     }
     .tag.entity { border-color: var(--positive); }
     .tag .tag-detail { margin-left: 0.35rem; font-size: 0.65rem; color: gray; }
-    .related-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 0.9rem 1.25rem; }
     .related-why { margin: 0.4rem 0 0; font-size: 0.7rem; color: gray; }
-    #link-overlay .link-main li.article { margin-bottom: 0; }
     li.article.replying .reply-btn { color: var(--positive); border-color: var(--positive); }
     .swipe-content .replies {
       list-style: none;
@@ -871,23 +879,19 @@
     <p id="profile-hint">Lowercase letters, numbers and _. It's also your fediverse account, <span id="profile-fediverse-name"></span>: your comments are posted there too, and a comment on a link shares that link.</p>
     <p id="profile-status"></p>
   </dialog>
-  <dialog id="link-overlay" class="overlay" aria-labelledby="link-title">
-    <div class="overlay-head">
-      <p class="overlay-title" id="link-title">Post</p>
-      <button id="link-up" class="overlay-up" aria-label="Back to the post" hidden><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></button>
-      <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
-    </div>
-    <p id="link-status"></p>
-    <ul class="link-list link-main"></ul>
-    <p class="link-section-title" id="link-entities-title" hidden>Entities</p>
-    <ul class="tag-list" id="link-entities"></ul>
-    <p class="link-section-title" id="link-topics-title" hidden>Topics</p>
-    <ul class="tag-list" id="link-topics"></ul>
-    <p class="link-section-title" id="link-related-title" hidden>Related</p>
-    <ul class="link-list related-list" id="link-related"></ul>
-    <div id="link-related-sentinel" aria-hidden="true"></div>
-  </dialog>
   <p id="search-empty">No matching articles.</p>
+  <section id="focus" hidden>
+    <div id="focus-head">
+      <button type="button" id="focus-back" aria-label="Back to the feed"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>Feed</button>
+    </div>
+    <p id="focus-status"></p>
+    <ul class="link-list" id="focus-main"></ul>
+    <p class="link-section-title" id="focus-entities-title" hidden>Entities</p>
+    <ul class="tag-list" id="focus-entities"></ul>
+    <p class="link-section-title" id="focus-topics-title" hidden>Topics</p>
+    <ul class="tag-list" id="focus-topics"></ul>
+    <p class="link-section-title" id="focus-related-title">Related</p>
+  </section>
   <!--ARTICLES-->
   <div id="search-dock">
     <div id="dock-inner">
@@ -1164,6 +1168,9 @@
       let lastMoveAt = 0;
       let velocity = 0;
       let dragging = false;
+      // Past the slop: a swipe or a scroll, so the click that may follow
+      // isn't a tap on the card.
+      let moved = false;
       // Where the finger is (target) vs. where the card is drawn (shown);
       // pointer events only move the target, and one rAF loop eases the card
       // toward it, so bursty/uneven event delivery can't make it jitter.
@@ -1249,6 +1256,7 @@
       }
 
       function onDown(e) {
+        moved = false;
         if (e.target.closest("button")) return;
         startX = e.clientX;
         startY = e.clientY;
@@ -1308,6 +1316,7 @@
         const scrollish = Math.abs(dy) > Math.abs(dx) || -dy > Math.abs(dx) * maxStartUpSlope;
         if (!claimed) {
           if (Math.hypot(dx, dy) < SWIPE_CAPTURE_SLOP_PX) return;
+          moved = true;
           if (scrollish) {
             startScroll(e, dx, dy);
             return;
@@ -1379,6 +1388,16 @@
         { passive: false },
       );
       area.addEventListener("pointerup", onUp);
+      area.addEventListener(
+        "click",
+        (e) => {
+          if (!moved) return;
+          moved = false;
+          e.preventDefault();
+          e.stopPropagation();
+        },
+        true,
+      );
       area.addEventListener("pointercancel", (e) => {
         if (scrolling) endScroll(e, false);
         endDrag();
@@ -1440,11 +1459,13 @@
     const searchEmpty = document.getElementById("search-empty");
 
     // The list shows one feed at a time: the default one, ranked by the
-    // ranked_feed function, or the results for `query`, newest first.
+    // ranked_feed function, the results for `query`, newest first, or the
+    // links `related` to a focused post (see focusLink).
     // `generation` bumps whenever it's swapped, so a request still in flight
     // for the previous feed is dropped when it lands.
     const feed = {
       query: "",
+      related: null,
       chronological: false,
       asOf: null,
       offset: 0,
@@ -1595,7 +1616,41 @@
       return { rows, count: ranks.length };
     }
 
+    // One page of related_links, then those links by id in its order, each
+    // carrying what it shares with the focused post.
+    async function fetchRelated(id, offset) {
+      const client = await supabaseReady;
+      const { data: related, error } = await client.rpc("related_links", {
+        link: id,
+        max_results: FEED_PAGE_SIZE,
+        page_offset: offset,
+      });
+      if (error) {
+        console.error("failed to load related links", error);
+        return null;
+      }
+      if (related.length === 0) return { rows: [], count: 0 };
+      const ids = related.map((r) => r.link_id);
+      const { data: rows, error: linksError } = await client.from("links").select(FEED_SELECT).in("id", ids);
+      if (linksError) {
+        console.error("failed to load related links", linksError);
+        return null;
+      }
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      return {
+        rows: related
+          .filter((r) => byId.has(r.link_id))
+          .map((r) => ({ ...byId.get(r.link_id), shared: [...r.shared_entities, ...r.shared_topics] })),
+        count: related.length,
+      };
+    }
+
     async function fetchPage() {
+      if (feed.related) {
+        const page = await fetchRelated(feed.related, feed.offset);
+        if (page) feed.offset += page.count;
+        return page;
+      }
       if (feed.query || feed.chronological) {
         const rows = await fetchLinks({ query: feed.query, before: feed.cursor });
         if (!rows) return null;
@@ -1608,12 +1663,25 @@
     }
 
     function renderRows(rows) {
-      return rows.map(renderArticle).filter(Boolean);
+      return rows
+        .map((row) => {
+          const li = renderArticle(row);
+          if (li && row.shared) {
+            const why = document.createElement("p");
+            why.className = "related-why";
+            why.textContent = `Shares ${row.shared.join(", ")}`;
+            li.querySelector(".post-footer").before(why);
+          }
+          return li;
+        })
+        .filter(Boolean);
     }
 
     function updateSearchEmpty() {
       const nothing = feed.done && !articleList.querySelector("li.article");
       searchEmpty.classList.toggle("visible", feed.query.length > 0 && nothing);
+      document.getElementById("focus-related-title").textContent =
+        feed.related && nothing ? "Nothing related yet" : "Related";
     }
 
     function sentinelNearViewport() {
@@ -1650,6 +1718,7 @@
     function resetFeed(query) {
       feed.generation++;
       feed.query = query;
+      feed.related = null;
       feed.chronological = false;
       // Ranks are computed as of this moment for every page of this feed.
       feed.asOf = new Date().toISOString();
@@ -1667,11 +1736,20 @@
       return loadMore();
     }
 
+    // The links related to a focused post, as the feed.
+    function showRelated(id) {
+      resetFeed("");
+      feed.related = id;
+      feed.seen.add(id);
+      articleList.replaceChildren();
+      updateSearchEmpty();
+    }
+
     function setupFeed(initialQuery) {
-      articleList.addEventListener("click", (e) => {
+      document.addEventListener("click", (e) => {
         const opened = e.target.closest(".article-row a, .cover-link");
-        if (!opened) return;
-        const li = opened.closest("li.article");
+        const li = opened?.closest("li.article");
+        if (!li) return;
         li.querySelector(".article-row a").classList.add("visited");
         pendingSession.then((session) => markVisited(session, li.dataset.linkId));
       });
@@ -1679,6 +1757,11 @@
         if (entries.some((entry) => entry.isIntersecting)) loadMore();
       }, { rootMargin: `0px 0px ${FEED_PREFETCH_MARGIN_PX}px 0px` }).observe(feedSentinel);
 
+      // A post's own address opens on that post (setupLinkPage), not the feed.
+      if (linkIdFromPath()) {
+        articleList.replaceChildren();
+        return;
+      }
       if (initialQuery) return showFeed(initialQuery);
       // The build pre-renders the newest links for a fast first paint; the
       // ranked feed replaces them once its first page arrives. If ranking
@@ -1687,7 +1770,6 @@
       resetFeed("");
       const generation = feed.generation;
       return loadMore({ replace: true }).then(async (ok) => {
-        await pinLinkedPost();
         if (ok !== false || generation !== feed.generation || prerendered.length === 0) return;
         feed.chronological = true;
         feed.cursor = cursorOf(prerendered.at(-1));
@@ -1697,49 +1779,33 @@
       });
     }
 
-    // seb.now/p/<link id> is a post's own address (the site's catch-all
-    // document serves this page there): that link goes first in the feed.
+    // A link's own page, seb.now/p/<id> (the site's catch-all document serves
+    // this page there): tapping a post's card anywhere but its links and
+    // buttons lifts it to the top of the page onto a black band, with all its
+    // entities and topics, and the feed below is swapped for the links related
+    // to it (related_links, which says what they share), a page at a time as
+    // you scroll, voted on and replied to like any feed. Each step is pushed
+    // onto history with its depth, so Back steps between posts and finally
+    // returns the feed as it was, scroll position included; visiting the
+    // address directly opens it at depth 0, and leaving then starts a fresh feed.
     const POST_PATH_PATTERN = /^\/p\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/;
-    async function pinLinkedPost() {
-      const id = location.pathname.match(POST_PATH_PATTERN)?.[1];
-      if (!id) return;
-      const { data: row, error } = await (await supabaseReady).from("links").select(FEED_SELECT).eq("id", id).maybeSingle();
-      if (error || !row) return;
-      articleList.querySelector(`li.article[data-link-id="${id}"]`)?.remove();
-      const li = renderArticle(row);
-      if (!li) return;
-      li.classList.add("pinned");
-      feed.seen.add(id);
-      articleList.prepend(li);
-      await hydrateArticles([li]);
-    }
-
-    // A link's own page, seb.now/p/<id>: the link with all its entities and
-    // topics, and the links related to it (related_links, which says what they
-    // share), loaded a page at a time as you scroll. The further you scroll, the
-    // more the box grows, until it fills the screen (--grow, 0 to 1 over
-    // LINK_PAGE_GROW_DISTANCE_PX); the post stays at the top of the same scroll,
-    // so scrolling back up (or the ↑ button) returns to it and shrinks the box
-    // again. It opens over the feed from an article's tag button, pushed onto
-    // history with its depth (how many pages deep from the feed), so Back steps
-    // between pages and closing returns to the feed in one go; visiting the
-    // address directly opens it at depth 0.
     const LINK_PAGE_SELECT = `${FEED_SELECT}, link_entities(p, entities(name, kind))`;
-    const RELATED_PAGE_SIZE = 10;
-    const RELATED_PREFETCH_MARGIN_PX = 800;
-    const LINK_PAGE_GROW_DISTANCE_PX = 900;
-    const LINK_PAGE_UP_AFTER_PX = 600;
-    const linkOverlay = document.getElementById("link-overlay");
-    const relatedList = document.getElementById("link-related");
-    const relatedSentinel = document.getElementById("link-related-sentinel");
-    const linkUpButton = document.getElementById("link-up");
-    let linkPageGeneration = 0;
-    let linkPageDepth = 0;
-    let closingFromHistory = false;
-    const relatedFeed = { id: null, offset: 0, done: true, loading: false, seen: new Set() };
+    const FOCUS_MOVE_MS = 420;
+    const FOCUS_FADE_MS = 600;
+    const focusSection = document.getElementById("focus");
+    const focusMain = document.getElementById("focus-main");
+    const focusStatus = document.getElementById("focus-status");
+    let focusGeneration = 0;
+    let focusDepth = 0;
+    // The feed as it was before the first post was focused.
+    let savedFeed = null;
 
     function linkIdFromPath() {
       return location.pathname.match(POST_PATH_PATTERN)?.[1] ?? null;
+    }
+
+    function isFocused() {
+      return document.documentElement.classList.contains("focused");
     }
 
     function tagItem(name, detail, kind) {
@@ -1757,172 +1823,145 @@
       return item;
     }
 
-    function showLinkSection(listId, items) {
+    function showFocusSection(listId, items) {
       document.getElementById(listId).replaceChildren(...items);
       document.getElementById(`${listId}-title`).hidden = items.length === 0;
     }
 
-    function relatedItem(row, shared) {
-      const item = renderArticle(row);
-      if (!item) return null;
-      const why = document.createElement("p");
-      why.className = "related-why";
-      why.textContent = `Shares ${shared.join(", ")}`;
-      item.querySelector(".post-footer").before(why);
-      return item;
+    // The band's bottom, in page coordinates, where its fade begins.
+    function updateFocusBand() {
+      const end = focusSection.getBoundingClientRect().bottom + window.scrollY;
+      document.documentElement.style.setProperty("--focus-end", `${Math.round(end)}px`);
     }
 
-    function relatedSentinelNear() {
-      const bottom = linkOverlay.getBoundingClientRect().bottom;
-      return relatedSentinel.getBoundingClientRect().top < bottom + RELATED_PREFETCH_MARGIN_PX;
+    // FLIP: `li` has just moved; animate it from where it was (`from`, a rect).
+    function flyFrom(li, from) {
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const to = li.getBoundingClientRect();
+      li.animate(
+        [{ transform: `translate(${from.left - to.left}px, ${from.top - to.top}px)` }, { transform: "none" }],
+        { duration: FOCUS_MOVE_MS, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
+      );
     }
 
-    async function loadMoreRelated() {
-      const generation = linkPageGeneration;
-      if (relatedFeed.loading || relatedFeed.done) return;
-      relatedFeed.loading = true;
-      const client = await supabaseReady;
-      const { data: related, error } = await client.rpc("related_links", {
-        link: relatedFeed.id,
-        max_results: RELATED_PAGE_SIZE,
-        page_offset: relatedFeed.offset,
-      });
-      if (generation !== linkPageGeneration) return;
-      relatedFeed.loading = false;
-      if (error) {
-        console.error("failed to load related links", error);
-        relatedFeed.done = true;
-        return;
+    // `from` is the article tapped, which moves up into place; without it
+    // (history, a direct visit) the post is loaded.
+    async function focusLink(id, { from = null, push = true, saveFeed = true } = {}) {
+      const generation = ++focusGeneration;
+      if (push) {
+        focusDepth++;
+        history.pushState({ focusDepth }, "", `/p/${id}`);
       }
-      relatedFeed.offset += related.length;
-      if (related.length < RELATED_PAGE_SIZE) relatedFeed.done = true;
-      const fresh = related.filter((r) => !relatedFeed.seen.has(r.link_id));
-      for (const r of fresh) relatedFeed.seen.add(r.link_id);
-      if (fresh.length > 0) {
-        const ids = fresh.map((r) => r.link_id);
-        const { data: rows, error: rowsError } = await client.from("links").select(FEED_SELECT).in("id", ids);
-        if (generation !== linkPageGeneration) return;
-        if (rowsError) {
-          console.error("failed to load related links", rowsError);
-          relatedFeed.done = true;
+      const root = document.documentElement;
+      if (!isFocused()) {
+        savedFeed = saveFeed ? { items: [...articleList.children], state: { ...feed }, scrollY: window.scrollY } : null;
+      }
+      const start = from?.getBoundingClientRect();
+      root.classList.add("focused", "focus-bg");
+      focusSection.hidden = false;
+      focusMain.replaceChildren(...(from ? [from] : []));
+      focusStatus.textContent = from ? "" : "Loading…";
+      showFocusSection("focus-entities", []);
+      showFocusSection("focus-topics", []);
+      showRelated(id);
+      window.scrollTo({ top: 0, behavior: "instant" });
+      updateFocusBand();
+      if (from) flyFrom(from, start);
+      loadMore();
+
+      const { data: row, error } = await (await supabaseReady).from("links").select(LINK_PAGE_SELECT).eq("id", id).maybeSingle();
+      if (generation !== focusGeneration) return;
+      if (!from) {
+        const li = row && renderArticle(row);
+        if (error || !li) {
+          focusStatus.textContent = error ? "Couldn't load this post." : "This post doesn't exist.";
           return;
         }
-        const byId = new Map(rows.map((row) => [row.id, row]));
-        relatedList.append(
-          ...fresh
-            .map((r) => byId.get(r.link_id) && relatedItem(byId.get(r.link_id), [...r.shared_entities, ...r.shared_topics]))
-            .filter(Boolean),
-        );
-        document.getElementById("link-related-title").hidden = relatedList.children.length === 0;
+        focusStatus.textContent = "";
+        focusMain.append(li);
+        hydrateArticles([li]);
       }
-      // A short page may leave the sentinel in view, and the observer only
-      // fires when it enters.
-      if (!relatedFeed.done && relatedSentinelNear()) loadMoreRelated();
+      if (row) {
+        showFocusSection(
+          "focus-entities",
+          (row.link_entities || [])
+            .filter((le) => le.entities)
+            .sort((a, b) => b.p - a.p)
+            .map((le) => tagItem(le.entities.name, le.entities.kind.replace("_", " "), "entity")),
+        );
+        showFocusSection(
+          "focus-topics",
+          (row.link_topics || [])
+            .filter((lt) => lt.topics)
+            .sort((a, b) => b.p - a.p)
+            .map((lt) => tagItem(lt.topics.name, "", "topic")),
+        );
+      }
+      updateFocusBand();
     }
 
-    function updateLinkPageGrowth() {
-      const scrolled = linkOverlay.scrollTop;
-      linkOverlay.style.setProperty("--grow", Math.min(1, scrolled / LINK_PAGE_GROW_DISTANCE_PX).toFixed(3));
-      linkUpButton.hidden = scrolled < LINK_PAGE_UP_AFTER_PX;
-    }
-
-    async function loadLinkPage(id) {
-      const generation = ++linkPageGeneration;
-      const status = document.getElementById("link-status");
-      const main = linkOverlay.querySelector(".link-main");
-      status.textContent = "Loading…";
-      main.replaceChildren();
-      for (const listId of ["link-entities", "link-topics", "link-related"]) showLinkSection(listId, []);
-      Object.assign(relatedFeed, { id, offset: 0, done: true, loading: false, seen: new Set([id]) });
-      linkOverlay.scrollTop = 0;
-      updateLinkPageGrowth();
-
-      const client = await supabaseReady;
-      const { data: row, error } = await client.from("links").select(LINK_PAGE_SELECT).eq("id", id).maybeSingle();
-      if (generation !== linkPageGeneration) return;
-      const li = row && renderArticle(row);
-      if (error || !li) {
-        status.textContent = error ? "Couldn't load this post." : "This post doesn't exist.";
+    // Back to the feed: the one saved on the way in, where it was scrolled to,
+    // with the focused post flying back into its place; `restore: false`
+    // leaves the list to the caller (a search replacing it anyway).
+    function leaveFocus({ restore = true } = {}) {
+      focusGeneration++;
+      const root = document.documentElement;
+      const card = focusMain.firstElementChild;
+      const start = card?.getBoundingClientRect();
+      root.classList.remove("focused");
+      focusSection.hidden = true;
+      focusMain.replaceChildren();
+      setTimeout(() => {
+        if (!isFocused()) root.classList.remove("focus-bg");
+      }, FOCUS_FADE_MS);
+      const saved = savedFeed;
+      savedFeed = null;
+      if (!restore) return;
+      if (!saved) {
+        window.scrollTo({ top: 0, behavior: "instant" });
+        showFeed(document.getElementById("search-input").value.trim());
         return;
       }
-      status.textContent = "";
-      main.append(li);
-      showLinkSection(
-        "link-entities",
-        (row.link_entities || [])
-          .filter((le) => le.entities)
-          .sort((a, b) => b.p - a.p)
-          .map((le) => tagItem(le.entities.name, le.entities.kind.replace("_", " "), "entity")),
-      );
-      showLinkSection(
-        "link-topics",
-        (row.link_topics || [])
-          .filter((lt) => lt.topics)
-          .sort((a, b) => b.p - a.p)
-          .map((lt) => tagItem(lt.topics.name, "", "topic")),
-      );
-      relatedFeed.done = false;
-      loadMoreRelated();
+      Object.assign(feed, saved.state, { generation: feed.generation + 1, loading: false });
+      articleList.replaceChildren(...saved.items);
+      window.scrollTo({ top: saved.scrollY, behavior: "instant" });
+      if (card && saved.items.includes(card)) flyFrom(card, start);
+      updateSearchEmpty();
+      if (!feed.done && sentinelNearViewport()) loadMore();
     }
 
-    function openLinkPage(id, { push = true } = {}) {
-      if (push && linkIdFromPath() !== id) {
-        linkPageDepth++;
-        history.pushState({ linkPageDepth }, "", `/p/${id}`);
+    // Leaves every focused post at once: Back as many steps as were pushed.
+    function closeFocus() {
+      if (focusDepth > 0) {
+        history.go(-focusDepth);
+        return;
       }
-      if (!linkOverlay.open) linkOverlay.showModal();
-      loadLinkPage(id);
+      history.replaceState(null, "", "/");
+      leaveFocus();
     }
 
     function setupLinkPage() {
-      new IntersectionObserver((entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) loadMoreRelated();
-      }, { root: linkOverlay, rootMargin: `0px 0px ${RELATED_PREFETCH_MARGIN_PX}px 0px` }).observe(relatedSentinel);
-      let growthFrame = 0;
-      linkOverlay.addEventListener("scroll", () => {
-        if (!growthFrame) {
-          growthFrame = requestAnimationFrame(() => {
-            growthFrame = 0;
-            updateLinkPageGrowth();
-          });
-        }
-      }, { passive: true });
-      linkUpButton.addEventListener("click", () => {
-        const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        linkOverlay.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
-      });
+      // focusLink and leaveFocus set the scroll position themselves.
+      history.scrollRestoration = "manual";
+      document.getElementById("focus-back").addEventListener("click", closeFocus);
+      new ResizeObserver(() => {
+        if (isFocused()) updateFocusBand();
+      }).observe(focusSection);
       document.addEventListener("click", (event) => {
-        const button = event.target.closest(".details-btn");
-        const id = button?.closest("li.article")?.dataset.linkId;
-        if (id) openLinkPage(id);
-      });
-      linkOverlay.addEventListener("close", () => {
-        linkPageGeneration++;
-        linkOverlay.style.setProperty("--grow", "0");
-        if (closingFromHistory) {
-          closingFromHistory = false;
-          return;
-        }
-        if (linkPageDepth > 0) {
-          const depth = linkPageDepth;
-          linkPageDepth = 0;
-          history.go(-depth);
-        } else if (linkIdFromPath()) {
-          history.replaceState(null, "", "/");
-        }
+        const post = event.target.closest(".post");
+        if (!post || event.target.closest("a, button")) return;
+        const li = post.closest("li.article");
+        if (!li || !articleList.contains(li)) return;
+        focusLink(li.dataset.linkId, { from: li });
       });
       window.addEventListener("popstate", () => {
         const id = linkIdFromPath();
-        linkPageDepth = history.state?.linkPageDepth ?? 0;
-        if (id) {
-          openLinkPage(id, { push: false });
-        } else if (linkOverlay.open) {
-          closingFromHistory = true;
-          linkOverlay.close();
-        }
+        focusDepth = history.state?.focusDepth ?? 0;
+        if (id) focusLink(id, { push: false });
+        else if (isFocused()) leaveFocus();
       });
       const id = linkIdFromPath();
-      if (id) openLinkPage(id, { push: false });
+      if (id) focusLink(id, { push: false, saveFeed: false });
     }
 
     function setupMenu() {
@@ -2430,10 +2469,9 @@
         showToast("Reply posted");
       }
 
-      articleList.addEventListener("click", (e) => {
+      document.addEventListener("click", (e) => {
         const btn = e.target.closest(".reply-btn");
         if (!btn) return;
-        e.stopPropagation();
         const li = btn.closest("li.article");
         if (target === li) close();
         else open(li);
@@ -2470,7 +2508,13 @@
       function search() {
         clearTimeout(timer);
         const query = input.value.trim();
-        if (query !== feed.query) showFeed(query);
+        if (isFocused()) {
+          history.replaceState(null, "", "/");
+          leaveFocus({ restore: false });
+          showFeed(query);
+        } else if (query !== feed.query) {
+          showFeed(query);
+        }
       }
 
       input.addEventListener("input", () => {
@@ -2550,6 +2594,8 @@
         backToTop.blur();
         const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         window.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
+        // A focused post's page just goes back up to the post.
+        if (isFocused()) return;
         resetFeed(feed.query);
         loadMore({ replace: true });
       }

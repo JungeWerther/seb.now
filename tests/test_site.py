@@ -198,52 +198,36 @@ def test_render_gives_each_article_a_reply_button_and_empty_reply_list() -> None
     assert html.index('class="reply-btn"') < html.index('class="replies"')
 
 
-def test_render_gives_each_article_a_tag_button_before_its_reply_button() -> None:
-    article = Article(
-        id="a1",
-        title="Wire story",
-        url="https://www.reuters.com/a",
-        domain="reuters",
-        source_type=SourceType.MAINSTREAM_MEDIA,
-    )
-
-    html = render([article])
-
-    assert '<button type="button" class="details-btn" aria-label="Tags and related links">' in html
-    assert html.index('class="details-btn"') < html.index('class="reply-btn"')
-
-
-def test_link_page_shows_tags_and_related_links_at_the_links_own_address() -> None:
+def test_link_page_focuses_a_tapped_post_above_its_related_links() -> None:
     html = render([])
 
-    assert '<dialog id="link-overlay" class="overlay"' in html
-    for list_id in ("link-entities", "link-topics", "link-related"):
-        assert f'id="{list_id}"' in html
-        assert f'id="{list_id}-title" hidden' in html
+    focus = html[html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))]
+    for list_id in ("focus-entities", "focus-topics"):
+        assert f'id="{list_id}"' in focus
+        assert f'id="{list_id}-title" hidden' in focus
+    assert html.index('<section id="focus"') < html.index('<ul class="articles">')
     script = html[html.index('<script type="module">') :]
     assert 'rpc("related_links"' in script
-    assert "page_offset: relatedFeed.offset" in script
+    assert "page_offset: offset" in script
     assert "link_entities(p, entities(name, kind))" in script
     assert "history.pushState" in script and "`/p/${id}`" in script
+    assert "focusLink(li.dataset.linkId, { from: li })" in script
     assert "setupLinkPage();" in script
+    assert "class=\"details-btn\"" not in html
     # The feed is found with querySelector("ul.articles"), so no other list may
     # carry that class.
     assert html.count('<ul class="articles') == 1
 
 
-def test_link_page_scrolls_related_links_in_and_grows_to_full_screen() -> None:
+def test_focused_post_sits_on_a_black_band_that_fades_to_the_page() -> None:
     html = render([])
 
-    dialog = html[html.index('<dialog id="link-overlay"') : html.index("</dialog>", html.index('<dialog id="link-overlay"'))]
-    assert '<div id="link-related-sentinel" aria-hidden="true"></div>' in dialog
-    # The back-to-post button must not carry .overlay-close: the menu wires the
-    # first .overlay-close in each dialog to close it.
-    assert '<button id="link-up" class="overlay-up" aria-label="Back to the post" hidden>' in dialog
-    assert dialog.index('id="link-up"') < dialog.index('class="overlay-close"')
-    assert "width: calc(var(--base-width) + (100vw - var(--base-width)) * var(--grow));" in html
+    assert "@property --focus-dark" in html
+    assert "linear-gradient(var(--focus-shade) var(--focus-end), var(--bg) calc(var(--focus-end) + 100vh))" in html
     script = html[html.index('<script type="module">') :]
-    assert "root: linkOverlay" in script
-    assert 'setProperty("--grow"' in script
+    assert 'setProperty("--focus-end"' in script
+    # A swipe or scroll that started on the card must not also open it.
+    assert "if (!moved) return;" in script
 
 
 def test_render_includes_reply_composer_in_the_dock() -> None:
