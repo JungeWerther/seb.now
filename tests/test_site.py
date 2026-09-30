@@ -477,3 +477,39 @@ def test_render_shows_the_author_on_the_domain_line() -> None:
     html = render(articles)
 
     assert '<span class="domain">@Channel5YouTube</span>' in _article_list(html)
+
+
+def test_posted_label_shows_month_and_day_adding_the_year_only_for_other_years() -> None:
+    from datetime import date
+
+    from seb_now.site import posted_label
+
+    today = date(2026, 9, 30)
+    assert posted_label("2026-09-27T16:34:59+00:00", today) == "Sep 27"
+    assert posted_label("2025-07-19T11:40:44.123456+00:00", today) == "Jul 19, 2025"
+    assert posted_label("2026-09-27T23:30:00-02:00", today) == "Sep 28"
+    assert posted_label("", today) == ""
+    assert posted_label("not a date", today) == ""
+
+
+def test_render_puts_the_posted_date_on_the_domain_line() -> None:
+    article = Article(
+        id="a1",
+        title="Issue",
+        url="https://thisweekinlebanon.substack.com/p/x",
+        domain="substack",
+        source_type=SourceType.DIRECT_LINK,
+        created_at="2020-09-27T16:34:59+00:00",
+    )
+
+    html = render([article])
+
+    assert '<time class="posted" datetime="2020-09-27T16:34:59+00:00">Sep 27, 2020</time>' in html
+
+
+def test_article_template_carries_an_empty_posted_date_to_fill() -> None:
+    html = render([])
+
+    start = html.index('<template id="article-template">')
+    template = html[start : html.index("</template>", start)]
+    assert '<time class="posted" datetime=""></time>' in template

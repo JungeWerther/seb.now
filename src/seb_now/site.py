@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from html import escape
 from pathlib import Path
 from typing import Mapping, NotRequired, Sequence, TypedDict
@@ -127,6 +128,17 @@ def load_domain_source_types() -> dict[str, SourceType]:
     return {row["domain"]: SourceType(row["source_type"]) for row in response.data}
 
 
+def posted_label(created_at: str, today: date) -> str:
+    """The post's date on its domain line ("Sep 27", with the year once it's
+    not this year's), in UTC. Same as the page script's postedLabel."""
+    try:
+        posted = datetime.fromisoformat(created_at).astimezone(UTC).date()
+    except ValueError:
+        return ""
+    label = f"{posted:%b} {posted.day}"
+    return label if posted.year == today.year else f"{label}, {posted.year}"
+
+
 def domain_with_author(domain: str, author: str) -> str:
     """The domain line: a handle stands in for the domain ("@Channel5YouTube";
     the favicon still shows the platform), a display name follows it
@@ -182,6 +194,8 @@ def _render_article(article: Article) -> str:
         f'<div class="card-body">'
         f'<div class="meta">'
         f'<span class="domain">{escape(article.domain)}</span>'
+        f'<time class="posted" datetime="{escape(article.created_at)}">'
+        f"{escape(posted_label(article.created_at, datetime.now(UTC).date()))}</time>"
         f"{topics}"
         f"</div>"
         f'<div class="post-swipe">'

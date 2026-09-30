@@ -646,7 +646,7 @@
       margin-top: calc((var(--favicon-size) - var(--domain-line-height)) / 2);
     }
     .swipe-content .domain {
-      flex: 1;
+      flex: 0 1 auto;
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -656,6 +656,16 @@
       color: gray;
       text-align: left;
     }
+    /* Stays in the flow when empty: it's what pushes the topic chips right. */
+    .swipe-content .posted {
+      flex: 1 0 auto;
+      margin-left: -0.25rem;
+      font-size: 0.7rem;
+      line-height: var(--domain-line-height);
+      color: gray;
+      white-space: nowrap;
+    }
+    .swipe-content .posted:not(:empty)::before { content: "· "; }
     .article-row { display: flex; align-items: center; gap: 0.6rem; }
     .article-row a { flex: 1; min-width: 0; overflow-wrap: anywhere; text-decoration: none; color: inherit; }
     .article-row a:hover { text-decoration: underline; }
@@ -1360,6 +1370,15 @@
       return author.startsWith("@") ? author : `${domain} · ${author}`;
     }
 
+    // Same as site.py's posted_label.
+    function postedLabel(createdAt) {
+      const posted = new Date(createdAt);
+      if (Number.isNaN(posted.getTime())) return "";
+      const options = { month: "short", day: "numeric", timeZone: "UTC" };
+      if (posted.getUTCFullYear() !== new Date().getUTCFullYear()) options.year = "numeric";
+      return posted.toLocaleDateString("en-US", options);
+    }
+
     function isHttpUrl(url) {
       try {
         return ["http:", "https:"].includes(new URL(url).protocol);
@@ -1383,6 +1402,9 @@
         host.includes(".") ? host.slice(0, host.lastIndexOf(".")) : host,
         row.author,
       );
+      const posted = li.querySelector(".posted");
+      posted.dateTime = row.created_at;
+      posted.textContent = postedLabel(row.created_at);
       const topics = li.querySelector(".topics");
       const names = topTopicNames(row.link_topics || []);
       if (names.length > 0) {
