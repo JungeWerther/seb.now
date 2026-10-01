@@ -240,6 +240,17 @@ links with `public.links_to_enrich(step, max_results)` (newest first over the
 whole table; execute revoked from clients). Both functions share
 `functions/_shared/jev.ts`.
 
+**`relation-extract`** (evaluation only: no cron, writes nothing) proposes typed
+relations between a link's entities, as claims made by that link. One Jev
+request per link, one Choice per *unordered* pair of its top
+`MAX_ENTITIES_PER_LINK` entities, whose options are each directed relation
+offered both ways round (`a>b:acquires`, `b>a:acquires`, …) plus the symmetric
+ones and `none`. Asking per ordered pair instead made Jev answer the reverse
+pair too ("Kindle Click makes Amazon"). `POST {"link_ids": [...]}`; the
+container can't reach Supabase directly, so invoke it from SQL with
+`net.http_post` (anon key from `app_settings`) and read `net._http_response`.
+No storage table yet.
+
 A user's preference is derived, not stored: the
 `public.user_topic_preferences` view (`security_invoker`, so RLS on
 `votes`/`link_topics` applies) gives per `(voter_id, topic_id)` the
