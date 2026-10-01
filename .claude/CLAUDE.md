@@ -240,16 +240,31 @@ links with `public.links_to_enrich(step, max_results)` (newest first over the
 whole table; execute revoked from clients). Both functions share
 `functions/_shared/jev.ts`.
 
-**`relation-extract`** (evaluation only: no cron, writes nothing) proposes typed
-relations between a link's entities, as claims made by that link. One Jev
-request per link, one Choice per *unordered* pair of its top
-`MAX_ENTITIES_PER_LINK` entities, whose options are each directed relation
-offered both ways round (`a>b:acquires`, `b>a:acquires`, …) plus the symmetric
-ones and `none`. Asking per ordered pair instead made Jev answer the reverse
-pair too ("Kindle Click makes Amazon"). `POST {"link_ids": [...]}`; the
-container can't reach Supabase directly, so invoke it from SQL with
-`net.http_post` (anon key from `app_settings`) and read `net._http_response`.
-No storage table yet.
+**Relations — the knowledge graph's edges.** `public.entity_relations` holds
+typed relations between entities, each a *claim made by one link* (`link_id`):
+`subject_id`, `relation` (acquires, invests_in, customer_of, part_of, makes,
+leads, works_for, sues, regulates, criticizes, located_in, and the symmetric
+partners_with/competes_with, stored once with the smaller id as subject),
+`object_id`, `status` (stated/planned/called_off/disputed), `p`, `labeled_by`.
+So reports, rumours and denials coexist and confidence sums over links.
+Public-read, service_role-write. The **`relation-extract`** Edge Function fills
+it on its own `pg_cron` job (`2-59/10 * * * *`, 40 links a run, picked by
+`links_to_enrich('relations', …)`: entities extracted, at least two of them,
+no `link_enrichment.relations_at` yet). Per link, one Jev Choice per
+*unordered* pair of its top `MAX_ENTITIES_PER_LINK` entities, whose options are
+each directed relation offered both ways round (`a>b:acquires`,
+`b>a:acquires`, …) — asking per ordered pair made Jev also claim the reverse
+("Kindle Click makes Amazon"). A pair is only offered relations its kinds allow
+(`KIND_RULES`: a person can't be acquired or `located_in` a non-place, only a
+person `leads`), which cut errors like "AMD acquires Fei-Fei Li" from "AMD will
+acquire Fei-Fei Li's World Labs". A second request asks each claim's status.
+`"dry_run": true` returns claims without writing; the container can't reach
+Supabase directly, so invoke it from SQL with `net.http_post` (anon key from
+`app_settings`) and read `net._http_response`. Undo: `delete from
+entity_relations where labeled_by = 'jev'` and clear `relations_at`.
+
+`nace_activities.path` is an `ltree` (`52.32` → `H.52.52_3.52_32`), so a NACE
+branch is `'H.52' @> path`, like topics.
 
 A user's preference is derived, not stored: the
 `public.user_topic_preferences` view (`security_invoker`, so RLS on
