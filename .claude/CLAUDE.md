@@ -257,7 +257,9 @@ each directed relation offered both ways round (`a>b:acquires`,
 ("Kindle Click makes Amazon"). A pair is only offered relations its kinds allow
 (`KIND_RULES`: a person can't be acquired or `located_in` a non-place, only a
 person `leads`), which cut errors like "AMD acquires Fei-Fei Li" from "AMD will
-acquire Fei-Fei Li's World Labs". A second request asks each claim's status.
+acquire Fei-Fei Li's World Labs". A second request asks each claim's status. Option
+texts are kept terse on purpose: they repeat per pair and per direction and are
+most of the input tokens (shortening them cut a 40-link run from 147k to 89k).
 `"dry_run": true` returns claims without writing; the container can't reach
 Supabase directly, so invoke it from SQL with `net.http_post` (anon key from
 `app_settings`) and read `net._http_response`. Undo: `delete from

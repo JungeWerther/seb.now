@@ -20,6 +20,7 @@ const LINKS_PER_RUN = 40;
 const MAX_LINK_IDS = 50;
 const MAX_ENTITIES_PER_LINK = 5;
 const MIN_RELATION_P = 0.5;
+const MAX_DESCRIPTION_CHARS = 300;
 const CONCURRENCY = 6;
 const NONE = "none";
 const A_TO_B = "a>b:";
@@ -28,23 +29,23 @@ const B_TO_A = "b>a:";
 // `{s}` and `{o}` stand for the subject and object; each directed relation
 // becomes two options, one per direction.
 const DIRECTED_RELATIONS = {
-  acquires: "{s} buys, takes over or merges into itself {o}, or agrees or plans to. {o} is the company or asset bought, not a person who founded or owns it.",
-  invests_in: "{s} puts money into {o}: leads or joins a funding round, takes a stake, funds it.",
-  customer_of: "{s} pays {o} for products or services, or signs a deal to.",
-  part_of: "{s} is owned by, a subsidiary, division, feature or brand of, or a member of {o}.",
-  makes: "{s} makes, launches, publishes, organises or operates {o} (a product, service, work or event). {o} is the thing made, not what or who it is about.",
-  leads: "{s} founded, runs or heads {o} (CEO, founder, chair, leader); often written as {o}'s possessive before {s}'s name.",
-  works_for: "{s} works for, advises or represents {o}, without leading it.",
+  acquires: "{s} buys or takes over {o}, or plans to; {o} is what is bought, not its founder.",
+  invests_in: "{s} funds or takes a stake in {o}.",
+  customer_of: "{s} pays {o} for products or services.",
+  part_of: "{s} is owned by, or a unit, feature, brand or member of, {o}.",
+  makes: "{s} makes, launches, publishes, organises or runs {o}; not what {o} is about.",
+  leads: "{s} founded, runs or heads {o} (\"{o}'s {s}\" often means this).",
+  works_for: "{s} works for, advises or represents {o}.",
   sues: "{s} takes legal action against {o}.",
-  regulates: "{s} regulates, investigates, fines, bans, restricts, rules on or sanctions {o}.",
-  criticizes: "{s} accuses, criticises or disputes a claim by {o}.",
-  located_in: "{s} itself is based in, happens in or is a part of the place {o}; not just something {s} runs or sells there.",
+  regulates: "{s} regulates, investigates, fines, bans, restricts or rules on {o}.",
+  criticizes: "{s} accuses, criticises or disputes {o}.",
+  located_in: "{s} itself, not an event it runs, is based or happens in the place {o}.",
 };
 const SYMMETRIC_RELATIONS = {
-  partners_with: "`a` and `b` collaborate, integrate or sign a partnership, neither just paying the other.",
-  competes_with: "`a` and `b` themselves compete with or rival each other; not one of them and the owner or founder of the other's rival.",
+  partners_with: "`a` and `b` collaborate or partner.",
+  competes_with: "`a` and `b` compete or rival each other.",
 };
-const NONE_OPTION = "The link states no relation of these kinds between `a` and `b`, or only mentions them together.";
+const NONE_OPTION = "No such relation is stated; they are only mentioned together.";
 
 // Which entity kinds each relation's subject and object may have; a pair is
 // only offered the relations its kinds allow. Only person and place are
@@ -68,7 +69,6 @@ const KIND_RULES: Record<Relation, [(s: string) => boolean, (o: string) => boole
   competes_with: [(s) => s !== "place", (o) => o !== "place"],
 };
 const allowed = (r: Relation, s: EntityMention, o: EntityMention) => KIND_RULES[r][0](s.kind) && KIND_RULES[r][1](o.kind);
-const sameSide = (a: EntityMention, b: EntityMention) => (a.kind === "person") === (b.kind === "person");
 
 function relationOptions(a: EntityMention, b: EntityMention): Record<string, string> {
   const options: Record<string, string> = {};
@@ -77,16 +77,16 @@ function relationOptions(a: EntityMention, b: EntityMention): Record<string, str
     if (allowed(name, b, a)) options[B_TO_A + name] = text.replaceAll("{s}", "`b`").replaceAll("{o}", "`a`");
   }
   for (const [name, text] of Object.entries(SYMMETRIC_RELATIONS) as [Relation, string][]) {
-    if (allowed(name, a, b) && allowed(name, b, a) && (name !== "competes_with" || sameSide(a, b))) options[name] = text;
+    if (allowed(name, a, b) && allowed(name, b, a)) options[name] = text;
   }
   return { ...options, [NONE]: NONE_OPTION };
 }
 
 const STATUS_OPTIONS = {
-  stated: "The link reports it as done, true or ongoing.",
-  planned: "The link reports it as announced, agreed, planned, expected or in talks, but not done yet.",
-  called_off: "The link reports it as abandoned, cancelled, ended or blocked.",
-  disputed: "The link reports it as only alleged, or as denied or disputed by someone.",
+  stated: "Done, true or ongoing.",
+  planned: "Announced, agreed, planned or in talks; not done yet.",
+  called_off: "Abandoned, cancelled, ended or blocked.",
+  disputed: "Alleged, denied or disputed.",
 };
 
 type Relation = keyof typeof DIRECTED_RELATIONS | keyof typeof SYMMETRIC_RELATIONS;
@@ -147,7 +147,7 @@ const SYMMETRIC = Object.keys(SYMMETRIC_RELATIONS);
 async function processLink(db: SupabaseClient, jev: JevClient, link: Link, entities: EntityMention[], dryRun: boolean) {
   const pairs = entities.flatMap((a, i) => entities.slice(i + 1).map((b) => [a, b] as const));
   const state = {
-    link: { title: link.title, site: hostOf(link.url), ...(link.description ? { description: link.description } : {}) },
+    link: { title: link.title, site: hostOf(link.url), ...(link.description ? { description: link.description.slice(0, MAX_DESCRIPTION_CHARS) } : {}) },
   };
   let inputTokens = 0;
   let claims: Claim[] = [];
@@ -160,7 +160,7 @@ async function processLink(db: SupabaseClient, jev: JevClient, link: Link, entit
         instructions: {
           a: label(a),
           b: label(b),
-          question: "According to `link`, how are `a` and `b` related? Only what the link itself states or clearly implies.",
+          question: "How does `link` relate `a` and `b`? Only what it states or clearly implies.",
         },
         criteria: relationOptions(a, b),
       } satisfies ChoiceQuestion,
