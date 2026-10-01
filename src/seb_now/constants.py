@@ -30,6 +30,9 @@ FEED_PAGE_SIZE = 30
 # site.py — value of every field in the #article-template markup, which the
 # page script overwrites per link
 TEMPLATE_ARTICLE_BLANK = ""
+# site.py — the Time Saved overlay's "support monthly" button (Ko-fi,
+# Liberapay, a Stripe Payment Link…); the button stays hidden while empty.
+SUPPORT_URL = ""
 
 # sanitize.py — safe_http_url
 # Schemes a feed/post URL may use when rendered into an href or src.

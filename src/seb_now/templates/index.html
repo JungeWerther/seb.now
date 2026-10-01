@@ -419,6 +419,18 @@
     .time-card-ytd { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.8rem !important; }
     .time-card-ask { font-size: 2.2rem; font-weight: 700; color: var(--positive); line-height: 1.2; }
     .time-card-clock { font-size: 0.85rem; }
+    .time-support {
+      display: block;
+      margin-top: 0.9rem;
+      padding: 0.7rem 1rem;
+      border-radius: 999px;
+      background: var(--positive);
+      color: var(--bg);
+      font-weight: 600;
+      text-align: center;
+      text-decoration: none;
+    }
+    .time-support[hidden] { display: none; }
     #taste-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
     .taste-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.3rem 0.75rem; font-size: 0.85rem; }
     .taste-custom { margin-left: 0.4rem; font-size: 0.7rem; color: gray; }
@@ -928,6 +940,7 @@
       <p class="time-card-ask" id="time-ask"></p>
       <p class="time-card-clock" id="time-clock"></p>
     </div>
+    <a id="time-support" class="time-support" target="_blank" rel="noopener noreferrer" hidden></a>
   </dialog>
   <p id="search-empty">No matching articles.</p>
   <section id="focus" hidden>
@@ -2397,6 +2410,7 @@
     // …and the ask is this share of the value regained before the year ends.
     const TIME_ASK_SHARE = 0.01;
     const TIME_TICK_MS = 100;
+    const SUPPORT_URL = __SUPPORT_URL__;
     const DAYS_PER_YEAR = 365;
     const MS_PER_HOUR = 3600 * 1000;
     let timeTicker = null;
@@ -2427,6 +2441,8 @@
         `× ${DAYS_PER_YEAR} = ${hoursPerYear.toFixed(1)} h/year × ${euro(rate)}/h\n` +
         `= ${euro(valuePerYear)}/year (${euro(valuePerMonth)}/mo)\n` +
         `fair price: ${TIME_SUBSCRIPTION_SHARE * 100}% / 12 = ${euro(valuePerMonth * TIME_SUBSCRIPTION_SHARE)}/mo`;
+      document.getElementById("time-support").textContent =
+        `Support monthly · ${euro(valuePerMonth * TIME_SUBSCRIPTION_SHARE)}/mo`;
 
       const now = new Date();
       const yearStart = new Date(now.getFullYear(), 0, 1);
@@ -2466,6 +2482,11 @@
         });
       }
       document.getElementById("time-overlay").addEventListener("close", () => clearInterval(timeTicker));
+      if (isHttpUrl(SUPPORT_URL)) {
+        const support = document.getElementById("time-support");
+        support.href = SUPPORT_URL;
+        support.hidden = false;
+      }
     }
 
     const OVERLAY_LOADERS = { "taste-overlay": loadTaste, "profile-overlay": loadProfile, "time-overlay": loadTimeSaved };

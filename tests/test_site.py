@@ -370,6 +370,7 @@ def test_render_injects_feed_constants() -> None:
     assert "__FEED_PAGE_SIZE__" not in html
     assert "__ARTICLE_TOPIC_CHIPS__" not in html
     assert "__FAVICON_URL_TEMPLATE__" not in html
+    assert "__SUPPORT_URL__" not in html
 
 
 def test_search_queries_the_server_instead_of_filtering_the_page() -> None:

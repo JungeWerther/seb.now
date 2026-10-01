@@ -353,7 +353,9 @@ minutes a day × clickbait share × the reader's hourly rate (defaults 60 min,
 a "fair price" of `TIME_SUBSCRIPTION_SHARE` of it per month, and a card that
 ticks every `TIME_TICK_MS` while open: value regained so far this year, and the
 ask, `TIME_ASK_SHARE` of the value still to regain before 1 January, with a
-countdown to it. No payment is wired up.
+countdown to it. Below it a "Support monthly" button links to `SUPPORT_URL`
+(constants.py), labelled with the reader's fair price; it stays hidden while
+that is empty, since the page can't pass the amount on to the payment page.
 
 **Wordmark.** The header's SVG wordmark has its `viewBox` trimmed to the
 glyphs; its ink (`--brand-ink-height`, lifted by `--brand-ink-offset`) is

@@ -28,6 +28,7 @@ from seb_now.constants import (
     FAVICON_URL_TEMPLATE,
     FEED_PAGE_SIZE,
     SUPABASE_JS_MODULE_URL,
+    SUPPORT_URL,
     TEMPLATE_ARTICLE_BLANK,
     SourceType,
 )
@@ -49,6 +50,7 @@ FEED_PAGE_SIZE_PLACEHOLDER = "__FEED_PAGE_SIZE__"
 ARTICLE_TOPIC_CHIPS_PLACEHOLDER = "__ARTICLE_TOPIC_CHIPS__"
 FAVICON_URL_TEMPLATE_PLACEHOLDER = "__FAVICON_URL_TEMPLATE__"
 SUPABASE_JS_MODULE_URL_PLACEHOLDER = "__SUPABASE_JS_MODULE_URL__"
+SUPPORT_URL_PLACEHOLDER = "__SUPPORT_URL__"
 CSP_PLACEHOLDER = "__CONTENT_SECURITY_POLICY__"
 
 FEED_COLUMNS = "id, title, url, image_url, author, created_at"
@@ -264,6 +266,7 @@ def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon
     html = html.replace(ARTICLE_TOPIC_CHIPS_PLACEHOLDER, script_json(ARTICLE_TOPIC_CHIPS))
     html = html.replace(FAVICON_URL_TEMPLATE_PLACEHOLDER, script_json(FAVICON_URL_TEMPLATE))
     html = html.replace(SUPABASE_JS_MODULE_URL_PLACEHOLDER, script_json(SUPABASE_JS_MODULE_URL))
+    html = html.replace(SUPPORT_URL_PLACEHOLDER, script_json(safe_http_url(SUPPORT_URL) or ""))
     return html.replace(CSP_PLACEHOLDER, escape(page_csp(html, supabase_url)))
 
 
