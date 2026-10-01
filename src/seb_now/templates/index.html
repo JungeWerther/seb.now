@@ -106,11 +106,12 @@
     #dock-actions {
       position: absolute;
       right: 0;
-      bottom: calc(100% + 0.6rem);
+      bottom: calc(100% + 4rem);
       display: flex;
       gap: 0.5rem;
       opacity: 0;
       visibility: hidden;
+      pointer-events: auto;
       transition: opacity 0.45s ease, visibility 0s linear 0.45s;
     }
     /* visibility (not pointer-events) hides it, so it stays tappable for as
@@ -670,7 +671,7 @@
     #focus-back:hover { border-color: rgba(255, 255, 255, 0.5); }
     #focus .post { color: var(--fg); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14); }
     .link-list { list-style: none; margin: 0; padding: 0; }
-    ul.articles .post { cursor: pointer; }
+    ul.articles li.article { cursor: pointer; }
     ul.articles .post :is(a, button) { cursor: pointer; }
     html.focused ul.articles .domain { color: gray; }
     html.focused ul.articles li.article { animation: focus-in 0.45s ease both; }
@@ -1948,10 +1949,10 @@
         if (isFocused()) updateFocusBand();
       }).observe(focusSection);
       document.addEventListener("click", (event) => {
-        const post = event.target.closest(".post");
-        if (!post || event.target.closest("a, button")) return;
-        const li = post.closest("li.article");
+        if (event.target.closest("a, button, input, textarea")) return;
+        const li = event.target.closest("li.article");
         if (!li || !articleList.contains(li)) return;
+        if (!window.getSelection().isCollapsed) return;
         focusLink(li.dataset.linkId, { from: li });
       });
       window.addEventListener("popstate", () => {
@@ -2600,14 +2601,24 @@
         loadMore({ replace: true });
       }
 
-      // Fired on pointerdown: it shows while the page is still scrolling, and
-      // a touch then only stops the scroll, never producing a click.
+      // A tap is taken from pointerdown/up rather than click: the button
+      // shows while the page is still scrolling, and a touch then only stops
+      // the scroll, never producing a click. A finger that moves on is a
+      // scroll (the browser cancels the pointer), not a tap.
+      let tapStart = null;
       backToTop.addEventListener("pointerdown", (event) => {
-        if (event.button !== 0) return;
+        tapStart = event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
+      });
+      backToTop.addEventListener("pointercancel", () => { tapStart = null; });
+      backToTop.addEventListener("pointerup", (event) => {
+        if (!tapStart) return;
+        const travel = Math.hypot(event.clientX - tapStart.x, event.clientY - tapStart.y);
+        tapStart = null;
+        if (travel > SWIPE_CAPTURE_SLOP_PX) return;
         event.preventDefault();
         goToTop();
       });
-      // Keyboard activation (detail 0); pointer clicks were handled above.
+      // Keyboard activation (detail 0); pointer taps were handled above.
       backToTop.addEventListener("click", (event) => {
         if (event.detail === 0) goToTop();
       });
