@@ -32,7 +32,7 @@ FEED_PAGE_SIZE = 30
 TEMPLATE_ARTICLE_BLANK = ""
 # site.py — the Time Saved overlay's "support monthly" button (Ko-fi,
 # Liberapay, a Stripe Payment Link…); the button stays hidden while empty.
-SUPPORT_URL = ""
+SUPPORT_URL = "https://ko-fi.com/sebnow"
 
 # sanitize.py — safe_http_url
 # Schemes a feed/post URL may use when rendered into an href or src.
