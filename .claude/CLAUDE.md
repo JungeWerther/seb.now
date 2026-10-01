@@ -269,6 +269,18 @@ edge per (subject, relation, object): `links`, noisy-OR `p = 1 - Π(1 - p_i)`,
 `status` from the newest claiming link, `first_seen`/`last_seen`. Graph reads
 (a future MCP `get_entity`, related links by relation) should go through it.
 
+**`property-extract`** (evaluation only: no cron, writes nothing) proposes
+properties of entities from the words a title describes them with ("British
+AI neocloud Nscale"). `descriptors.ts` finds those words with compromise, no
+model call: the run before the name or an appositive after it, stopping at
+verbs, function words, possessives and punctuation, after lowercasing
+title-case words outside entity names (title case makes compromise read
+headline verbs as nouns); "former"/"ex" set a flag instead of being a word.
+Jev then gives each word a facet (domain/origin/stage/type/evaluation/other),
+same-facet neighbours merge, and each domain phrase maps onto one of the link's
+leaf topics or a top-level topic. About 1 link in 9 has a descriptor; a
+300-link run cost 33k tokens.
+
 `nace_activities.path` is an `ltree` (`52.32` → `H.52.52_3.52_32`), so a NACE
 branch is `'H.52' @> path`, like topics.
 
