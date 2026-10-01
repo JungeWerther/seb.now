@@ -347,6 +347,13 @@ pagination, ranking and search"), so keep it in sync with `ranked_feed`.
 replies and the reader's fediverse username (`@handle@seb.now`, previewed live
 under the field); the page lowercases it and checks the same pattern as the
 DB before saving.
+**Time Saved** (`#time-overlay`) is a client-only calculator: YouTube
+minutes a day × clickbait share × the reader's hourly rate (defaults 60 min,
+50%, €10, kept in `localStorage`) gives the yearly value of skipped clickbait,
+a "fair price" of `TIME_SUBSCRIPTION_SHARE` of it per month, and a card that
+ticks every `TIME_TICK_MS` while open: value regained so far this year, and the
+ask, `TIME_ASK_SHARE` of the value still to regain before 1 January, with a
+countdown to it. No payment is wired up.
 
 **Wordmark.** The header's SVG wordmark has its `viewBox` trimmed to the
 glyphs; its ink (`--brand-ink-height`, lifted by `--brand-ink-offset`) is

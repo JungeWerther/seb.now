@@ -393,6 +393,32 @@
     #handle-save:disabled { opacity: 0.5; cursor: default; }
     #profile-hint { font-size: 0.8rem; color: gray; margin: 0.5rem 0 0; }
     #profile-status { font-size: 0.8rem; color: gray; min-height: 1.2em; margin: 0.4rem 0 0; }
+    .time-inputs { display: grid; gap: 0.5rem; font-size: 0.9rem; }
+    .time-inputs label { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; }
+    .time-inputs input {
+      font: inherit;
+      width: 4.5rem;
+      padding: 0.3rem 0.6rem;
+      border: 1px solid rgba(128, 128, 128, 0.5);
+      border-radius: 999px;
+      background: transparent;
+      color: inherit;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .time-inputs input:focus { outline: none; border-color: var(--positive); box-shadow: 0 0 0 3px var(--positive-soft); }
+    .time-math { font-size: 0.78rem; margin: 1rem 0; white-space: pre-wrap; opacity: 0.8; }
+    .time-card {
+      padding: 1rem 1.1rem;
+      border-radius: 14px;
+      background: var(--positive-soft);
+      font-variant-numeric: tabular-nums;
+    }
+    .time-card p { margin: 0; }
+    .time-card-label { font-size: 0.75rem; color: gray; }
+    .time-card-ytd { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.8rem !important; }
+    .time-card-ask { font-size: 2.2rem; font-weight: 700; color: var(--positive); line-height: 1.2; }
+    .time-card-clock { font-size: 0.85rem; }
     #taste-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
     .taste-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.3rem 0.75rem; font-size: 0.85rem; }
     .taste-custom { margin-left: 0.4rem; font-size: 0.7rem; color: gray; }
@@ -840,6 +866,10 @@
             <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
             <span>My Profile</span>
           </button></li>
+          <li><button class="bubble" data-overlay="time-overlay" tabindex="-1">
+            <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg></span>
+            <span>Time Saved</span>
+          </button></li>
         </ul>
       </div>
       <h1 class="brand">
@@ -879,6 +909,25 @@
     </div>
     <p id="profile-hint">Lowercase letters, numbers and _. It's also your fediverse account, <span id="profile-fediverse-name"></span>: your comments are posted there too, and a comment on a link shares that link.</p>
     <p id="profile-status"></p>
+  </dialog>
+  <dialog id="time-overlay" class="overlay" aria-labelledby="time-title">
+    <div class="overlay-head">
+      <p class="overlay-title" id="time-title">Time Saved</p>
+      <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
+    <div class="time-inputs">
+      <label>YouTube a day <span><input id="time-minutes" type="number" min="0" max="1440" step="5" inputmode="numeric"> min</span></label>
+      <label>of it clickbait <span><input id="time-clickbait" type="number" min="0" max="100" step="5" inputmode="numeric"> %</span></label>
+      <label>your time is worth <span>€ <input id="time-rate" type="number" min="0" step="1" inputmode="decimal"> /h</span></label>
+    </div>
+    <pre class="time-math"><code id="time-math"></code></pre>
+    <div class="time-card">
+      <p class="time-card-label">Regained this year so far</p>
+      <p class="time-card-ytd" id="time-ytd"></p>
+      <p class="time-card-label" id="time-until-label"></p>
+      <p class="time-card-ask" id="time-ask"></p>
+      <p class="time-card-clock" id="time-clock"></p>
+    </div>
   </dialog>
   <p id="search-empty">No matching articles.</p>
   <section id="focus" hidden>
@@ -2340,7 +2389,86 @@
       });
     }
 
-    const OVERLAY_LOADERS = { "taste-overlay": loadTaste, "profile-overlay": loadProfile };
+    // Time Saved: what skipping clickbait is worth, and what seb.now asks for it.
+    const TIME_DEFAULTS = { minutes: 60, clickbait: 50, rate: 10 };
+    const TIME_STORAGE_KEY = "seb.now:time-saved";
+    // A fair subscription is this share of the yearly value, billed monthly…
+    const TIME_SUBSCRIPTION_SHARE = 0.1;
+    // …and the ask is this share of the value regained before the year ends.
+    const TIME_ASK_SHARE = 0.01;
+    const TIME_TICK_MS = 100;
+    const DAYS_PER_YEAR = 365;
+    const MS_PER_HOUR = 3600 * 1000;
+    let timeTicker = null;
+
+    function readTimeInputs() {
+      const value = (id, fallback) => {
+        const n = Number(document.getElementById(id).value);
+        return Number.isFinite(n) && n >= 0 ? n : fallback;
+      };
+      return {
+        minutes: Math.min(value("time-minutes", TIME_DEFAULTS.minutes), 24 * 60),
+        clickbait: Math.min(value("time-clickbait", TIME_DEFAULTS.clickbait), 100),
+        rate: value("time-rate", TIME_DEFAULTS.rate),
+      };
+    }
+
+    function renderTimeSaved() {
+      const { minutes, clickbait, rate } = readTimeInputs();
+      const euro = (n, digits = 2) => n.toLocaleString(undefined, {
+        style: "currency", currency: "EUR", minimumFractionDigits: digits, maximumFractionDigits: digits,
+      });
+      const savedMinutesPerDay = minutes * clickbait / 100;
+      const hoursPerYear = savedMinutesPerDay * DAYS_PER_YEAR / 60;
+      const valuePerYear = hoursPerYear * rate;
+      const valuePerMonth = valuePerYear / 12;
+      document.getElementById("time-math").textContent =
+        `${minutes} min × ${clickbait}% = ${Math.round(savedMinutesPerDay)} min/day skipped\n` +
+        `× ${DAYS_PER_YEAR} = ${hoursPerYear.toFixed(1)} h/year × ${euro(rate)}/h\n` +
+        `= ${euro(valuePerYear)}/year (${euro(valuePerMonth)}/mo)\n` +
+        `fair price: ${TIME_SUBSCRIPTION_SHARE * 100}% / 12 = ${euro(valuePerMonth * TIME_SUBSCRIPTION_SHARE)}/mo`;
+
+      const now = new Date();
+      const yearStart = new Date(now.getFullYear(), 0, 1);
+      const nextYear = new Date(now.getFullYear() + 1, 0, 1);
+      const valuePerMs = valuePerYear / (DAYS_PER_YEAR * 24 * MS_PER_HOUR);
+      const remainingMs = nextYear - now;
+      document.getElementById("time-ytd").textContent = euro((now - yearStart) * valuePerMs, 4);
+      document.getElementById("time-until-label").textContent =
+        `${TIME_ASK_SHARE * 100}% of the ${euro(remainingMs * valuePerMs)} you regain until ${nextYear.getFullYear()}`;
+      document.getElementById("time-ask").textContent = euro(remainingMs * valuePerMs * TIME_ASK_SHARE);
+      const totalSeconds = Math.floor(remainingMs / 1000);
+      const pad = (n) => String(n).padStart(2, "0");
+      document.getElementById("time-clock").textContent =
+        `${Math.floor(totalSeconds / 86400)}d ${pad(Math.floor(totalSeconds / 3600) % 24)}:` +
+        `${pad(Math.floor(totalSeconds / 60) % 60)}:${pad(totalSeconds % 60)} left`;
+    }
+
+    function loadTimeSaved() {
+      renderTimeSaved();
+      clearInterval(timeTicker);
+      timeTicker = setInterval(renderTimeSaved, TIME_TICK_MS);
+    }
+
+    function setupTimeSaved() {
+      let saved = {};
+      try {
+        saved = JSON.parse(localStorage.getItem(TIME_STORAGE_KEY)) ?? {};
+      } catch {}
+      for (const key of Object.keys(TIME_DEFAULTS)) {
+        const input = document.getElementById(`time-${key}`);
+        input.value = saved[key] ?? TIME_DEFAULTS[key];
+        input.addEventListener("input", () => {
+          renderTimeSaved();
+          try {
+            localStorage.setItem(TIME_STORAGE_KEY, JSON.stringify(readTimeInputs()));
+          } catch {}
+        });
+      }
+      document.getElementById("time-overlay").addEventListener("close", () => clearInterval(timeTicker));
+    }
+
+    const OVERLAY_LOADERS = { "taste-overlay": loadTaste, "profile-overlay": loadProfile, "time-overlay": loadTimeSaved };
 
     // Must match the replies_body_length check in the replies migration.
     const REPLY_MAX_LENGTH = 500;
@@ -2681,6 +2809,7 @@
     setupMenu();
     setupTaste();
     setupProfile();
+    setupTimeSaved();
     setupSearch();
     setupDockActions();
     setupReplies();
