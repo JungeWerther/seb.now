@@ -269,17 +269,32 @@ edge per (subject, relation, object): `links`, noisy-OR `p = 1 - Π(1 - p_i)`,
 `status` from the newest claiming link, `first_seen`/`last_seen`. Graph reads
 (a future MCP `get_entity`, related links by relation) should go through it.
 
-**`property-extract`** (evaluation only: no cron, writes nothing) proposes
-properties of entities from the words a title describes them with ("British
-AI neocloud Nscale"). `descriptors.ts` finds those words with compromise, no
-model call: the run before the name or an appositive after it, stopping at
-verbs, function words, possessives and punctuation, after lowercasing
-title-case words outside entity names (title case makes compromise read
-headline verbs as nouns); "former"/"ex" set a flag instead of being a word.
-Jev then gives each word a facet (domain/origin/stage/type/evaluation/other),
-same-facet neighbours merge, and each domain phrase maps onto one of the link's
-leaf topics or a top-level topic. About 1 link in 9 has a descriptor; a
-300-link run cost 33k tokens.
+**Properties — what links say an entity *is*.** `public.entity_properties`
+holds claims like relations do (`entity_id`, `link_id`, `p`, `labeled_by`),
+each a `facet` + `value` taken from the words a title describes the entity with
+("British AI neocloud Nscale"): `domain` (with `topic_id`, an ltree into
+`topics`, so `topic_id <@ 'ai'` finds every AI-described entity), `origin`,
+`stage`, `type`, or `evaluation` (a framing: the publication's view, so join
+`links` for the source). `former` marks "former coach". `value` is the words as
+written, lowercased; `origin` stays text until a demonym → ISO table exists.
+`public.entity_property_summary` folds them per (entity, facet, value) by
+noisy-OR, like `entity_relation_summary`. Together they answer intensional
+queries — a class by its properties, e.g. AI-domain startups and who invests in
+them — without listing members. `entity_relations.status` also has `ended`.
+
+The **`property-extract`** Edge Function fills it on its own `pg_cron` job
+(`7-59/10 * * * *`, 100 links a run, picked by `links_to_enrich('properties',
+…)`; every processed link gets `link_enrichment.properties_at`).
+`descriptors.ts` finds the describing words with compromise, no model call: the
+run before the name or an appositive after it, stopping at verbs, function
+words, adverbs, possessives and punctuation, after lowercasing title-case words
+outside entity names (title case makes compromise read headline verbs as
+nouns); "former"/"ex" set the flag instead of being a word. Only links with
+descriptors (about 1 in 8) call Jev: one Choice per word for its facet
+(evaluation needs p ≥ 0.75, since a judgement near a name is often about another
+entity), same-facet neighbours merge, then each domain phrase maps onto one of
+the link's leaf topics or a top-level topic (`topic_children()`). About 140
+input tokens per link scanned.
 
 `nace_activities.path` is an `ltree` (`52.32` → `H.52.52_3.52_32`), so a NACE
 branch is `'H.52' @> path`, like topics.

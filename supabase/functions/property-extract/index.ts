@@ -12,12 +12,15 @@ import { descriptors } from "./descriptors.ts";
 // phrase onto a topic, so it is queryable by topic path: one of the link's own
 // leaf labels, or a top-level topic when none of those fits ("AI" on a link
 // labelled only business.startups_funding), without walking the tree again.
+// Properties land in `entity_properties` (labeled_by 'jev'), and every
+// processed link gets `link_enrichment.properties_at`, described or not.
 //
-// Evaluation only for now: POST {"link_ids": [...]} returns the properties
-// without writing anything; links whose titles describe no entity are skipped.
+// POST {} processes up to LINKS_PER_RUN unprocessed links, newest first;
+// POST {"link_ids": [...]} those links. "dry_run": true reports without writing.
 
 const MODEL = "jev-1.13.0";
 const TYPESAFE_KEY_SECRET = "typesafe-ai-token";
+const LINKS_PER_RUN = 100;
 const MAX_LINK_IDS = 300;
 const MIN_FACET_P = 0.5;
 const MIN_EVALUATION_P = 0.75;
@@ -44,6 +47,7 @@ interface Link {
 }
 
 interface Property {
+  entityId: string;
   entity: string;
   facet: Facet;
   value: string;
@@ -63,11 +67,11 @@ function hostOf(url: string): string {
 async function loadLinks(db: SupabaseClient, ids: string[]) {
   const { data, error } = await db
     .from("links")
-    .select("id, title, url, link_entities(surface, entities(name)), link_topics(topic_id, topics(name))")
+    .select("id, title, url, link_entities(surface, entity_id, entities(name)), link_topics(topic_id, topics(name))")
     .in("id", ids);
   if (error) throw new Error(error.message);
   return data as unknown as (Link & {
-    link_entities: { surface: string | null; entities: { name: string } }[];
+    link_entities: { surface: string | null; entity_id: string; entities: { name: string } }[];
     link_topics: { topic_id: string; topics: { name: string } }[];
   })[];
 }
@@ -78,10 +82,25 @@ async function topLevelTopics(db: SupabaseClient): Promise<Record<string, string
   return Object.fromEntries((data as { id: string; name: string }[]).map((t) => [t.id, `${t.name} (in general)`]));
 }
 
-async function processLink(jev: JevClient, link: Awaited<ReturnType<typeof loadLinks>>[number], topLevel: Record<string, string>) {
+async function markProcessed(db: SupabaseClient, linkId: string) {
+  const { error } = await db.from("link_enrichment").upsert({ link_id: linkId, properties_at: new Date().toISOString() });
+  if (error) throw new Error(error.message);
+}
+
+async function processLink(
+  db: SupabaseClient,
+  jev: JevClient,
+  link: Awaited<ReturnType<typeof loadLinks>>[number],
+  topLevel: Record<string, string>,
+  dryRun: boolean,
+) {
   const surfaces = link.link_entities.map((m) => m.surface ?? m.entities.name);
+  const entityIdOf = new Map(link.link_entities.map((m, i) => [surfaces[i], m.entity_id]));
   const found = descriptors(link.title, surfaces);
-  if (!found.length) return null;
+  if (!found.length) {
+    if (!dryRun) await markProcessed(db, link.id);
+    return null;
+  }
 
   const state = { link: { title: link.title, site: hostOf(link.url) } };
   const words = found.flatMap((d, di) => d.words.map((word, wi) => ({ d, di, wi, word })));
@@ -112,7 +131,7 @@ async function processLink(jev: JevClient, link: Awaited<ReturnType<typeof loadL
       prev.value = `${prev.value} ${word}`;
       prev.p = Math.min(prev.p, p);
     } else {
-      properties.push({ entity: d.surface, facet, value: word, p, former: d.former });
+      properties.push({ entityId: entityIdOf.get(d.surface)!, entity: d.surface, facet, value: word, p, former: d.former });
     }
     lastKept = i;
   });
@@ -139,28 +158,50 @@ async function processLink(jev: JevClient, link: Awaited<ReturnType<typeof loadL
     });
   }
 
+  const rows = properties.map((pr) => ({ ...pr, value: pr.value.toLowerCase(), p: Math.round(pr.p * 1000) / 1000 }));
+  if (!dryRun) {
+    if (rows.length) {
+      const { error } = await db.from("entity_properties").upsert(
+        rows.map((pr) => ({
+          entity_id: pr.entityId, link_id: link.id, facet: pr.facet, value: pr.value,
+          topic_id: pr.topic ?? null, former: pr.former, p: pr.p, labeled_by: "jev",
+        })),
+        { onConflict: "link_id,entity_id,facet,value", ignoreDuplicates: true },
+      );
+      if (error) throw new Error(error.message);
+    }
+    await markProcessed(db, link.id);
+  }
   return {
     link_id: link.id,
     title: link.title,
     site: hostOf(link.url),
     descriptors: found,
-    properties: properties.map((pr) => ({ ...pr, p: Math.round(pr.p * 1000) / 1000 })),
+    properties: rows.map(({ entityId: _, ...pr }) => pr),
     inputTokens,
   };
+}
+
+async function unprocessedLinkIds(db: SupabaseClient): Promise<string[]> {
+  const { data, error } = await db.rpc("links_to_enrich", { step: "properties", max_results: LINKS_PER_RUN });
+  if (error) throw new Error(error.message);
+  return (data as { link_id: string }[]).map((r) => r.link_id);
 }
 
 Deno.serve(async (req: Request) => {
   const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const body = await req.json().catch(() => ({}));
-  const ids: unknown = body?.link_ids;
-  if (!Array.isArray(ids) || !ids.length || ids.length > MAX_LINK_IDS || !ids.every((i) => typeof i === "string")) {
-    return new Response(JSON.stringify({ error: `link_ids must be 1 to ${MAX_LINK_IDS} ids` }), { status: 400 });
+  const dryRun = body?.dry_run === true;
+  const given: unknown = body?.link_ids;
+  if (given !== undefined && (!Array.isArray(given) || given.length > MAX_LINK_IDS || !given.every((i) => typeof i === "string"))) {
+    return new Response(JSON.stringify({ error: `link_ids must be at most ${MAX_LINK_IDS} ids` }), { status: 400 });
   }
   const { data: apiKey, error: keyError } = await db.rpc("get_vault_secret", { secret_name: TYPESAFE_KEY_SECRET });
   if (keyError || !apiKey) {
     return new Response(JSON.stringify({ error: `no ${TYPESAFE_KEY_SECRET} in Vault` }), { status: 500 });
   }
   const jev = new JevClient(apiKey, MODEL);
+  const ids = (given as string[] | undefined) ?? await unprocessedLinkIds(db);
   const [links, topLevel] = await Promise.all([loadLinks(db, ids), topLevelTopics(db)]);
 
   const results: NonNullable<Awaited<ReturnType<typeof processLink>>>[] = [];
@@ -169,7 +210,7 @@ Deno.serve(async (req: Request) => {
   await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
     for (let link = queue.shift(); link; link = queue.shift()) {
       try {
-        const result = await processLink(jev, link, topLevel);
+        const result = await processLink(db, jev, link, topLevel, dryRun);
         if (result) results.push(result);
       } catch (e) {
         errors.push({ link_id: link.id, error: String(e) });
@@ -180,6 +221,7 @@ Deno.serve(async (req: Request) => {
   return new Response(
     JSON.stringify({
       model: MODEL,
+      dry_run: dryRun,
       links_scanned: links.length,
       links_with_descriptors: results.length,
       properties: properties.length,

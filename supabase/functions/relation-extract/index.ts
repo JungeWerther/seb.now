@@ -8,8 +8,8 @@ import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
 // ways round as separate options, so a pair gets one direction, never both;
 // "none" covers pairs it only mentions together. A second request asks, for
 // the pairs that got a relation, whether the link reports it as done, planned,
-// called off or disputed. Claims land in `entity_relations` (labeled_by 'jev'),
-// and each processed link gets `link_enrichment.relations_at`.
+// called off, disputed or ended. Claims land in `entity_relations` (labeled_by
+// 'jev'), and each processed link gets `link_enrichment.relations_at`.
 //
 // POST {} processes up to LINKS_PER_RUN unprocessed links, newest first;
 // POST {"link_ids": [...]} those links. "dry_run": true reports without writing.
@@ -85,8 +85,9 @@ function relationOptions(a: EntityMention, b: EntityMention): Record<string, str
 const STATUS_OPTIONS = {
   stated: "Done, true or ongoing.",
   planned: "Announced, agreed, planned or in talks; not done yet.",
-  called_off: "Abandoned, cancelled, ended or blocked.",
+  called_off: "Abandoned, cancelled or blocked before it happened.",
   disputed: "Alleged, denied or disputed.",
+  ended: "Was so but is over (former, ex-, left, stepped down).",
 };
 
 type Relation = keyof typeof DIRECTED_RELATIONS | keyof typeof SYMMETRIC_RELATIONS;
