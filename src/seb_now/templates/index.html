@@ -2405,9 +2405,7 @@
     // Time Saved: what skipping clickbait is worth, and what seb.now asks for it.
     const TIME_DEFAULTS = { minutes: 60, clickbait: 50, rate: 10 };
     const TIME_STORAGE_KEY = "seb.now:time-saved";
-    // A fair subscription is this share of the yearly value, billed monthly…
-    const TIME_SUBSCRIPTION_SHARE = 0.1;
-    // …and the ask is this share of the value regained before the year ends.
+    // The fair price is this share of the value regained, monthly and until the year ends.
     const TIME_ASK_SHARE = 0.01;
     const TIME_TICK_MS = 100;
     const SUPPORT_URL = __SUPPORT_URL__;
@@ -2440,9 +2438,9 @@
         `${minutes} min × ${clickbait}% = ${Math.round(savedMinutesPerDay)} min/day skipped\n` +
         `× ${DAYS_PER_YEAR} = ${hoursPerYear.toFixed(1)} h/year × ${euro(rate)}/h\n` +
         `= ${euro(valuePerYear)}/year (${euro(valuePerMonth)}/mo)\n` +
-        `fair price: ${TIME_SUBSCRIPTION_SHARE * 100}% / 12 = ${euro(valuePerMonth * TIME_SUBSCRIPTION_SHARE)}/mo`;
+        `fair price: ${TIME_ASK_SHARE * 100}% = ${euro(valuePerMonth * TIME_ASK_SHARE)}/mo`;
       document.getElementById("time-support").textContent =
-        `Support monthly · ${euro(valuePerMonth * TIME_SUBSCRIPTION_SHARE)}/mo`;
+        `Support monthly · ${euro(valuePerMonth * TIME_ASK_SHARE)}/mo`;
 
       const now = new Date();
       const yearStart = new Date(now.getFullYear(), 0, 1);

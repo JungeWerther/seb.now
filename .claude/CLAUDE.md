@@ -350,10 +350,9 @@ DB before saving.
 **Time Saved** (`#time-overlay`) is a client-only calculator: YouTube
 minutes a day × clickbait share × the reader's hourly rate (defaults 60 min,
 50%, €10, kept in `localStorage`) gives the yearly value of skipped clickbait,
-a "fair price" of `TIME_SUBSCRIPTION_SHARE` of it per month, and a card that
-ticks every `TIME_TICK_MS` while open: value regained so far this year, and the
-ask, `TIME_ASK_SHARE` of the value still to regain before 1 January, with a
-countdown to it. Below it a "Support monthly" button links to `SUPPORT_URL`
+a monthly "fair price" of `TIME_ASK_SHARE` of it, and a card that ticks every
+`TIME_TICK_MS` while open: value regained so far this year, and the same share
+of the value still to regain before 1 January, with a countdown to it. Below it a "Support monthly" button links to `SUPPORT_URL`
 (constants.py), labelled with the reader's fair price (the label only: the amount isn't
 passed to the payment page); it stays hidden while that is empty.
 
