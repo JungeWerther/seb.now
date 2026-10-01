@@ -262,6 +262,10 @@ acquire Fei-Fei Li's World Labs". A second request asks each claim's status.
 Supabase directly, so invoke it from SQL with `net.http_post` (anon key from
 `app_settings`) and read `net._http_response`. Undo: `delete from
 entity_relations where labeled_by = 'jev'` and clear `relations_at`.
+`public.entity_relation_summary` (security invoker) folds the claims into one
+edge per (subject, relation, object): `links`, noisy-OR `p = 1 - Π(1 - p_i)`,
+`status` from the newest claiming link, `first_seen`/`last_seen`. Graph reads
+(a future MCP `get_entity`, related links by relation) should go through it.
 
 `nace_activities.path` is an `ltree` (`52.32` → `H.52.52_3.52_32`), so a NACE
 branch is `'H.52' @> path`, like topics.
