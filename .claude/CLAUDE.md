@@ -167,7 +167,7 @@ would have orphaned that history for no reason (their URLs simply
 weren't in HN's/TechCrunch's *current* top lists at seed time, so a
 plain re-run wouldn't have touched them).
 
-**Topics — the recommender's label space.** `public.topics` is a fixed,
+**Topics — the recommender's label space.** `public.topics` is a
 human-named taxonomy keyed by an `ltree` path (`ai.agents`,
 `sports.football`), so `'ai' @> topic_id` selects a parent and all its
 children without a recursive query. `description` is the definition a
@@ -254,6 +254,30 @@ and renders the top `ARTICLE_TOPIC_CHIPS` (by `p`) leaf-topic names as
 chips side by side, right-aligned on the domain line (vertically centred
 with it and the favicon); untagged links show none.
 
+**Contributed topics.** The taxonomy grows from users, through the signed-in
+MCP tools (below), but never by writing `topics` directly — a topic's
+`description` is classifier input, so it's a prompt-injection surface.
+`public.topic_proposals` holds proposals: a full `topic_id` one level under an
+existing topic (the generated `parent_id` FKs into `topics`), at most three
+levels deep, each segment `[a-z0-9_]{2,32}`, one open proposal per path, ≤5
+open per user, name/description/rationale length-checked in the DB.
+`topic_proposal_examples` are the links the proposer says belong in it, and
+`topic_proposal_endorsements` are other users' endorsements (not your own).
+All three are public-read; writes are column-granted and RLS-scoped to the
+caller. **Acceptance is by hand**: `select public.accept_topic_proposal('<id>')`
+(or `reject_topic_proposal`), `security definer` with `execute` revoked from
+clients, run via the Supabase MCP. Accepting inserts the topic with
+`topics.proposed_by` crediting the proposer and turns the examples into
+`manual` `link_topics` labels; labels already on the parent (which may have
+been a leaf until then) are left as they are.
+
+`public.link_topic_suggestions` are a user's own labels for a link (leaf
+topics only, enforced by trigger). They count **only for their author**: in
+`user_topic_preferences` and `ranked_feed`, a user's suggestion replaces the
+shared `link_topics` label for the same link and topic, and adds to it
+otherwise; nobody else's ranking reads them. Public-read, so they can later be
+promoted once trusted.
+
 **Feed pagination, ranking and search.** The build pre-renders only the newest
 `FEED_PAGE_SIZE` links (constants.py, injected into the page script along
 with `ARTICLE_TOPIC_CHIPS`/`FAVICON_URL_TEMPLATE`) for a fast first paint; the
@@ -266,7 +290,7 @@ invoker, so `auth.uid()` is the viewer):
 (age capped at 1000 days, since 0.5 raised to a years-old YouTube upload's age
 underflows a double and Postgres errors rather than rounding to 0) —
 `taste` is the viewer's p-weighted mean topic score over the link's topics (their
-`topic_overrides` score if they set one, else the `user_topic_preferences` one) (a never-voted topic falls back to its parent, then 0.5;
+`topic_overrides` score if they set one, else the `user_topic_preferences` one) (a never-voted topic falls back to its nearest scored ancestor, then 0.5; labels are `link_topics` plus the viewer's own `link_topic_suggestions`;
 untagged links are 0.5), `ups`/`downs` are everyone's votes on the link, and
 freshness halves every 24h. It returns `(link_id, rank)` pages; the client
 then loads those links by id with `FEED_SELECT` and sorts them into rank order.
@@ -451,9 +475,12 @@ pending session promise and send once it resolves.
 `activitypub`: Streamable HTTP, stateless (each POST is one JSON-RPC message
 answered with plain JSON; GET/DELETE are 405, no SSE, no sessions). Read-only
 tools: `get_feed` (`ranked_feed` as a logged-out visitor, so taste is a neutral
-0.5), `search_links` (same `search_text` ilike as the page), `list_topics`,
+0.5), `search_links` (same `search_text` ilike as the page), `list_topics`
+(one level at a time — the top level, or a `parent`'s children, each with a
+child count — via the `public.topic_children(parent)` SQL function, since the
+taxonomy is over PostgREST's max-rows cap and PostgREST has no ltree operators),
 `get_links_by_topic` (a topic id and all its children), `get_link` (with vote
-counts and replies). It queries with the **anon key**, never `service_role`, so
+counts and replies), `list_topic_proposals`. It queries with the **anon key**, never `service_role`, so
 RLS limits it to exactly what a logged-out visitor sees. It's deployed with
 `verify_jwt` **off**, since MCP clients don't send a Supabase JWT — safe
 because `/mcp` only reads, and `/mcp/user` checks its own token (below).
@@ -477,7 +504,10 @@ flow, which is why this is a separate endpoint rather than optional auth on
 `dist/oauth/consent/index.html`), which approves or denies with
 `supabase.auth.oauth.*` as the browser's own session — the same, usually
 anonymous, account as the feed — and only follows an http(s) return address.
-Reply and `topic_overrides` tools aren't built yet. It's also served at
+Signed in it also has `propose_topic`, `endorse_topic` and
+`suggest_link_topic` (see "Contributed topics"), and its `instructions` ask
+agents to propose a topic when links fit no leaf well. Reply and
+`topic_overrides` tools aren't built yet. It's also served at
 `https://seb.now/mcp` through the DO Functions proxy `mcp/server`
 (`functions/packages/mcp/server`), with its own exact-match ingress rule
 (`/mcp` → `rewrite: /mcp/server`), the same pattern as `/ap/inbox`. The proxy
