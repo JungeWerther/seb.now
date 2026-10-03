@@ -240,6 +240,33 @@ links with `public.links_to_enrich(step, max_results)` (newest first over the
 whole table; execute revoked from clients). Both functions share
 `functions/_shared/jev.ts`.
 
+**Events — `event-extract`.** What a link announces and when, from its own
+page, with no per-site code; on its own `pg_cron` job (`4-59/10 * * * *`, up
+to 10 links a run, only links `entity-extract` has done, since the venue is
+picked among their place entities). Same split as the other steps: code
+proposes, Jev only chooses. `content.ts` fetches the page and cleans it without
+a DOM parser (cut at the `<h1>`, scripts/menus/headers/footers/forms removed,
+text split into sections at `<h2>`/`<h3>` headings or at paragraphs that open
+with a bold title, which is how guides list their events); the cleaned text
+lands in `public.link_content` (service_role only) for later steps to reuse.
+schema.org `Event` JSON-LD is taken as is (`labeled_by = 'json_ld'`).
+Otherwise `dates.ts` reads every date and range in the title, the feed
+description (`web-feed-ingest` stores each item's summary in
+`links.description`) and the page with chrono-node (French parser first on
+French pages; numeric dates day first unless the page is `en-US`; a year left
+out is the one nearest the link's date), each with its sentence. No date later
+than the day before the link was published means no Jev call. Otherwise one
+Jev request asks whether the page is one event, a listing or neither; each
+date's role (the run, start, end, a day it's on, or other); the kind
+(per section for a listing, whose heading becomes the event's `name`); and the
+venue. For a single event, dates in the title/description win over page dates.
+Rows go to `public.link_events` (public-read; `starts_on`/`ends_on` dates, an
+open-ended run has no start, a one-day event no end, each dated session its
+own row; `venue_entity_id`, `evidence`, `p`), and `link_enrichment.events_at`
+marks the link. `POST {"link_ids": [...], "dry_run": true}` reports without
+writing. Events aren't entities yet: a listing's headings are headlines, not
+clean names, so merging them into `entities` (kind `event`) is a later step.
+
 A user's preference is derived, not stored: the
 `public.user_topic_preferences` view (`security_invoker`, so RLS on
 `votes`/`link_topics` applies) gives per `(voter_id, topic_id)` the
