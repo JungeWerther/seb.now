@@ -280,6 +280,13 @@ topic and ranking links by `Σ θ·p`.
 and renders the top `ARTICLE_TOPIC_CHIPS` (by `p`) leaf-topic names as
 chips side by side, right-aligned on the domain line (vertically centred
 with it and the favicon); untagged links show none.
+Every row also shows its top `ARTICLE_ENTITY_CHIPS` entities (by `p`) as
+filled chips at the bottom left of the post footer, opposite the score and
+reply button; the build embeds `link_entities` for this and the page's
+`FEED_SELECT` fetches them with their `kind`, which the focused view lists.
+While a page of links loads into the list (not one replacing links already
+showing), `FEED_SKELETON_ROWS` pulsing placeholder rows (`#feed-skeletons`,
+rendered by `site.py` after the list) show below it.
 
 **Feed pagination, ranking and search.** The build pre-renders only the newest
 `FEED_PAGE_SIZE` links (constants.py, injected into the page script along
@@ -409,11 +416,15 @@ transition) that fades back to the page colour over a screen's height below
 `--focus-end`, the section's bottom (kept current by a ResizeObserver). The feed
 list itself is swapped for the related links (`feed.related`, the same
 `loadMore`/infinite scroll/hydration as the ranked feed, so they're voteable and
-repliable), from `public.related_links(link, max_results, page_offset)`
-(security invoker): shared entities count double, shared leaf topics once, each
-weighted p × p, newest first on ties, then id, so pages never skip or repeat;
-the shared names show under each ("Shares OpenAI, AI industry"), and tapping one
-goes a level deeper. Each step is `history.pushState`d with its depth
+repliable, and look exactly like feed rows), from
+`public.related_links(link, max_results, page_offset)` (security invoker):
+shared entities count double, shared leaf topics once, each weighted p × p,
+newest first on ties, then id, so pages never skip or repeat; what each shares
+with the focused post is shown by its chips (shared ones sorted first and
+tinted `.shared`, green), and tapping one goes a level deeper. Every rendered
+row is kept in `linkRows` by id, so focusing a link the page has already shown
+needs no fetch: its entities and topics appear at once (only a pre-rendered
+or directly visited link is fetched, with a skeleton card meanwhile). Each step is `history.pushState`d with its depth
 (`focusDepth`), so Back steps between posts; the ← Feed button goes back all
 the way at once, and the feed returns exactly as it was left (its items and
 `feed` state saved on the way in, scroll position included, the card flying

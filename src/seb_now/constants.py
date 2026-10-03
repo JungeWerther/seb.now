@@ -20,6 +20,11 @@ class SourceType(StrEnum):
 
 # site.py — topic chips shown per article, highest-p first
 ARTICLE_TOPIC_CHIPS = 2
+# site.py — entity chips shown per article (bottom left, beside its votes),
+# highest-p first
+ARTICLE_ENTITY_CHIPS = 3
+# site.py — placeholder rows shown where a page of links is loading
+FEED_SKELETON_ROWS = 3
 # site.py — per-source favicon in each article's left column; {host} is the
 # link's host without "www.". DuckDuckGo's service, not Google's, so a
 # visitor's browser doesn't report every source it renders to Google.

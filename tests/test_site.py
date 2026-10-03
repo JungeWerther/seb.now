@@ -7,8 +7,15 @@ from uuid import uuid4
 import pytest
 
 from seb_now import site
-from seb_now.constants import ARTICLE_TOPIC_CHIPS, FAVICON_URL_TEMPLATE, FEED_PAGE_SIZE, SourceType
-from seb_now.site import Article, _top_topic_names, build_articles, render
+from seb_now.constants import (
+    ARTICLE_ENTITY_CHIPS,
+    ARTICLE_TOPIC_CHIPS,
+    FAVICON_URL_TEMPLATE,
+    FEED_PAGE_SIZE,
+    FEED_SKELETON_ROWS,
+    SourceType,
+)
+from seb_now.site import Article, _top_entity_names, _top_topic_names, build_articles, render
 
 DOMAIN_SOURCE_TYPES = {
     "nytimes.com": SourceType.MAINSTREAM_MEDIA,
@@ -180,6 +187,68 @@ def test_render_shows_topic_chips_and_omits_them_when_untagged() -> None:
     ) in html
     assert _article_list(html).count('<span class="topics">') == 1
     assert "cluster" not in html
+
+
+def test_top_entity_names_orders_by_p_and_caps_at_chip_count() -> None:
+    link_entities = [
+        {"p": 0.8, "entities": {"name": "OpenAI"}},
+        {"p": 1.0, "entities": {"name": "Sam Altman"}},
+        {"p": 0.9, "entities": {"name": "Microsoft"}},
+        {"p": 0.85, "entities": {"name": "Anthropic"}},
+        {"p": 0.95, "entities": None},
+    ]
+
+    expected = ["Sam Altman", "Microsoft", "Anthropic", "OpenAI"][:ARTICLE_ENTITY_CHIPS]
+    assert _top_entity_names(link_entities) == expected
+
+
+def test_render_shows_entity_chips_bottom_left_of_the_footer_and_omits_them_when_none() -> None:
+    with_entities = Article(
+        id="a1",
+        title="Tagged",
+        url="https://example.com/a",
+        domain="example.com",
+        source_type=SourceType.DIRECT_LINK,
+        entities=("OpenAI", "<b>Sam</b>"),
+    )
+    without = Article(
+        id="a2",
+        title="Untagged",
+        url="https://example.com/b",
+        domain="example.com",
+        source_type=SourceType.DIRECT_LINK,
+    )
+
+    articles = _article_list(render([with_entities, without]))
+
+    assert (
+        '<div class="post-footer"><span class="entities"><span class="entity">OpenAI</span>'
+        '<span class="entity">&lt;b&gt;Sam&lt;/b&gt;</span></span><span class="score">'
+    ) in articles
+    assert articles.count('<span class="entities">') == 1
+
+
+def test_render_includes_hidden_skeleton_rows_after_the_feed() -> None:
+    html = render([])
+
+    start = html.index('<ul class="link-list" id="feed-skeletons" aria-hidden="true" hidden>')
+    skeletons = html[start : html.index("</ul>", start)]
+    assert skeletons.count('<li class="skeleton">') == FEED_SKELETON_ROWS
+    assert html.index('<ul class="articles">') < start < html.index('id="feed-sentinel"')
+    script = html[html.index('<script type="module">') :]
+    assert "feedSkeletons.hidden = !feed.loading || feed.replacing;" in script
+
+
+def test_related_links_look_like_the_feed_with_shared_chips_highlighted() -> None:
+    html = render([])
+
+    assert "Shares " not in html
+    assert "related-why" not in html
+    script = html[html.index('<script type="module">') :]
+    assert "new Set(r.shared_entities)" in script and "new Set(r.shared_topics)" in script
+    assert 'el.classList.toggle("shared", shared.has(name))' in script
+    # Opening a link already rendered reuses its row instead of fetching it.
+    assert "let row = linkRows.get(id);" in script
 
 
 def test_render_gives_each_article_a_reply_button_and_empty_reply_list() -> None:
@@ -357,6 +426,7 @@ def test_render_includes_article_template_with_a_cover_and_topic_chip_to_fill() 
     assert template.count('li class="article"') == 1
     assert 'class="cover-link"' in template
     assert '<span class="topic">' in template
+    assert '<span class="entity">' in template
     assert 'id="feed-sentinel"' in html
     assert '<ul class="articles">' in html
 
@@ -366,9 +436,11 @@ def test_render_injects_feed_constants() -> None:
 
     assert f"const FEED_PAGE_SIZE = {FEED_PAGE_SIZE};" in html
     assert f"const ARTICLE_TOPIC_CHIPS = {ARTICLE_TOPIC_CHIPS};" in html
+    assert f"const ARTICLE_ENTITY_CHIPS = {ARTICLE_ENTITY_CHIPS};" in html
     assert f'const FAVICON_URL_TEMPLATE = "{FAVICON_URL_TEMPLATE}";' in html
     assert "__FEED_PAGE_SIZE__" not in html
     assert "__ARTICLE_TOPIC_CHIPS__" not in html
+    assert "__ARTICLE_ENTITY_CHIPS__" not in html
     assert "__FAVICON_URL_TEMPLATE__" not in html
 
 

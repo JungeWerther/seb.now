@@ -4,8 +4,10 @@ Each article's tag button opens its own page (seb.now/p/<id>): the page script
 shows the link with all its topics and entities, and its related links.
 
 Feed: the `links` table in Supabase (title + url per row), read with the
-public anon client, with each link's `link_topics` labels embedded. Each
-article shows its ARTICLE_TOPIC_CHIPS highest-p topics as chips. Only the
+public anon client, with each link's `link_topics` and `link_entities` labels
+embedded. Each article shows its ARTICLE_TOPIC_CHIPS highest-p topics as chips
+on its domain line and its ARTICLE_ENTITY_CHIPS highest-p entities below the
+post. Only the
 newest FEED_PAGE_SIZE links are pre-rendered; the page script fetches the
 rest (and any newer than the build) as you scroll, filling the
 `#article-template` markup emitted here so both paths share one layout.
@@ -24,16 +26,18 @@ from pathlib import Path
 from typing import Mapping, NotRequired, Sequence, TypedDict
 
 from seb_now.constants import (
+    ARTICLE_ENTITY_CHIPS,
     ARTICLE_TOPIC_CHIPS,
     FAVICON_URL_TEMPLATE,
     FEED_PAGE_SIZE,
+    FEED_SKELETON_ROWS,
     SUPABASE_JS_MODULE_URL,
     TEMPLATE_ARTICLE_BLANK,
     SourceType,
 )
 from seb_now.auth import get_unauthenticated_client
 from seb_now.consent import write_consent
-from seb_now.domain.models import DomainSourceType, Link, LinkTopic, Topic
+from seb_now.domain.models import DomainSourceType, Entity, Link, LinkEntity, LinkTopic, Topic
 from seb_now.posts import load_posts, write_posts
 from seb_now.sanitize import page_csp, safe_http_url, script_json
 from seb_now.source_type import classify_source, display_domain, favicon_host
@@ -47,6 +51,7 @@ SUPABASE_URL_PLACEHOLDER = "__SUPABASE_URL__"
 SUPABASE_ANON_KEY_PLACEHOLDER = "__SUPABASE_ANON_KEY__"
 FEED_PAGE_SIZE_PLACEHOLDER = "__FEED_PAGE_SIZE__"
 ARTICLE_TOPIC_CHIPS_PLACEHOLDER = "__ARTICLE_TOPIC_CHIPS__"
+ARTICLE_ENTITY_CHIPS_PLACEHOLDER = "__ARTICLE_ENTITY_CHIPS__"
 FAVICON_URL_TEMPLATE_PLACEHOLDER = "__FAVICON_URL_TEMPLATE__"
 SUPABASE_JS_MODULE_URL_PLACEHOLDER = "__SUPABASE_JS_MODULE_URL__"
 CSP_PLACEHOLDER = "__CONTENT_SECURITY_POLICY__"
@@ -62,6 +67,7 @@ class Article:
     domain: str
     source_type: SourceType
     topics: tuple[str, ...] = ()
+    entities: tuple[str, ...] = ()
     image_url: str | None = None
     created_at: str = ""
 
@@ -73,11 +79,12 @@ class FeedItem(TypedDict):
     image_url: NotRequired[str]
     author: NotRequired[str]
     topics: NotRequired[list[str]]
+    entities: NotRequired[list[str]]
     created_at: NotRequired[str]
 
 
 # The page script clones this and fills it in per fetched link, so it carries
-# one topic chip and a cover for the script to fill or drop.
+# one topic chip, one entity chip and a cover for the script to fill or drop.
 TEMPLATE_ARTICLE = Article(
     id=TEMPLATE_ARTICLE_BLANK,
     title=TEMPLATE_ARTICLE_BLANK,
@@ -85,20 +92,32 @@ TEMPLATE_ARTICLE = Article(
     domain=TEMPLATE_ARTICLE_BLANK,
     source_type=SourceType.DIRECT_LINK,
     topics=(TEMPLATE_ARTICLE_BLANK,),
+    entities=(TEMPLATE_ARTICLE_BLANK,),
     image_url=TEMPLATE_ARTICLE_BLANK,
 )
 
 
+def _top_names(labels: Sequence[dict], key: str, count: int) -> list[str]:
+    ranked = sorted((label for label in labels if label[key]), key=lambda label: (-label["p"], label[key]["name"]))
+    return [label[key]["name"] for label in ranked[:count]]
+
+
 def _top_topic_names(link_topics: Sequence[dict]) -> list[str]:
-    ranked = sorted(link_topics, key=lambda lt: (-lt["p"], lt["topics"]["name"]))
-    return [lt["topics"]["name"] for lt in ranked[:ARTICLE_TOPIC_CHIPS]]
+    return _top_names(link_topics, Topic.__tablename__, ARTICLE_TOPIC_CHIPS)
+
+
+def _top_entity_names(link_entities: Sequence[dict]) -> list[str]:
+    return _top_names(link_entities, Entity.__tablename__, ARTICLE_ENTITY_CHIPS)
 
 
 def load_feed() -> list[FeedItem]:
     client = get_unauthenticated_client()
     response = (
         client.table(Link.__tablename__)
-        .select(f"{FEED_COLUMNS}, {LinkTopic.__tablename__}(p, {Topic.__tablename__}(name))")
+        .select(
+            f"{FEED_COLUMNS}, {LinkTopic.__tablename__}(p, {Topic.__tablename__}(name)), "
+            f"{LinkEntity.__tablename__}(p, {Entity.__tablename__}(name))"
+        )
         .order("created_at", desc=True)
         .order("id", desc=True)
         .limit(FEED_PAGE_SIZE)
@@ -117,6 +136,7 @@ def load_feed() -> list[FeedItem]:
                 "image_url": safe_http_url(row["image_url"]) or "",
                 "author": row.get("author") or "",
                 "topics": _top_topic_names(row[LinkTopic.__tablename__]),
+                "entities": _top_entity_names(row.get(LinkEntity.__tablename__) or []),
                 # Kept as PostgREST's own string so the page's pagination
                 # cursor round-trips it exactly (microseconds included).
                 "created_at": row["created_at"],
@@ -162,6 +182,7 @@ def build_articles(
             domain=domain_with_author(display_domain(item["url"]), item.get("author", "")),
             source_type=classify_source(item["url"], domain_source_types),
             topics=tuple(item.get("topics", ())),
+            entities=tuple(item.get("entities", ())),
             image_url=item.get("image_url") or None,
             created_at=item.get("created_at", ""),
         )
@@ -188,6 +209,13 @@ def _render_article(article: Article) -> str:
         + "".join(f'<span class="topic">{escape(name)}</span>' for name in article.topics)
         + "</span>"
         if article.topics
+        else ""
+    )
+    entities = (
+        '<span class="entities">'
+        + "".join(f'<span class="entity">{escape(name)}</span>' for name in article.entities)
+        + "</span>"
+        if article.entities
         else ""
     )
     return (
@@ -228,6 +256,7 @@ def _render_article(article: Article) -> str:
         f"</div>"
         f"</div>"
         f'<div class="post-footer">'
+        f"{entities}"
         f'<span class="score">'
         f'<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" '
         f'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
@@ -250,10 +279,24 @@ def _render_article(article: Article) -> str:
     )
 
 
+def _render_skeletons() -> str:
+    row = (
+        '      <li class="skeleton"><div class="swipe-content">'
+        '<span class="favicon"></span>'
+        '<div class="card-body">'
+        '<div class="meta"><span class="bone bone-domain"></span></div>'
+        '<div class="post"><span class="bone"></span><span class="bone bone-short"></span>'
+        '<span class="bone bone-cover"></span></div>'
+        "</div></div></li>"
+    )
+    return "".join(f"\n{row}" for _ in range(FEED_SKELETON_ROWS))
+
+
 def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon_key: str = "") -> str:
     items = "".join(f"\n{_render_article(article)}" for article in articles)
     list_html = (
         f'    <ul class="articles">{items}\n    </ul>\n'
+        f'    <ul class="link-list" id="feed-skeletons" aria-hidden="true" hidden>{_render_skeletons()}\n    </ul>\n'
         f'    <div id="feed-sentinel" aria-hidden="true"></div>\n'
         f'    <template id="article-template">\n{_render_article(TEMPLATE_ARTICLE)}\n    </template>'
     )
@@ -262,6 +305,7 @@ def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon
     html = html.replace(SUPABASE_ANON_KEY_PLACEHOLDER, script_json(supabase_anon_key))
     html = html.replace(FEED_PAGE_SIZE_PLACEHOLDER, script_json(FEED_PAGE_SIZE))
     html = html.replace(ARTICLE_TOPIC_CHIPS_PLACEHOLDER, script_json(ARTICLE_TOPIC_CHIPS))
+    html = html.replace(ARTICLE_ENTITY_CHIPS_PLACEHOLDER, script_json(ARTICLE_ENTITY_CHIPS))
     html = html.replace(FAVICON_URL_TEMPLATE_PLACEHOLDER, script_json(FAVICON_URL_TEMPLATE))
     html = html.replace(SUPABASE_JS_MODULE_URL_PLACEHOLDER, script_json(SUPABASE_JS_MODULE_URL))
     return html.replace(CSP_PLACEHOLDER, escape(page_csp(html, supabase_url)))

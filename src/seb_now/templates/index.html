@@ -613,6 +613,53 @@
       gap: 0.4rem;
       margin-top: 0.5rem;
     }
+    /* Bottom left, under the post; margin-right: auto keeps the votes and
+       reply button right. */
+    .post-footer .entities {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      min-width: 0;
+      margin-right: auto;
+    }
+    .post-footer .entity {
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 0.65rem;
+      line-height: 1.4;
+      padding: 0.05rem 0.5rem;
+      border-radius: 999px;
+      background: rgba(128, 128, 128, 0.14);
+      color: gray;
+      white-space: nowrap;
+    }
+    /* On a related link: what it shares with the focused post. */
+    .meta .topic.shared { color: var(--positive); border-color: var(--positive); }
+    .post-footer .entity.shared { color: var(--positive); background: var(--positive-soft); }
+    #feed-skeletons[hidden] { display: none; }
+    .skeleton .bone {
+      display: block;
+      height: 0.8rem;
+      border-radius: 6px;
+      background: rgba(128, 128, 128, 0.18);
+    }
+    .skeleton .bone + .bone { margin-top: 0.45rem; }
+    .skeleton .bone-domain { width: 6rem; height: 0.6rem; }
+    .skeleton .bone-short { width: 60%; }
+    .skeleton .bone-cover { height: auto; aspect-ratio: 16 / 9; max-height: 180px; border-radius: 9px; margin-top: 0.6rem; }
+    .skeleton .post { box-shadow: none; }
+    #focus-main li.skeleton .swipe-content { padding-top: 0; }
+    #focus-main li.skeleton .swipe-content::before { display: none; }
+    .skeleton .favicon,
+    .skeleton .bone { animation: skeleton-pulse 1.4s ease-in-out infinite; }
+    @keyframes skeleton-pulse {
+      50% { opacity: 0.45; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .skeleton .favicon,
+      .skeleton .bone { animation: none; }
+    }
     .swipe-content .reply-count { font-size: 0.75rem; color: gray; font-variant-numeric: tabular-nums; }
     .post-footer .score {
       display: flex;
@@ -702,7 +749,6 @@
     }
     .tag.entity { border-color: var(--positive); }
     .tag .tag-detail { margin-left: 0.35rem; font-size: 0.65rem; color: gray; }
-    .related-why { margin: 0.4rem 0 0; font-size: 0.7rem; color: gray; }
     li.article.replying .reply-btn { color: var(--positive); border-color: var(--positive); }
     .swipe-content .replies {
       list-style: none;
@@ -1449,14 +1495,19 @@
 
     const FEED_PAGE_SIZE = __FEED_PAGE_SIZE__;
     const ARTICLE_TOPIC_CHIPS = __ARTICLE_TOPIC_CHIPS__;
+    const ARTICLE_ENTITY_CHIPS = __ARTICLE_ENTITY_CHIPS__;
     const FAVICON_URL_TEMPLATE = __FAVICON_URL_TEMPLATE__;
-    const FEED_SELECT = "id, title, url, image_url, author, created_at, link_topics(p, topics(name))";
+    const FEED_SELECT =
+      "id, title, url, image_url, author, created_at, link_topics(p, topics(name)), link_entities(p, entities(name, kind))";
     // Fetch the next page once the end of the list is this close to view.
     const FEED_PREFETCH_MARGIN_PX = 1200;
 
     const articleList = document.querySelector("ul.articles");
     const articleTemplate = document.getElementById("article-template");
     const feedSentinel = document.getElementById("feed-sentinel");
+    const feedSkeletons = document.getElementById("feed-skeletons");
+    // Every link row rendered so far, by id, so opening one needs no fetch.
+    const linkRows = new Map();
     const searchEmpty = document.getElementById("search-empty");
 
     // The list shows one feed at a time: the default one, ranked by the
@@ -1474,6 +1525,7 @@
       seen: new Set(),
       done: false,
       loading: false,
+      replacing: false,
       generation: 0,
     };
 
@@ -1484,13 +1536,32 @@
       return host.startsWith("www.") ? host.slice(4) : host;
     }
 
-    // Same order as site.py's _top_topic_names.
-    function topTopicNames(linkTopics) {
-      return linkTopics
-        .filter((lt) => lt.topics)
-        .sort((a, b) => b.p - a.p || (a.topics.name < b.topics.name ? -1 : a.topics.name > b.topics.name ? 1 : 0))
-        .slice(0, ARTICLE_TOPIC_CHIPS)
-        .map((lt) => lt.topics.name);
+    // Same order as site.py's _top_names, except that names in `first` (what
+    // a related link shares with the focused post) come before the rest.
+    function topNames(labels, key, count, first) {
+      const byName = (a, b) => (a[key].name < b[key].name ? -1 : a[key].name > b[key].name ? 1 : 0);
+      return labels
+        .filter((label) => label[key])
+        .sort((a, b) => first.has(b[key].name) - first.has(a[key].name) || b.p - a.p || byName(a, b))
+        .slice(0, count)
+        .map((label) => label[key].name);
+    }
+
+    // Fills `container` with one copy of its first chip per name, or drops it.
+    function fillChips(container, names, shared) {
+      if (names.length === 0) {
+        container.remove();
+        return;
+      }
+      const chip = container.firstElementChild;
+      container.replaceChildren(
+        ...names.map((name) => {
+          const el = chip.cloneNode();
+          el.textContent = name;
+          el.classList.toggle("shared", shared.has(name));
+          return el;
+        }),
+      );
     }
 
     // Same as site.py's domain_with_author.
@@ -1518,8 +1589,11 @@
 
     // cloneNode, not importNode: the clone stays in the template's inert
     // document until inserted, so its placeholder images never load.
-    function renderArticle(row) {
+    // `shared` names the entities and topics to highlight.
+    const NOTHING_SHARED = { entities: new Set(), topics: new Set() };
+    function renderArticle(row, shared = NOTHING_SHARED) {
       if (!isHttpUrl(row.url)) return null;
+      linkRows.set(row.id, row);
       const host = registrableHost(row.url);
       const li = articleTemplate.content.querySelector("li.article").cloneNode(true);
       li.dataset.linkId = row.id;
@@ -1534,20 +1608,16 @@
       const posted = li.querySelector(".posted");
       posted.dateTime = row.created_at;
       posted.textContent = postedLabel(row.created_at);
-      const topics = li.querySelector(".topics");
-      const names = topTopicNames(row.link_topics || []);
-      if (names.length > 0) {
-        const chip = topics.querySelector(".topic");
-        topics.replaceChildren(
-          ...names.map((name) => {
-            const el = chip.cloneNode();
-            el.textContent = name;
-            return el;
-          }),
-        );
-      } else {
-        topics.remove();
-      }
+      fillChips(
+        li.querySelector(".topics"),
+        topNames(row.link_topics || [], "topics", ARTICLE_TOPIC_CHIPS, shared.topics),
+        shared.topics,
+      );
+      fillChips(
+        li.querySelector(".entities"),
+        topNames(row.link_entities || [], "entities", ARTICLE_ENTITY_CHIPS, shared.entities),
+        shared.entities,
+      );
       const link = li.querySelector(".article-row a");
       link.href = row.url;
       link.textContent = row.title;
@@ -1618,7 +1688,7 @@
     }
 
     // One page of related_links, then those links by id in its order, each
-    // carrying what it shares with the focused post.
+    // with what it shares with the focused post.
     async function fetchRelated(id, offset) {
       const client = await supabaseReady;
       const { data: related, error } = await client.rpc("related_links", {
@@ -1641,7 +1711,10 @@
       return {
         rows: related
           .filter((r) => byId.has(r.link_id))
-          .map((r) => ({ ...byId.get(r.link_id), shared: [...r.shared_entities, ...r.shared_topics] })),
+          .map((r) => ({
+            row: byId.get(r.link_id),
+            shared: { entities: new Set(r.shared_entities), topics: new Set(r.shared_topics) },
+          })),
         count: related.length,
       };
     }
@@ -1663,19 +1736,19 @@
       return page;
     }
 
+    // Rows are links, or {row, shared} for related links.
     function renderRows(rows) {
-      return rows
-        .map((row) => {
-          const li = renderArticle(row);
-          if (li && row.shared) {
-            const why = document.createElement("p");
-            why.className = "related-why";
-            why.textContent = `Shares ${row.shared.join(", ")}`;
-            li.querySelector(".post-footer").before(why);
-          }
-          return li;
-        })
-        .filter(Boolean);
+      return rows.map((item) => (item.row ? renderArticle(item.row, item.shared) : renderArticle(item))).filter(Boolean);
+    }
+
+    // Placeholders below the list while a page loads into it, unless the page
+    // replaces links already showing.
+    function updateSkeletons() {
+      feedSkeletons.hidden = !feed.loading || feed.replacing;
+    }
+
+    function skeletonRow() {
+      return feedSkeletons.firstElementChild.cloneNode(true);
     }
 
     function updateSearchEmpty() {
@@ -1695,16 +1768,20 @@
     async function loadMore({ replace = false } = {}) {
       if (feed.loading || feed.done) return;
       feed.loading = true;
+      feed.replacing = replace;
+      updateSkeletons();
       const generation = feed.generation;
       const page = await fetchPage();
       if (generation !== feed.generation) return;
       feed.loading = false;
+      updateSkeletons();
       if (!page) return false;
       if (page.count < FEED_PAGE_SIZE) feed.done = true;
       // Ranks can shift between pages as votes come in, so a link may come
       // back twice.
-      const rows = page.rows.filter((row) => !feed.seen.has(row.id));
-      for (const row of rows) feed.seen.add(row.id);
+      const idOf = (item) => (item.row ?? item).id;
+      const rows = page.rows.filter((item) => !feed.seen.has(idOf(item)));
+      for (const item of rows) feed.seen.add(idOf(item));
       const items = renderRows(rows);
       if (replace) articleList.replaceChildren(...items);
       else articleList.append(...items);
@@ -1728,6 +1805,7 @@
       feed.seen = new Set();
       feed.done = false;
       feed.loading = false;
+      updateSkeletons();
     }
 
     function showFeed(query) {
@@ -1784,13 +1862,13 @@
     // this page there): tapping a post's card anywhere but its links and
     // buttons lifts it to the top of the page onto a black band, with all its
     // entities and topics, and the feed below is swapped for the links related
-    // to it (related_links, which says what they share), a page at a time as
+    // to it (related_links; what each shares with it is highlighted among its
+    // chips), a page at a time as
     // you scroll, voted on and replied to like any feed. Each step is pushed
     // onto history with its depth, so Back steps between posts and finally
     // returns the feed as it was, scroll position included; visiting the
     // address directly opens it at depth 0, and leaving then starts a fresh feed.
     const POST_PATH_PATTERN = /^\/p\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/;
-    const LINK_PAGE_SELECT = `${FEED_SELECT}, link_entities(p, entities(name, kind))`;
     const FOCUS_MOVE_MS = 420;
     const FOCUS_FADE_MS = 600;
     const focusSection = document.getElementById("focus");
@@ -1858,10 +1936,15 @@
         savedFeed = saveFeed ? { items: [...articleList.children], state: { ...feed }, scrollY: window.scrollY } : null;
       }
       const start = from?.getBoundingClientRect();
+      // Shared with the post focused before, which no longer applies.
+      for (const chip of from?.querySelectorAll(".shared") ?? []) chip.classList.remove("shared");
       root.classList.add("focused", "focus-bg");
       focusSection.hidden = false;
-      focusMain.replaceChildren(...(from ? [from] : []));
-      focusStatus.textContent = from ? "" : "Loading…";
+      focusStatus.textContent = "";
+      let row = linkRows.get(id);
+      let li = from ?? (row && renderArticle(row));
+      focusMain.replaceChildren(li ?? skeletonRow());
+      if (li && !from) hydrateArticles([li]);
       showFocusSection("focus-entities", []);
       showFocusSection("focus-topics", []);
       showRelated(id);
@@ -1870,17 +1953,22 @@
       if (from) flyFrom(from, start);
       loadMore();
 
-      const { data: row, error } = await (await supabaseReady).from("links").select(LINK_PAGE_SELECT).eq("id", id).maybeSingle();
-      if (generation !== focusGeneration) return;
-      if (!from) {
-        const li = row && renderArticle(row);
-        if (error || !li) {
-          focusStatus.textContent = error ? "Couldn't load this post." : "This post doesn't exist.";
-          return;
+      // A pre-rendered post, or a direct visit, has no row yet.
+      if (!row) {
+        const { data, error } = await (await supabaseReady).from("links").select(FEED_SELECT).eq("id", id).maybeSingle();
+        if (generation !== focusGeneration) return;
+        row = data;
+        if (!li) {
+          li = row && renderArticle(row);
+          if (error || !li) {
+            focusMain.replaceChildren();
+            focusStatus.textContent = error ? "Couldn't load this post." : "This post doesn't exist.";
+            updateFocusBand();
+            return;
+          }
+          focusMain.replaceChildren(li);
+          hydrateArticles([li]);
         }
-        focusStatus.textContent = "";
-        focusMain.append(li);
-        hydrateArticles([li]);
       }
       if (row) {
         showFocusSection(
@@ -1924,6 +2012,7 @@
         return;
       }
       Object.assign(feed, saved.state, { generation: feed.generation + 1, loading: false });
+      updateSkeletons();
       articleList.replaceChildren(...saved.items);
       window.scrollTo({ top: saved.scrollY, behavior: "instant" });
       if (card && saved.items.includes(card)) flyFrom(card, start);
