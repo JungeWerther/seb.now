@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
+import { pageCandidates } from "../_shared/names.ts";
 import { fetchPage, JsonLdEvent, PageContent, pageText, parseSections, Section } from "../_shared/page.ts";
 import { DateCandidate, dateCandidates, Source } from "./dates.ts";
 
@@ -18,7 +19,9 @@ import { DateCandidate, dateCandidates, Source } from "./dates.ts";
 //     day it happens on, or something else); what kind of event it is (per
 //     section, for a listing, whose headings name the events); and which of
 //     the link's place and organisation entities is the venue (for a listing,
-//     per section, among those named in that section). Dates in the title or
+//     per section, among those that section names and the names code finds in
+//     it, since a long guide's venues don't all become entities; a venue that
+//     isn't one is kept as `venue_name`). Dates in the title or
 //     feed description say what the link is about, so for a page about one
 //     event they win over dates found further down (often other events').
 // Events over before the link was published are dropped. Rows land in
@@ -37,11 +40,13 @@ const MIN_PAGE_P = 0.5;
 const MAX_NOT_AN_EVENT_P = 0.5;
 const MIN_ROLE_P = 0.5;
 const MIN_VENUE_P = 0.5;
+const SECTION_VENUE_PHRASES = 6;
 const LEAD_CHARS = 600;
 const EXCERPT_CHARS = 300;
 const DESCRIPTION_CHARS = 500;
 const RECENT_MS = 24 * 60 * 60 * 1000;
 const NONE = "none";
+const PHRASE_PREFIX = "phrase_";
 // Kinds of entity an event can be held at: a museum or a shop is an organisation as well as a place.
 const VENUE_KINDS = ["place", "company", "nonprofit", "public_body", "cooperative"];
 const NOT_AN_EVENT = "not_an_event";
@@ -132,6 +137,11 @@ interface EventRow {
   labeled_by: "jev" | "json_ld";
 }
 
+interface Venue {
+  entityId: string | null;
+  name: string | null;
+}
+
 interface Judged extends DateCandidate {
   role: Role;
   roleP: number;
@@ -173,12 +183,12 @@ function jsonLdRows(events: JsonLdEvent[]): EventRow[] {
 // The dates of one event (the page, or one section of a listing) become rows:
 // its run (a range, else a start and/or an end) if it has one, else one row
 // per day it happens on.
-function unitRows(dates: Judged[], name: string | null, kind: Kind, baseP: number, venue: string | null): EventRow[] {
+function unitRows(dates: Judged[], name: string | null, kind: Kind, baseP: number, venue: Venue): EventRow[] {
   const best = (role: Role) =>
     dates.filter((d) => d.role === role).sort((a, b) => b.roleP - a.roleP)[0];
   const row = (starts: string | null, ends: string | null, startTime: string | null, evidence: Judged, p: number): EventRow => ({
     name, kind, starts_on: starts, ends_on: ends, start_time: startTime,
-    venue_entity_id: venue, venue_name: null, evidence: evidence.context.slice(0, 500),
+    venue_entity_id: venue.entityId, venue_name: venue.name, evidence: evidence.context.slice(0, 500),
     p: round(Math.min(baseP, p)), labeled_by: "jev",
   });
 
@@ -333,9 +343,9 @@ async function judge(
       criteria: { ...Object.fromEntries(places.map((p) => [p.id, p.name])), [NONE]: "None of these, or not said." },
     };
   }
-  const sectionPlaces = new Map(headed.map((s) => [s, placesIn(places, sections[s])]));
-  for (const [s, named] of sectionPlaces) {
-    if (!named.length) continue;
+  const sectionVenues = new Map(headed.map((s) => [s, venueOptions(places, sections[s])]));
+  for (const [s, { named, phrases }] of sectionVenues) {
+    if (!named.length && !phrases.length) continue;
     questions[`v${s}`] = {
       type: "choice",
       instructions: {
@@ -343,7 +353,11 @@ async function judge(
         excerpt: sections[s].text.slice(0, EXCERPT_CHARS),
         question: "If `link` lists several events, where is the one under `heading` held? Pick the most specific: the venue, building or site, not the city around it, unless only the city is said.",
       },
-      criteria: { ...Object.fromEntries(named.map((p) => [p.id, p.name])), [NONE]: "None of these, or not said." },
+      criteria: {
+        ...Object.fromEntries(named.map((p) => [p.id, p.name])),
+        ...Object.fromEntries(phrases.map((phrase, j) => [`${PHRASE_PREFIX}${j}`, phrase])),
+        [NONE]: "None of these, or not said.",
+      },
     };
   }
 
@@ -365,6 +379,16 @@ async function judge(
     return { kind: kind as Kind, p: 1 - notP };
   };
 
+  // A listing entry's venue: one of the link's entities, or a name found in its text.
+  const sectionVenue = (s: number): Venue => {
+    const key = `v${s}`;
+    if (!result.answers[key]) return { entityId: null, name: null };
+    const { choice, p } = answer(key);
+    if (choice === NONE || p < MIN_VENUE_P) return { entityId: null, name: null };
+    if (!choice.startsWith(PHRASE_PREFIX)) return { entityId: choice, name: null };
+    return { entityId: null, name: sectionVenues.get(s)!.phrases[Number(choice.slice(PHRASE_PREFIX.length))] ?? null };
+  };
+
   const page = answer("page");
   report.page = `${page.choice} (${round(page.p)})`;
   const judged: Judged[] = candidates.flatMap((c, i) => {
@@ -380,28 +404,32 @@ async function judge(
     const venue = places.length ? answer("venue") : null;
     const venueId = venue && venue.choice !== NONE && venue.p >= MIN_VENUE_P ? venue.choice : null;
     const fromLink = judged.filter((d) => d.origin !== "page");
-    return unitRows(fromLink.length ? fromLink : judged, null, kind.kind, Math.min(page.p, kind.p), venueId);
+    return unitRows(fromLink.length ? fromLink : judged, null, kind.kind, Math.min(page.p, kind.p), { entityId: venueId, name: null });
   }
   return headed.flatMap((s) => {
     const kind = kindOf(`s${s}`);
     if (!kind) return [];
     const name = sections[s].heading!.slice(0, 300);
-    const venue = sectionPlaces.get(s)!.length ? answer(`v${s}`) : null;
-    const venueId = venue && venue.choice !== NONE && venue.p >= MIN_VENUE_P ? venue.choice : null;
-    return unitRows(judged.filter((d) => d.section === s), name, kind.kind, Math.min(page.p, kind.p), venueId);
+    return unitRows(judged.filter((d) => d.section === s), name, kind.kind, Math.min(page.p, kind.p), sectionVenue(s));
   });
 }
 
-// The venues a section names, by the text they were found as or their name.
-function placesIn(places: Place[], section: Section): Place[] {
+// A section's venue options: the link's venue entities it names (by the text
+// they were found as or their name), and the other names code finds in it.
+function venueOptions(places: Place[], section: Section): { named: Place[]; phrases: string[] } {
   const text = `${section.heading ?? ""}\n${section.text}`.toLowerCase();
   const seen = new Set<string>();
-  return places.filter((p) => {
-    const named = [p.surface, p.name].some((n) => n && text.includes(n.toLowerCase()));
-    if (!named || seen.has(p.id)) return false;
+  const named = places.filter((p) => {
+    const found = [p.surface, p.name].some((n) => n && text.includes(n.toLowerCase()));
+    if (!found || seen.has(p.id)) return false;
     seen.add(p.id);
     return true;
   });
+  const known = new Set(named.flatMap((p) => [p.surface, p.name]).filter((n): n is string => !!n).map((n) => n.toLowerCase()));
+  const phrases = pageCandidates([section], "", SECTION_VENUE_PHRASES)
+    .map((c) => c.surface)
+    .filter((phrase) => !known.has(phrase.toLowerCase()));
+  return { named, phrases };
 }
 
 async function unprocessedLinkIds(db: SupabaseClient): Promise<string[]> {

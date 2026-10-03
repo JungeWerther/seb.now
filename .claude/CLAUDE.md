@@ -237,7 +237,8 @@ alias), `p` and `labeled_by = 'jev'`; hand rows default to `manual`, p 1.
 After the title, each run reads the page the link points to (`page_entities_at`,
 up to 12 links a run, newest first, none started after 100 s): it fetches and
 cleans the page (`functions/_shared/page.ts`, see Events below) into
-`public.link_content` once for every later step, and `pageCandidates` proposes
+`public.link_content` once for every later step, and `pageCandidates`
+(`_shared/names.ts`) proposes
 up to 60 names from the body text (capitalised runs joined across particles,
 "Théâtre du Châtelet"; a capitalised name after a venue word, "musée d'Orsay";
 taken in rounds over the page's sections so every entry of a guide gets its
@@ -275,8 +276,10 @@ Jev request asks whether the page is one event, a listing or neither; each
 date's role (the run, start, end, a day it's on, or other); the kind
 (per section for a listing, whose heading becomes the event's `name`); and the
 venue, the most specific one, among the link's place and organisation entities
-(a museum or a shop is both; for a listing, per section, among those that
-section names). For a single event, dates in the title/description win over page dates.
+(a museum or a shop is both). For a listing, each entry's options are the
+entities it names plus up to 6 names `_shared/names.ts` finds in its own text,
+since a long guide's venues don't all make the page pass's 60; a venue that
+isn't an entity is kept as text in `venue_name`. For a single event, dates in the title/description win over page dates.
 Rows go to `public.link_events` (public-read; `starts_on`/`ends_on` dates, an
 open-ended run has no start, a one-day event no end, each dated session its
 own row; `venue_entity_id`, `evidence`, `p`), and `link_enrichment.events_at`

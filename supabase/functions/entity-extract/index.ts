@@ -1,16 +1,17 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient, JsonValue } from "../_shared/jev.ts";
+import { pageCandidates } from "../_shared/names.ts";
 import { fetchPage, PageContent, pageText } from "../_shared/page.ts";
-import { candidates, pageCandidates } from "./candidates.ts";
+import { candidates } from "./candidates.ts";
 
 // Finds the named entities a link mentions and links each to a row in
 // `entities`, creating it when it's new. Two passes, each marked in
 // `link_enrichment`: the title (`entities_at`), then the page the link points
 // to (`page_entities_at`). The page pass fetches the page once for every later
 // step, keeping its cleaned text in `link_content`. Per pass:
-//  1. code proposes candidate phrases (candidates.ts), on the page each with
-//     the sentence it appears in;
+//  1. code proposes candidate phrases (candidates.ts; on the page
+//     _shared/names.ts, each with the sentence it appears in);
 //  2. one Jev request asks, for every candidate, whether it is a name, a
 //     concept or neither, and what kind of thing it would be (the kind is read
 //     only for names);
