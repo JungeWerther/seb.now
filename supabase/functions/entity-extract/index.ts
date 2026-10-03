@@ -1,22 +1,30 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient, JsonValue } from "../_shared/jev.ts";
-import { candidates } from "./candidates.ts";
+import { fetchPage, PageContent, pageText } from "../_shared/page.ts";
+import { candidates, pageCandidates } from "./candidates.ts";
 
-// Finds the named entities a link's title mentions and links each to a row in
-// `entities`, creating it when it's new. Per link:
-//  1. code proposes candidate phrases (candidates.ts);
+// Finds the named entities a link mentions and links each to a row in
+// `entities`, creating it when it's new. Two passes, each marked in
+// `link_enrichment`: the title (`entities_at`), then the page the link points
+// to (`page_entities_at`). The page pass fetches the page once for every later
+// step, keeping its cleaned text in `link_content`. Per pass:
+//  1. code proposes candidate phrases (candidates.ts), on the page each with
+//     the sentence it appears in;
 //  2. one Jev request asks, for every candidate, whether it is a name, a
 //     concept or neither, and what kind of thing it would be (the kind is read
 //     only for names);
 //  3. for each name, `entity_candidates` finds close existing entities; an exact
 //     name match is taken as is, otherwise one more Jev request per link asks
 //     which of them each name is, or none (then a new entity is created).
-// Links are processed one at a time so an entity created for one link can be
-// matched by the next. Each processed link gets `link_enrichment.entities_at`.
+// Mentions land in `link_entities` with `found_in` 'title' or 'page'; an
+// entity the title already names keeps its title row. Links are processed one
+// at a time so an entity created for one link can be matched by the next.
 //
-// POST {"link_ids": [...]} processes those links; POST {} the newest
-// LINKS_PER_RUN not yet processed. "dry_run": true reports without writing.
+// POST {} runs the title pass on up to LINKS_PER_RUN links, then the page pass
+// on up to PAGE_LINKS_PER_RUN, newest first, starting no page after
+// RUN_BUDGET_MS. POST {"link_ids": [...]} runs both passes on those links.
+// "dry_run": true reports without writing.
 
 const MODEL = "jev-1.13.0";
 const TYPESAFE_KEY_SECRET = "typesafe-ai-token";
@@ -24,6 +32,9 @@ const NAME_MIN_P = 0.8;
 const MATCH_MIN_P = 0.5;
 const CANDIDATE_ENTITIES = 8;
 const LINKS_PER_RUN = 30;
+const PAGE_LINKS_PER_RUN = 12;
+const FETCH_CONCURRENCY = 4;
+const RUN_BUDGET_MS = 100_000;
 const MAX_LINK_IDS = 50;
 const NEW_ENTITY = "new";
 
@@ -54,6 +65,12 @@ const KIND_OPTIONS = {
 };
 
 type Kind = keyof typeof KIND_OPTIONS;
+type FoundIn = "title" | "page";
+
+interface Phrase {
+  surface: string;
+  sentence: string | null;
+}
 
 interface Link {
   id: string;
@@ -72,6 +89,7 @@ interface Candidate {
 
 interface Mention {
   surface: string;
+  sentence: string | null;
   p: number;
   kind: Kind;
   entity_id: string | null;
@@ -96,32 +114,38 @@ function describe(c: Candidate): string {
   ].join("");
 }
 
-async function findNames(jev: JevClient, state: JsonValue, phrases: string[]) {
+// Where a phrase was found, for the questions about it.
+function phraseInstructions({ surface, sentence }: Phrase, question: string): JsonValue {
+  return sentence
+    ? { phrase: surface, sentence, question: `In \`sentence\`, from the page \`link\` points to, ${question}` }
+    : { phrase: surface, question: `In the title of \`link\`, ${question}` };
+}
+
+async function findNames(jev: JevClient, state: JsonValue, phrases: Phrase[]) {
   const questions: Record<string, ChoiceQuestion> = {};
   phrases.forEach((phrase, i) => {
     questions[`m${i}`] = {
       type: "choice",
-      instructions: { phrase, question: "In the title of `link`, what is `phrase`?" },
+      instructions: phraseInstructions(phrase, "what is `phrase`?"),
       criteria: MENTION_OPTIONS,
     };
     questions[`k${i}`] = {
       type: "choice",
-      instructions: { phrase, question: "If `phrase` names something in the title of `link`, what kind of thing is it?" },
+      instructions: phraseInstructions(phrase, "if `phrase` names something, what kind of thing is it?"),
       criteria: KIND_OPTIONS,
     };
   });
   const result = await jev.ask(state, questions);
-  const names = phrases.flatMap((surface, i) => {
+  const names = phrases.flatMap(({ surface, sentence }, i) => {
     const p = result.answers[`m${i}`].probabilities.name ?? 0;
-    return p >= NAME_MIN_P ? [{ surface, p, kind: result.answers[`k${i}`].choice as Kind }] : [];
+    return p >= NAME_MIN_P ? [{ surface, sentence, p, kind: result.answers[`k${i}`].choice as Kind }] : [];
   });
   return { names, inputTokens: result.usage.input_tokens };
 }
 
-async function processLink(db: SupabaseClient, jev: JevClient, link: Link, dryRun: boolean) {
-  const phrases = candidates(link.title);
+async function mentionsOf(db: SupabaseClient, jev: JevClient, link: Link, phrases: Phrase[]) {
   const state = { link: { title: link.title, site: hostOf(link.url) } };
-  if (!phrases.length) return { link_id: link.id, title: link.title, candidates: phrases, mentions: [], inputTokens: 0 };
+  if (!phrases.length) return { mentions: [] as Mention[], inputTokens: 0 };
 
   const found = await findNames(jev, state, phrases);
   let inputTokens = found.inputTokens;
@@ -147,10 +171,7 @@ async function processLink(db: SupabaseClient, jev: JevClient, link: Link, dryRu
       `e${i}`,
       {
         type: "choice",
-        instructions: {
-          phrase: name.surface,
-          question: "In the title of `link`, which of these is `phrase` the name of? If it is none of them, say so.",
-        },
+        instructions: phraseInstructions(name, "which of these is `phrase` the name of? If it is none of them, say so."),
         criteria: {
           ...Object.fromEntries(options.map((c) => [c.id, describe(c)])),
           [NEW_ENTITY]: "None of these: something else that isn't listed.",
@@ -171,19 +192,59 @@ async function processLink(db: SupabaseClient, jev: JevClient, link: Link, dryRu
     });
   }
 
+  return { mentions, inputTokens };
+}
+
+async function saveMentions(db: SupabaseClient, linkId: string, mentions: Mention[], foundIn: FoundIn) {
+  for (const mention of mentions) {
+    if (!mention.entity_id) mention.entity_id = await createEntity(db, mention.surface, mention.kind);
+    const { error } = await db.from("link_entities").upsert(
+      { link_id: linkId, entity_id: mention.entity_id, surface: mention.surface, p: Math.round(mention.p * 1000) / 1000, labeled_by: "jev", found_in: foundIn },
+      { onConflict: "link_id,entity_id", ignoreDuplicates: true },
+    );
+    if (error) throw new Error(error.message);
+  }
+}
+
+async function processTitle(db: SupabaseClient, jev: JevClient, link: Link, dryRun: boolean) {
+  const phrases = candidates(link.title).map((surface) => ({ surface, sentence: null }));
+  const { mentions, inputTokens } = await mentionsOf(db, jev, link, phrases);
   if (!dryRun) {
-    for (const mention of mentions) {
-      if (!mention.entity_id) mention.entity_id = await createEntity(db, mention.surface, mention.kind);
-      const { error } = await db.from("link_entities").upsert(
-        { link_id: link.id, entity_id: mention.entity_id, surface: mention.surface, p: Math.round(mention.p * 1000) / 1000, labeled_by: "jev" },
-        { onConflict: "link_id,entity_id", ignoreDuplicates: true },
-      );
-      if (error) throw new Error(error.message);
-    }
+    await saveMentions(db, link.id, mentions, "title");
     const { error } = await db.from("link_enrichment").upsert({ link_id: link.id, entities_at: new Date().toISOString() });
     if (error) throw new Error(error.message);
   }
-  return { link_id: link.id, title: link.title, candidates: phrases, mentions, inputTokens };
+  return { link_id: link.id, title: link.title, found_in: "title", candidates: phrases.map((p) => p.surface), mentions, inputTokens };
+}
+
+async function processPage(db: SupabaseClient, jev: JevClient, link: Link, page: PageContent, dryRun: boolean) {
+  const phrases = pageCandidates(page.sections, link.title);
+  const { mentions, inputTokens } = await mentionsOf(db, jev, link, phrases);
+  if (!dryRun) {
+    const { error: contentError } = await db.from("link_content").upsert({
+      link_id: link.id,
+      fetched_at: new Date().toISOString(),
+      status: page.status,
+      lang: page.lang?.slice(0, 35) ?? null,
+      text: pageText(page.sections) || null,
+      json_ld_events: page.jsonLdEvents.length ? page.jsonLdEvents : null,
+    });
+    if (contentError) throw new Error(contentError.message);
+    await saveMentions(db, link.id, mentions, "page");
+    const { error } = await db.from("link_enrichment").upsert({ link_id: link.id, page_entities_at: new Date().toISOString() });
+    if (error) throw new Error(error.message);
+  }
+  return { link_id: link.id, title: link.title, found_in: "page", status: page.status, candidates: phrases.map((p) => p.surface), mentions, inputTokens };
+}
+
+// Pages are fetched FETCH_CONCURRENCY at a time, ahead of the one-at-a-time Jev work.
+function prefetch(links: Link[]): Promise<PageContent>[] {
+  const lanes: Promise<unknown>[] = Array.from({ length: FETCH_CONCURRENCY }, () => Promise.resolve());
+  return links.map((link, i) => {
+    const page = lanes[i % FETCH_CONCURRENCY].then(() => fetchPage(link.url));
+    lanes[i % FETCH_CONCURRENCY] = page;
+    return page;
+  });
 }
 
 // `entities.name` is unique: a name Jev called new that already exists (it only
@@ -196,17 +257,19 @@ async function createEntity(db: SupabaseClient, name: string, kind: Kind): Promi
   return existing.id;
 }
 
-async function unprocessedLinks(db: SupabaseClient): Promise<Link[]> {
-  const { data: rows, error } = await db.rpc("links_to_enrich", { step: "entities", max_results: LINKS_PER_RUN });
+async function unprocessedLinks(db: SupabaseClient, step: "entities" | "page_entities", max: number): Promise<Link[]> {
+  const { data: rows, error } = await db.rpc("links_to_enrich", { step, max_results: max });
   if (error) throw new Error(error.message);
   const ids = (rows as { link_id: string }[]).map((r) => r.link_id);
   if (!ids.length) return [];
   const { data, error: linksError } = await db.from("links").select("id, title, url").in("id", ids);
   if (linksError) throw new Error(linksError.message);
-  return data;
+  const byId = new Map((data as Link[]).map((l) => [l.id, l]));
+  return ids.flatMap((id) => byId.get(id) ?? []);
 }
 
 Deno.serve(async (req: Request) => {
+  const started = Date.now();
   const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const body = await req.json().catch(() => ({}));
   const dryRun = body?.dry_run === true;
@@ -220,22 +283,33 @@ Deno.serve(async (req: Request) => {
   }
   const jev = new JevClient(apiKey, MODEL);
 
-  let links: Link[];
+  let titleLinks: Link[];
   if (ids) {
     const { data, error } = await db.from("links").select("id, title, url").in("id", ids as string[]);
     if (error) throw new Error(error.message);
-    links = data;
+    titleLinks = data;
   } else {
-    links = await unprocessedLinks(db);
+    titleLinks = await unprocessedLinks(db, "entities", LINKS_PER_RUN);
   }
 
   const results = [];
   const errors: unknown[] = [];
-  for (const link of links) {
+  for (const link of titleLinks) {
     try {
-      results.push(await processLink(db, jev, link, dryRun));
+      results.push(await processTitle(db, jev, link, dryRun));
     } catch (e) {
-      errors.push({ link_id: link.id, error: String(e) });
+      errors.push({ link_id: link.id, found_in: "title", error: String(e) });
+    }
+  }
+
+  const pageLinks = ids ? titleLinks : await unprocessedLinks(db, "page_entities", PAGE_LINKS_PER_RUN);
+  const pages = prefetch(pageLinks);
+  for (const [i, link] of pageLinks.entries()) {
+    if (!ids && Date.now() - started > RUN_BUDGET_MS) break;
+    try {
+      results.push(await processPage(db, jev, link, await pages[i], dryRun));
+    } catch (e) {
+      errors.push({ link_id: link.id, found_in: "page", error: String(e) });
     }
   }
   const mentions = results.flatMap((r) => r.mentions);

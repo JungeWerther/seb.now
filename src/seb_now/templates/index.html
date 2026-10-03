@@ -1790,7 +1790,7 @@
     // returns the feed as it was, scroll position included; visiting the
     // address directly opens it at depth 0, and leaving then starts a fresh feed.
     const POST_PATH_PATTERN = /^\/p\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/;
-    const LINK_PAGE_SELECT = `${FEED_SELECT}, link_entities(p, entities(name, kind))`;
+    const LINK_PAGE_SELECT = `${FEED_SELECT}, link_entities(p, found_in, entities(name, kind))`;
     const FOCUS_MOVE_MS = 420;
     const FOCUS_FADE_MS = 600;
     const focusSection = document.getElementById("focus");
@@ -1886,7 +1886,7 @@
         showFocusSection(
           "focus-entities",
           (row.link_entities || [])
-            .filter((le) => le.entities)
+            .filter((le) => le.entities && le.found_in === "title")
             .sort((a, b) => b.p - a.p)
             .map((le) => tagItem(le.entities.name, le.entities.kind.replace("_", " "), "entity")),
         );

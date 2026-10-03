@@ -104,4 +104,5 @@ class LinkEntity(BaseModel):
     surface: str | None = None
     p: float
     labeled_by: Literal["manual", "jev"]
+    found_in: Literal["title", "page"] = "title"
     created_at: datetime

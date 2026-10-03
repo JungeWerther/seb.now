@@ -209,7 +209,8 @@ def test_link_page_focuses_a_tapped_post_above_its_related_links() -> None:
     script = html[html.index('<script type="module">') :]
     assert 'rpc("related_links"' in script
     assert "page_offset: offset" in script
-    assert "link_entities(p, entities(name, kind))" in script
+    assert "link_entities(p, found_in, entities(name, kind))" in script
+    assert 'le.found_in === "title"' in script
     assert "history.pushState" in script and "`/p/${id}`" in script
     assert "focusLink(li.dataset.linkId, { from: li })" in script
     assert "setupLinkPage();" in script

@@ -7,6 +7,9 @@
 // each one its own heading or bold title, so each section can be read as one
 // event. schema.org Event objects declared in JSON-LD are kept as they are,
 // since they need no reading at all.
+//
+// entity-extract fetches each page once and keeps the text in `link_content`;
+// event-extract reads it back from there with `parseSections`.
 
 const FETCH_TIMEOUT_MS = 10000;
 const MAX_HTML_CHARS = 2_000_000;
@@ -163,4 +166,29 @@ export async function fetchPage(url: string): Promise<PageContent> {
 
 export function pageText(sections: Section[]): string {
   return sections.map((s) => (s.heading ? `## ${s.heading}\n${s.text}` : s.text)).join("\n\n").slice(0, MAX_TEXT_CHARS);
+}
+
+// The inverse of `pageText`: section texts never hold a blank line, since
+// `toText` drops empty lines.
+export function parseSections(text: string | null): Section[] {
+  if (!text) return [];
+  return text.split("\n\n").map((chunk) => {
+    if (!chunk.startsWith("## ")) return { heading: null, text: chunk };
+    const newline = chunk.indexOf("\n");
+    return newline < 0
+      ? { heading: chunk.slice(3), text: "" }
+      : { heading: chunk.slice(3, newline), text: chunk.slice(newline + 1) };
+  });
+}
+
+const CONTEXT_CHARS = 240;
+const SENTENCE_END = /[.!?\n]/;
+
+// The sentence around text[from, to), at most CONTEXT_CHARS long.
+export function sentenceAround(text: string, from: number, to: number): string {
+  let start = from;
+  while (start > 0 && !SENTENCE_END.test(text[start - 1]) && from - start < CONTEXT_CHARS / 2) start--;
+  let end = to;
+  while (end < text.length && !SENTENCE_END.test(text[end]) && end - to < CONTEXT_CHARS / 2) end++;
+  return text.slice(start, Math.min(text.length, end + 1)).replace(/\s+/g, " ").trim();
 }
