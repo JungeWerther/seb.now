@@ -65,6 +65,19 @@ const KIND_OPTIONS = {
 };
 
 type Kind = keyof typeof KIND_OPTIONS;
+
+// On the page, whether a phrase is a name and of what kind is one question, so
+// a page's many phrases cost one question each: a name's p is the sum over kinds.
+const CONCEPT = "concept";
+const NOT_A_NAME = "not_a_name";
+const PAGE_MENTION_OPTIONS = {
+  ...Object.fromEntries(Object.entries(KIND_OPTIONS).map(([kind, description]) => [
+    kind,
+    `The phrase is exactly the name, not more and not less, of one specific thing of this kind: ${description}`,
+  ])),
+  [CONCEPT]: MENTION_OPTIONS.concept,
+  [NOT_A_NAME]: MENTION_OPTIONS.other,
+};
 type FoundIn = "title" | "page";
 
 interface Phrase {
@@ -124,6 +137,14 @@ function phraseInstructions({ surface, sentence }: Phrase, question: string): Js
 async function findNames(jev: JevClient, state: JsonValue, phrases: Phrase[]) {
   const questions: Record<string, ChoiceQuestion> = {};
   phrases.forEach((phrase, i) => {
+    if (phrase.sentence) {
+      questions[`m${i}`] = {
+        type: "choice",
+        instructions: phraseInstructions(phrase, "what is `phrase`?"),
+        criteria: PAGE_MENTION_OPTIONS,
+      };
+      return;
+    }
     questions[`m${i}`] = {
       type: "choice",
       instructions: phraseInstructions(phrase, "what is `phrase`?"),
@@ -137,8 +158,18 @@ async function findNames(jev: JevClient, state: JsonValue, phrases: Phrase[]) {
   });
   const result = await jev.ask(state, questions);
   const names = phrases.flatMap(({ surface, sentence }, i) => {
-    const p = result.answers[`m${i}`].probabilities.name ?? 0;
-    return p >= NAME_MIN_P ? [{ surface, sentence, p, kind: result.answers[`k${i}`].choice as Kind }] : [];
+    const probabilities = result.answers[`m${i}`].probabilities as Record<string, number>;
+    let p: number;
+    let kind: Kind;
+    if (sentence) {
+      const kinds = (Object.keys(KIND_OPTIONS) as Kind[]).map((k) => [k, probabilities[k] ?? 0] as const);
+      p = kinds.reduce((sum, [, q]) => sum + q, 0);
+      kind = kinds.reduce((best, x) => (x[1] > best[1] ? x : best))[0];
+    } else {
+      p = probabilities.name ?? 0;
+      kind = result.answers[`k${i}`].choice as Kind;
+    }
+    return p >= NAME_MIN_P ? [{ surface, sentence, p, kind }] : [];
   });
   return { names, inputTokens: result.usage.input_tokens };
 }

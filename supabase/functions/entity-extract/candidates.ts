@@ -83,7 +83,7 @@ export function candidates(title: string): string[] {
 // names (the event, its venue) before the page's most repeated ones crowd them
 // out. Each comes with the sentence it first appears in.
 
-const PAGE_CANDIDATES = 40;
+const PAGE_CANDIDATES = 60;
 const PAGE_MIN_LENGTH = 3;
 const NAME_WORD = String.raw`\p{Lu}(?:[\p{L}\p{M}\p{N}&-]|['’.](?=\p{L}))*`;
 const PARTICLE = String.raw`(?:de|du|des|la|le|les|et|of|the|and|for|von|van|der|den|di|del|da|y)`;

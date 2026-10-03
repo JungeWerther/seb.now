@@ -238,13 +238,14 @@ After the title, each run reads the page the link points to (`page_entities_at`,
 up to 12 links a run, newest first, none started after 100 s): it fetches and
 cleans the page (`functions/_shared/page.ts`, see Events below) into
 `public.link_content` once for every later step, and `pageCandidates` proposes
-up to 40 names from the body text (capitalised runs joined across particles,
+up to 60 names from the body text (capitalised runs joined across particles,
 "Théâtre du Châtelet"; a capitalised name after a venue word, "musée d'Orsay";
 taken in rounds over the page's sections so every entry of a guide gets its
-names), each asked about with its sentence. Same Jev questions and matching;
-the rows get `found_in = 'page'` (title rows `'title'`; an entity both name
-keeps its title row). A page pass costs ~20k Jev input tokens against ~2k for
-a title. Page mentions are many and weaker, so `related_links`, the link
+names), each asked about with its sentence in one question (name of which
+kind, concept or neither; a name's p sums its kinds), then matched as for
+titles; the rows get `found_in = 'page'` (title rows `'title'`; an entity both name
+keeps its title row). A page pass costs ~10–20k Jev input tokens against ~2k
+for a title. Page mentions are many and weaker, so `related_links`, the link
 page's chips and the `relations`/`properties` steps use title mentions only.
 `public.link_enrichment (link_id, topics_at, entities_at, page_entities_at)` records when each
 automatic step last ran on a link (service_role only), so `topic-label` and
@@ -256,7 +257,7 @@ whole table; execute revoked from clients). Both functions share
 **Events — `event-extract`.** What a link announces and when, from its own
 page, with no per-site code; on its own `pg_cron` job (`4-59/10 * * * *`, up
 to 10 links a run, only links whose page `entity-extract` has read, since the
-venue is picked among their place entities). Same split as the other steps: code
+venue is picked among their place and organisation entities). Same split as the other steps: code
 proposes, Jev only chooses. `_shared/page.ts` fetches the page and cleans it without
 a DOM parser (cut at the `<h1>`, scripts/menus/headers/footers/forms removed,
 text split into sections at `<h2>`/`<h3>` headings or at paragraphs that open
@@ -273,8 +274,9 @@ than the day before the link was published means no Jev call. Otherwise one
 Jev request asks whether the page is one event, a listing or neither; each
 date's role (the run, start, end, a day it's on, or other); the kind
 (per section for a listing, whose heading becomes the event's `name`); and the
-venue, among the link's place entities (for a listing, per section, among the
-places that section names). For a single event, dates in the title/description win over page dates.
+venue, the most specific one, among the link's place and organisation entities
+(a museum or a shop is both; for a listing, per section, among those that
+section names). For a single event, dates in the title/description win over page dates.
 Rows go to `public.link_events` (public-read; `starts_on`/`ends_on` dates, an
 open-ended run has no start, a one-day event no end, each dated session its
 own row; `venue_entity_id`, `evidence`, `p`), and `link_enrichment.events_at`

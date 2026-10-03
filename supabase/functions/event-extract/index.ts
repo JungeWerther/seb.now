@@ -17,10 +17,10 @@ import { DateCandidate, dateCandidates, Source } from "./dates.ts";
 //     or neither; what each date is (the event's run, its start, its end, a
 //     day it happens on, or something else); what kind of event it is (per
 //     section, for a listing, whose headings name the events); and which of
-//     the link's place entities is the venue (for a listing, per section,
-//     among the places named in that section). Dates in the title or feed
-//     description say what the link is about, so for a page about one event
-//     they win over dates found further down (often other events').
+//     the link's place and organisation entities is the venue (for a listing,
+//     per section, among those named in that section). Dates in the title or
+//     feed description say what the link is about, so for a page about one
+//     event they win over dates found further down (often other events').
 // Events over before the link was published are dropped. Rows land in
 // `link_events`; every processed link gets `link_enrichment.events_at`,
 // whether it announced anything or not.
@@ -42,6 +42,8 @@ const EXCERPT_CHARS = 300;
 const DESCRIPTION_CHARS = 500;
 const RECENT_MS = 24 * 60 * 60 * 1000;
 const NONE = "none";
+// Kinds of entity an event can be held at: a museum or a shop is an organisation as well as a place.
+const VENUE_KINDS = ["place", "company", "nonprofit", "public_body", "cooperative"];
 const NOT_AN_EVENT = "not_an_event";
 
 const PAGE_OPTIONS = {
@@ -200,7 +202,7 @@ async function loadPlaces(db: SupabaseClient, linkId: string): Promise<Place[]> 
     .from("link_entities")
     .select("surface, entities!inner(id, name, kind)")
     .eq("link_id", linkId)
-    .eq("entities.kind", "place");
+    .in("entities.kind", VENUE_KINDS);
   if (error) throw new Error(error.message);
   return (data as unknown as { surface: string | null; entities: { id: string; name: string } }[])
     .map((r) => ({ id: r.entities.id, name: r.entities.name, surface: r.surface }));
@@ -325,7 +327,9 @@ async function judge(
   if (places.length) {
     questions.venue = {
       type: "choice",
-      instructions: { question: "If `link` is about one event, which of these places is it held at?" },
+      instructions: {
+        question: "If `link` is about one event, where is it held? Pick the most specific: the venue, building or site, not the city around it, unless only the city is said.",
+      },
       criteria: { ...Object.fromEntries(places.map((p) => [p.id, p.name])), [NONE]: "None of these, or not said." },
     };
   }
@@ -337,7 +341,7 @@ async function judge(
       instructions: {
         heading: sections[s].heading,
         excerpt: sections[s].text.slice(0, EXCERPT_CHARS),
-        question: "If `link` lists several events, which of these places is the one under `heading` held at?",
+        question: "If `link` lists several events, where is the one under `heading` held? Pick the most specific: the venue, building or site, not the city around it, unless only the city is said.",
       },
       criteria: { ...Object.fromEntries(named.map((p) => [p.id, p.name])), [NONE]: "None of these, or not said." },
     };
@@ -388,7 +392,7 @@ async function judge(
   });
 }
 
-// The places a section names, by the text they were found as or their name.
+// The venues a section names, by the text they were found as or their name.
 function placesIn(places: Place[], section: Section): Place[] {
   const text = `${section.heading ?? ""}\n${section.text}`.toLowerCase();
   const seen = new Set<string>();
