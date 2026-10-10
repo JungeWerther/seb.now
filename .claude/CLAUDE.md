@@ -437,7 +437,10 @@ not `.articles`: the feed is found with `querySelector("ul.articles")`.
 
 Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the
 vote tints (`.swipe-bg`) and the `.post` that slides over them, so the
-favicon, domain/chips line and replies don't react. While dragged, the
+favicon, domain/chips line and replies don't react. Swiping right upvotes
+and then opens the link's own page (`focusLink`, as a tap would; not for the
+focused post itself); swiping left downvotes and hides it, with an undo
+toast. While dragged, the
 post swings like a card hanging from a pivot `SWIPE_PIVOT_DISTANCE_PX`
 below it, confined to an arc-shaped band: horizontal finger travel alone
 sets the angle around that pivot (clamped to `SWIPE_MAX_ANGLE_DEG`) and
@@ -467,7 +470,7 @@ jitter. Vote decisions use the finger's target, not the eased position.
 Below the vote threshold the tint only previews (up to
 `SWIPE_TINT_PREVIEW_OPACITY`, icon and label dimmed); the moment the
 finger's target crosses it the tint gets `.armed` — full opacity, the icon
-pops, one light sheen sweeps diagonally upward across it (from the bottom-left corner for an upvote, the bottom-right for a downvote), and a short
+pops, one light sheen sweeps diagonally upward across it (from the bottom-right corner for an upvote, the bottom-left for a downvote), and a short
 `navigator.vibrate` where supported — and loses it again if dragged back,
 so "release now counts" is unambiguous. `--post-bg` must stay
 opaque for the same reason (a translucent post would show the tint

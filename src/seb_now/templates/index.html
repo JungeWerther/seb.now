@@ -530,11 +530,11 @@
       opacity: 0;
       pointer-events: none;
     }
-    .swipe-bg .tint-down::after {
+    .swipe-bg .tint-up::after {
       background: linear-gradient(to top left, transparent 42%, var(--sheen) 50%, transparent 58%) 0% 0% / 300% 300%;
     }
-    .swipe-bg .tint-up.armed::after { animation: sheen-from-bottom-left 0.6s ease-out; }
-    .swipe-bg .tint-down.armed::after { animation: sheen-from-bottom-right 0.6s ease-out; }
+    .swipe-bg .tint-up.armed::after { animation: sheen-from-bottom-right 0.6s ease-out; }
+    .swipe-bg .tint-down.armed::after { animation: sheen-from-bottom-left 0.6s ease-out; }
     @keyframes sheen-from-bottom-left {
       from { background-position: 100% 0%; opacity: 1; }
       to { background-position: 0% 100%; opacity: 1; }
@@ -546,8 +546,8 @@
     @media (prefers-reduced-motion: reduce) {
       .swipe-bg .tint.armed::after { animation: none; }
     }
-    .swipe-bg .tint-down { background: var(--negative-soft); color: var(--negative); justify-content: flex-start; }
-    .swipe-bg .tint-up { background: var(--positive-soft); color: var(--positive); justify-content: flex-end; }
+    .swipe-bg .tint-down { background: var(--negative-soft); color: var(--negative); justify-content: flex-end; }
+    .swipe-bg .tint-up { background: var(--positive-soft); color: var(--positive); justify-content: flex-start; }
     .swipe-content {
       position: relative;
       background: var(--bg);
@@ -1260,10 +1260,10 @@
       // because that is what onUp decides the vote from.
       function setTints(x, targetX) {
         const progress = Math.min(Math.abs(x) / SWIPE_COMMIT_THRESHOLD_PX, 1) * SWIPE_TINT_PREVIEW_OPACITY;
-        const upArmed = targetX <= -SWIPE_COMMIT_THRESHOLD_PX; // left = upvote
-        const downArmed = targetX >= SWIPE_COMMIT_THRESHOLD_PX; // right = downvote + hide
-        tintUp.style.opacity = upArmed ? 1 : x < 0 ? progress : 0;
-        tintDown.style.opacity = downArmed ? 1 : x > 0 ? progress : 0;
+        const upArmed = targetX >= SWIPE_COMMIT_THRESHOLD_PX; // right = upvote + related
+        const downArmed = targetX <= -SWIPE_COMMIT_THRESHOLD_PX; // left = downvote + hide
+        tintUp.style.opacity = upArmed ? 1 : x > 0 ? progress : 0;
+        tintDown.style.opacity = downArmed ? 1 : x < 0 ? progress : 0;
         setArmed(tintUp, upArmed);
         setArmed(tintDown, downArmed);
       }
@@ -1393,19 +1393,20 @@
         const { x } = arcPosition(target.dx, target.dy);
         endDrag();
 
-        if (x <= -SWIPE_COMMIT_THRESHOLD_PX) {
-          // left = upvote
+        if (x >= SWIPE_COMMIT_THRESHOLD_PX) {
+          // right = upvote, then open its related links (the focused post itself has none to open)
           reset();
           li.classList.add("upvoted");
           content.classList.add("flash-positive");
           content.addEventListener("animationend", () => content.classList.remove("flash-positive"), { once: true });
+          if (articleList.contains(li)) focusLink(linkId, { from: li });
           await castVote(session, linkId, 1);
           const scores = await loadScores([linkId]);
           renderScore(li, scores[linkId] || 0);
-        } else if (x >= SWIPE_COMMIT_THRESHOLD_PX) {
-          // right = downvote + hide: carry on along the arc and off-screen
+        } else if (x <= -SWIPE_COMMIT_THRESHOLD_PX) {
+          // left = downvote + hide: carry on along the arc and off-screen
           content.style.transition = `transform ${SWIPE_FLY_MS}ms ease-in, opacity ${SWIPE_FLY_MS}ms ease-in`;
-          content.style.transform = `translate(${window.innerWidth}px, ${SWIPE_PIVOT_DISTANCE_PX * (1 - Math.cos(maxAngle))}px) rotate(${maxAngle}rad)`;
+          content.style.transform = `translate(${-window.innerWidth}px, ${SWIPE_PIVOT_DISTANCE_PX * (1 - Math.cos(maxAngle))}px) rotate(${-maxAngle}rad)`;
           content.style.opacity = "0";
           await castVote(session, linkId, -1);
           li.classList.remove("dragging");
