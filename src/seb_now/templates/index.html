@@ -490,7 +490,6 @@
     li.article.dragging { overflow: visible; z-index: 5; }
     li.article.dragging .post-swipe { overflow: visible; }
     li.article.dragging .post { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18); will-change: transform; }
-    li.article.upvoted { box-shadow: inset 3px 0 0 var(--positive); }
     .post-swipe {
       position: relative;
       overflow: hidden;
@@ -1278,7 +1277,7 @@
       // because that is what onUp decides the vote from.
       function setTints(x, targetX) {
         const progress = Math.min(Math.abs(x) / SWIPE_COMMIT_THRESHOLD_PX, 1) * SWIPE_TINT_PREVIEW_OPACITY;
-        const upArmed = targetX >= SWIPE_COMMIT_THRESHOLD_PX; // right = upvote + related
+        const upArmed = targetX >= SWIPE_COMMIT_THRESHOLD_PX; // right = upvote
         const downArmed = targetX <= -SWIPE_COMMIT_THRESHOLD_PX; // left = downvote + hide
         tintUp.style.opacity = upArmed ? 1 : x > 0 ? progress : 0;
         tintDown.style.opacity = downArmed ? 1 : x < 0 ? progress : 0;
@@ -1412,12 +1411,11 @@
         endDrag();
 
         if (x >= SWIPE_COMMIT_THRESHOLD_PX) {
-          // right = upvote, then open its related links (the focused post itself has none to open)
+          // right = upvote
           reset();
           li.classList.add("upvoted");
           content.classList.add("flash-positive");
           content.addEventListener("animationend", () => content.classList.remove("flash-positive"), { once: true });
-          if (articleList.contains(li)) focusLink(linkId, { from: li });
           await castVote(session, linkId, 1);
           const scores = await loadScores([linkId]);
           renderScore(li, scores[linkId] || 0);

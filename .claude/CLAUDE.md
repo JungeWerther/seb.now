@@ -453,9 +453,9 @@ hrefs when they match a UUID (`setEntityHref`). Topic chips aren't links yet.
 Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the
 vote tints (`.swipe-bg`) and the `.post` that slides over them, so the
 favicon, domain/chips line and replies don't react. Swiping right upvotes
-and then opens the link's own page (`focusLink`, as a tap would; not for the
-focused post itself); swiping left downvotes and hides it, with an undo
-toast. While dragged, the
+(the post stays where it is; only a tap opens its page); swiping left
+downvotes and hides it, with an undo toast. An upvoted post gets no
+persistent marker beyond the brief `flash-positive` and its score. While dragged, the
 post swings like a card hanging from a pivot `SWIPE_PIVOT_DISTANCE_PX`
 below it, confined to an arc-shaped band: horizontal finger travel alone
 sets the angle around that pivot (clamped to `SWIPE_MAX_ANGLE_DEG`) and
