@@ -461,13 +461,15 @@ highlighted. Topic chips are links there too (`<a class="topic"
 href="/t/<path>">`, `setTopicHref`, which only accepts an ltree-shaped id), on
 feed rows and in the focused post's topic list, opened in place like entity
 chips. A **Find sources** pill (`#find-sources`, Lucide `zoom-in`), top right of a
-topic page, opposite ← Feed in `#focus-head` and styled like it,
-opens Claude in a new tab (`FIND_SOURCES_URL_TEMPLATE`, `claude.ai/new?q=`)
-with `FIND_SOURCES_PROMPT` prefilled (both in constants.py; the page fills in
-the topic, `location.host` and `<origin>/mcp`): find YouTube channels,
-Mastodon accounts and feeds covering the topic, in the shapes a
+topic's or an entity's page, opposite ← Feed in `#focus-head` and styled like
+it, opens Claude in a new tab (`FIND_SOURCES_URL_TEMPLATE`, `claude.ai/new?q=`)
+with a prompt prefilled (`FIND_SOURCES_PROMPT` for a topic,
+`FIND_ENTITY_SOURCES_PROMPT` for an entity, all in constants.py; the page fills
+in the topic or entity, `location.host` and `<origin>/mcp`): find YouTube
+channels, Mastodon accounts and feeds covering it, in the shapes a
 `public.sources` row takes, checking the feed first through this site's MCP
-server when the reader has it connected.
+server when the reader has it connected (`get_links_by_topic` for a topic,
+`search_links` on the name for an entity).
 
 Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the
 vote tints (`.swipe-bg`) and the `.post` that slides over them, so the

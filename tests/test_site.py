@@ -11,6 +11,7 @@ from seb_now.constants import (
     ARTICLE_ENTITY_CHIPS,
     ARTICLE_TOPIC_CHIPS,
     FAVICON_URL_TEMPLATE,
+    FIND_ENTITY_SOURCES_PROMPT,
     FIND_SOURCES_URL_TEMPLATE,
     FEED_PAGE_SIZE,
     FEED_SKELETON_ROWS,
@@ -658,3 +659,11 @@ def test_topic_page_lists_its_links_with_a_find_sources_button_and_chips_open_it
     # The prompt and Claude's address come from constants.py, filled per topic.
     assert f'"{FIND_SOURCES_URL_TEMPLATE}"' in script
     assert "encodeURIComponent(prompt)" in script
+
+
+def test_entity_page_offers_find_sources_with_its_own_prompt() -> None:
+    script = _page_script(render([]))
+
+    assert FIND_ENTITY_SOURCES_PROMPT.split("(")[0] in script
+    assert "findSourcesUrl(FIND_ENTITY_SOURCES_PROMPT, {" in script
+    assert "findSourcesUrl(FIND_SOURCES_PROMPT, {" in script

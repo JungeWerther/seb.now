@@ -768,7 +768,8 @@
     #focus-entity-meta, #focus-topic-meta { margin: 0; font-size: 0.8rem; color: gray; }
     #focus-topic-description { margin: 0.5rem 0 0; font-size: 0.85rem; color: #b8b8b8; max-width: 40rem; }
     #focus-topic-description:empty { display: none; }
-    /* On a topic's page, top right opposite ← Feed and styled like it. */
+    /* On a topic's or an entity's page, top right opposite ← Feed and
+       styled like it. */
     #find-sources {
       display: flex;
       align-items: center;
@@ -964,7 +965,7 @@
   <section id="focus" hidden>
     <div id="focus-head">
       <button type="button" id="focus-back" aria-label="Back to the feed"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>Feed</button>
-      <a id="find-sources" target="_blank" rel="noopener noreferrer" title="Ask Claude to find new sources covering this topic" hidden><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>Find sources</a>
+      <a id="find-sources" target="_blank" rel="noopener noreferrer" title="Ask Claude to find new sources covering this" hidden><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>Find sources</a>
     </div>
     <p id="focus-status"></p>
     <div id="focus-topic" hidden>
@@ -1543,6 +1544,7 @@
     const FAVICON_URL_TEMPLATE = __FAVICON_URL_TEMPLATE__;
     const FIND_SOURCES_URL_TEMPLATE = __FIND_SOURCES_URL_TEMPLATE__;
     const FIND_SOURCES_PROMPT = __FIND_SOURCES_PROMPT__;
+    const FIND_ENTITY_SOURCES_PROMPT = __FIND_ENTITY_SOURCES_PROMPT__;
     const FEED_SELECT =
       "id, title, url, image_url, author, created_at, link_topics(p, topics(id, name)), link_entities(p, entities(id, name, kind))";
     // Fetch the next page once the end of the list is this close to view.
@@ -1632,16 +1634,11 @@
       else anchor.removeAttribute("href");
     }
 
-    // Claude, opened on a prompt to find new sources covering `topic`.
-    function findSourcesUrl(path, topic) {
-      const values = {
-        name: topic.name,
-        path,
-        description: topic.description || topic.name,
-        host: location.host,
-        mcp_url: `${location.origin}/mcp`,
-      };
-      const prompt = FIND_SOURCES_PROMPT.replace(/\{(\w+)\}/g, (match, key) => values[key] ?? match);
+    // Claude, opened on `template` (a prompt to find new sources covering a
+    // topic or an entity) filled with `fields`.
+    function findSourcesUrl(template, fields) {
+      const values = { ...fields, host: location.host, mcp_url: `${location.origin}/mcp` };
+      const prompt = template.replace(/\{(\w+)\}/g, (match, key) => values[key] ?? match);
       return FIND_SOURCES_URL_TEMPLATE.replace("{prompt}", encodeURIComponent(prompt));
     }
 
@@ -2166,10 +2163,11 @@
       updateFocusBand();
     }
 
-    // An entity's own page, seb.now/e/<id>: its name and kind on the band, and
-    // below it every link that mentions it, newest first (entity_links), a
-    // page at a time as you scroll, with its chip highlighted on each. Tapping
-    // an entity chip anywhere opens it; history works as for a post's page.
+    // An entity's own page, seb.now/e/<id>: its name and kind on the band with
+    // a button that asks Claude for new sources covering it, and below it
+    // every link that mentions it, newest first (entity_links), a page at a
+    // time as you scroll, with its chip highlighted on each. Tapping an entity
+    // chip anywhere opens it; history works as for a post's page.
     async function focusEntity(id, { name = "", push = true, saveFeed = true } = {}) {
       const generation = ++focusGeneration;
       enterFocus(`/e/${id}`, { push, saveFeed });
@@ -2205,6 +2203,11 @@
         document.getElementById("focus-entity-name").textContent = entity.name;
         const posts = count == null ? "" : ` · ${count} ${count === 1 ? "post" : "posts"}`;
         document.getElementById("focus-entity-meta").textContent = `${entity.kind.replace("_", " ")}${posts}`;
+        findSources.href = findSourcesUrl(FIND_ENTITY_SOURCES_PROMPT, {
+          name: entity.name,
+          kind: entity.kind.replace("_", " "),
+        });
+        findSources.hidden = false;
       }
       updateFocusBand();
     }
@@ -2248,7 +2251,11 @@
         const posts = count == null ? "" : ` · ${count} ${count === 1 ? "post" : "posts"}`;
         document.getElementById("focus-topic-meta").textContent = `${path}${posts}`;
         document.getElementById("focus-topic-description").textContent = topic.description ?? "";
-        findSources.href = findSourcesUrl(path, topic);
+        findSources.href = findSourcesUrl(FIND_SOURCES_PROMPT, {
+          name: topic.name,
+          path,
+          description: topic.description || topic.name,
+        });
         findSources.hidden = false;
       }
       updateFocusBand();
