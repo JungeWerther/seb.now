@@ -444,11 +444,29 @@ ordered `created_at desc, id desc`), paged at `FEED_PAGE_SIZE` as you scroll so
 the per-page vote/reply lookups stay page-sized; the entity's chip is
 highlighted (`.shared`) on each row. Every entity chip is a link there: the
 feed rows' footer chips (`<a class="entity" href="/e/<id>">`, pre-rendered by
-`site.py` from `EntityChip`s and filled by `fillChips` from `FEED_SELECT`'s
+`site.py` from `Chip`s and filled by `fillChips` from `FEED_SELECT`'s
 `entities(id, …)`) and the focused post's entity list. A plain click opens it
 in place with `pushState`, so Back and ← Feed work as for posts; a modified
 click opens a new tab, which the catch-all document serves. Ids only become
-hrefs when they match a UUID (`setEntityHref`). Topic chips aren't links yet.
+hrefs when they match a UUID (`setEntityHref`).
+
+**A topic's own page.** Every topic has a page at `seb.now/t/<path>` (its ltree
+id, `ai.agents`), on the same focused view (`focusTopic`): the band shows
+`#focus-topic` (name, path, post count and the topic's `description`) and the
+list is every link labelled with the topic or one of its children, newest
+first, from `public.topic_links(topic, max_results, page_offset)` (security
+invoker, `topic` passed as text and cast to `ltree`; the count comes from
+`public.topic_link_count(topic)`); each row's chips under the topic are
+highlighted. Topic chips are links there too (`<a class="topic"
+href="/t/<path>">`, `setTopicHref`, which only accepts an ltree-shaped id), on
+feed rows and in the focused post's topic list, opened in place like entity
+chips. The band's **Find sources** pill (`#find-sources`, Lucide `zoom-in`)
+opens Claude in a new tab (`FIND_SOURCES_URL_TEMPLATE`, `claude.ai/new?q=`)
+with `FIND_SOURCES_PROMPT` prefilled (both in constants.py; the page fills in
+the topic, `location.host` and `<origin>/mcp`): find YouTube channels,
+Mastodon accounts and feeds covering the topic, in the shapes a
+`public.sources` row takes, checking the feed first through this site's MCP
+server when the reader has it connected.
 
 Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the
 vote tints (`.swipe-bg`) and the `.post` that slides over them, so the

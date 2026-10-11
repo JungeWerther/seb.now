@@ -7,7 +7,7 @@ Feed: the `links` table in Supabase (title + url per row), read with the
 public anon client, with each link's `link_topics` and `link_entities` labels
 embedded. Each article shows its ARTICLE_TOPIC_CHIPS highest-p topics as chips
 on its domain line and its ARTICLE_ENTITY_CHIPS highest-p entities below the
-post, each a link to that entity's page (seb.now/e/<id>). Only the
+post, each a link to its page (seb.now/t/<topic path>, seb.now/e/<id>). Only the
 newest FEED_PAGE_SIZE links are pre-rendered; the page script fetches the
 rest (and any newer than the build) as you scroll, filling the
 `#article-template` markup emitted here so both paths share one layout.
@@ -29,6 +29,8 @@ from seb_now.constants import (
     ARTICLE_ENTITY_CHIPS,
     ARTICLE_TOPIC_CHIPS,
     FAVICON_URL_TEMPLATE,
+    FIND_SOURCES_PROMPT,
+    FIND_SOURCES_URL_TEMPLATE,
     FEED_PAGE_SIZE,
     FEED_SKELETON_ROWS,
     SUPABASE_JS_MODULE_URL,
@@ -53,13 +55,15 @@ FEED_PAGE_SIZE_PLACEHOLDER = "__FEED_PAGE_SIZE__"
 ARTICLE_TOPIC_CHIPS_PLACEHOLDER = "__ARTICLE_TOPIC_CHIPS__"
 ARTICLE_ENTITY_CHIPS_PLACEHOLDER = "__ARTICLE_ENTITY_CHIPS__"
 FAVICON_URL_TEMPLATE_PLACEHOLDER = "__FAVICON_URL_TEMPLATE__"
+FIND_SOURCES_URL_TEMPLATE_PLACEHOLDER = "__FIND_SOURCES_URL_TEMPLATE__"
+FIND_SOURCES_PROMPT_PLACEHOLDER = "__FIND_SOURCES_PROMPT__"
 SUPABASE_JS_MODULE_URL_PLACEHOLDER = "__SUPABASE_JS_MODULE_URL__"
 CSP_PLACEHOLDER = "__CONTENT_SECURITY_POLICY__"
 
 FEED_COLUMNS = "id, title, url, image_url, author, created_at"
 
 
-class EntityChip(NamedTuple):
+class Chip(NamedTuple):
     id: str
     name: str
 
@@ -71,8 +75,8 @@ class Article:
     url: str
     domain: str
     source_type: SourceType
-    topics: tuple[str, ...] = ()
-    entities: tuple[EntityChip, ...] = ()
+    topics: tuple[Chip, ...] = ()
+    entities: tuple[Chip, ...] = ()
     image_url: str | None = None
     created_at: str = ""
 
@@ -83,8 +87,8 @@ class FeedItem(TypedDict):
     url: str
     image_url: NotRequired[str]
     author: NotRequired[str]
-    topics: NotRequired[list[str]]
-    entities: NotRequired[list[EntityChip]]
+    topics: NotRequired[list[Chip]]
+    entities: NotRequired[list[Chip]]
     created_at: NotRequired[str]
 
 
@@ -96,8 +100,8 @@ TEMPLATE_ARTICLE = Article(
     url=TEMPLATE_ARTICLE_BLANK,
     domain=TEMPLATE_ARTICLE_BLANK,
     source_type=SourceType.DIRECT_LINK,
-    topics=(TEMPLATE_ARTICLE_BLANK,),
-    entities=(EntityChip(TEMPLATE_ARTICLE_BLANK, TEMPLATE_ARTICLE_BLANK),),
+    topics=(Chip(TEMPLATE_ARTICLE_BLANK, TEMPLATE_ARTICLE_BLANK),),
+    entities=(Chip(TEMPLATE_ARTICLE_BLANK, TEMPLATE_ARTICLE_BLANK),),
     image_url=TEMPLATE_ARTICLE_BLANK,
 )
 
@@ -107,13 +111,15 @@ def _top_labels(labels: Sequence[dict], key: str, count: int) -> list[dict]:
     return [label[key] for label in ranked[:count]]
 
 
-def _top_topic_names(link_topics: Sequence[dict]) -> list[str]:
-    return [topic["name"] for topic in _top_labels(link_topics, Topic.__tablename__, ARTICLE_TOPIC_CHIPS)]
-
-
-def _top_entities(link_entities: Sequence[dict]) -> list[EntityChip]:
+def _top_topics(link_topics: Sequence[dict]) -> list[Chip]:
     return [
-        EntityChip(entity["id"], entity["name"])
+        Chip(topic["id"], topic["name"]) for topic in _top_labels(link_topics, Topic.__tablename__, ARTICLE_TOPIC_CHIPS)
+    ]
+
+
+def _top_entities(link_entities: Sequence[dict]) -> list[Chip]:
+    return [
+        Chip(entity["id"], entity["name"])
         for entity in _top_labels(link_entities, Entity.__tablename__, ARTICLE_ENTITY_CHIPS)
     ]
 
@@ -123,7 +129,7 @@ def load_feed() -> list[FeedItem]:
     response = (
         client.table(Link.__tablename__)
         .select(
-            f"{FEED_COLUMNS}, {LinkTopic.__tablename__}(p, {Topic.__tablename__}(name)), "
+            f"{FEED_COLUMNS}, {LinkTopic.__tablename__}(p, {Topic.__tablename__}(id, name)), "
             f"{LinkEntity.__tablename__}(p, {Entity.__tablename__}(id, name))"
         )
         .order("created_at", desc=True)
@@ -143,7 +149,7 @@ def load_feed() -> list[FeedItem]:
                 "url": url,
                 "image_url": safe_http_url(row["image_url"]) or "",
                 "author": row.get("author") or "",
-                "topics": _top_topic_names(row[LinkTopic.__tablename__]),
+                "topics": _top_topics(row[LinkTopic.__tablename__]),
                 "entities": _top_entities(row.get(LinkEntity.__tablename__) or []),
                 # Kept as PostgREST's own string so the page's pagination
                 # cursor round-trips it exactly (microseconds included).
@@ -214,7 +220,7 @@ def _render_article(article: Article) -> str:
     )
     topics = (
         '<span class="topics">'
-        + "".join(f'<span class="topic">{escape(name)}</span>' for name in article.topics)
+        + "".join(f'<a class="topic" href="/t/{escape(topic.id)}">{escape(topic.name)}</a>' for topic in article.topics)
         + "</span>"
         if article.topics
         else ""
@@ -317,6 +323,8 @@ def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon
     html = html.replace(ARTICLE_TOPIC_CHIPS_PLACEHOLDER, script_json(ARTICLE_TOPIC_CHIPS))
     html = html.replace(ARTICLE_ENTITY_CHIPS_PLACEHOLDER, script_json(ARTICLE_ENTITY_CHIPS))
     html = html.replace(FAVICON_URL_TEMPLATE_PLACEHOLDER, script_json(FAVICON_URL_TEMPLATE))
+    html = html.replace(FIND_SOURCES_URL_TEMPLATE_PLACEHOLDER, script_json(FIND_SOURCES_URL_TEMPLATE))
+    html = html.replace(FIND_SOURCES_PROMPT_PLACEHOLDER, script_json(FIND_SOURCES_PROMPT))
     html = html.replace(SUPABASE_JS_MODULE_URL_PLACEHOLDER, script_json(SUPABASE_JS_MODULE_URL))
     return html.replace(CSP_PLACEHOLDER, escape(page_csp(html, supabase_url)))
 

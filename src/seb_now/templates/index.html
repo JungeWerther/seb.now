@@ -638,6 +638,8 @@
     .post-footer .entity.shared { color: var(--positive); background: var(--positive-soft); }
     .post-footer a.entity { text-decoration: none; }
     .post-footer a.entity:hover { color: var(--fg); }
+    .meta a.topic { text-decoration: none; }
+    .meta a.topic:hover { color: var(--fg); border-color: var(--fg); }
     #feed-skeletons[hidden] { display: none; }
     .skeleton .bone {
       display: block;
@@ -752,8 +754,8 @@
     .tag .tag-detail { margin-left: 0.35rem; font-size: 0.65rem; color: gray; }
     .tag a { color: inherit; text-decoration: none; }
     .tag a:hover { text-decoration: underline; }
-    #focus-entity[hidden] { display: none; }
-    #focus-entity-name {
+    #focus-entity[hidden], #focus-topic[hidden], #find-sources[hidden] { display: none; }
+    #focus-entity-name, #focus-topic-name {
       margin: 0.6rem 0 0.2rem;
       font-family: var(--brand-font);
       font-size: 1.9rem;
@@ -761,7 +763,24 @@
       letter-spacing: -0.02em;
       overflow-wrap: anywhere;
     }
-    #focus-entity-meta { margin: 0; font-size: 0.8rem; color: gray; }
+    #focus-entity-meta, #focus-topic-meta { margin: 0; font-size: 0.8rem; color: gray; }
+    #focus-topic-description { margin: 0.5rem 0 0; font-size: 0.85rem; color: #b8b8b8; max-width: 40rem; }
+    #focus-topic-description:empty { display: none; }
+    #find-sources {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-top: 0.8rem;
+      padding: 0.55rem 1rem 0.55rem 0.8rem;
+      border-radius: 999px;
+      background: #203a29;
+      color: #7fc999;
+      font: 600 0.9rem var(--brand-font);
+      text-decoration: none;
+      opacity: 0.9;
+    }
+    #find-sources:hover { opacity: 1; }
+    #find-sources svg { width: 18px; height: 18px; }
     li.article.replying .reply-btn { color: var(--positive); border-color: var(--positive); }
     .swipe-content .replies {
       list-style: none;
@@ -945,6 +964,12 @@
       <button type="button" id="focus-back" aria-label="Back to the feed"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>Feed</button>
     </div>
     <p id="focus-status"></p>
+    <div id="focus-topic" hidden>
+      <h1 id="focus-topic-name"></h1>
+      <p id="focus-topic-meta"></p>
+      <p id="focus-topic-description"></p>
+      <a id="find-sources" target="_blank" rel="noopener noreferrer" title="Ask Claude to find new sources covering this topic" hidden><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>Find sources</a>
+    </div>
     <div id="focus-entity" hidden>
       <h1 id="focus-entity-name"></h1>
       <p id="focus-entity-meta"></p>
@@ -1514,8 +1539,10 @@
     const ARTICLE_TOPIC_CHIPS = __ARTICLE_TOPIC_CHIPS__;
     const ARTICLE_ENTITY_CHIPS = __ARTICLE_ENTITY_CHIPS__;
     const FAVICON_URL_TEMPLATE = __FAVICON_URL_TEMPLATE__;
+    const FIND_SOURCES_URL_TEMPLATE = __FIND_SOURCES_URL_TEMPLATE__;
+    const FIND_SOURCES_PROMPT = __FIND_SOURCES_PROMPT__;
     const FEED_SELECT =
-      "id, title, url, image_url, author, created_at, link_topics(p, topics(name)), link_entities(p, entities(id, name, kind))";
+      "id, title, url, image_url, author, created_at, link_topics(p, topics(id, name)), link_entities(p, entities(id, name, kind))";
     // Fetch the next page once the end of the list is this close to view.
     const FEED_PREFETCH_MARGIN_PX = 1200;
 
@@ -1537,6 +1564,7 @@
       query: "",
       related: null,
       entity: null,
+      topic: null,
       chronological: false,
       asOf: null,
       offset: 0,
@@ -1579,7 +1607,7 @@
           const el = chip.cloneNode();
           el.textContent = name;
           el.classList.toggle("shared", shared.has(name));
-          if (el instanceof HTMLAnchorElement) setEntityHref(el, id);
+          if (el instanceof HTMLAnchorElement) (el.classList.contains("topic") ? setTopicHref : setEntityHref)(el, id);
           return el;
         }),
       );
@@ -1591,6 +1619,28 @@
     function setEntityHref(anchor, id) {
       if (new RegExp(`^${UUID_PATTERN}$`).test(id)) anchor.href = `/e/${id}`;
       else anchor.removeAttribute("href");
+    }
+
+    // A topic's id is its ltree path (ai.agents), which is also its address.
+    const TOPIC_ID_PATTERN = "[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*";
+    const TOPIC_PATH_PATTERN = new RegExp(`^/t/(${TOPIC_ID_PATTERN})/?$`);
+
+    function setTopicHref(anchor, id) {
+      if (new RegExp(`^${TOPIC_ID_PATTERN}$`).test(id)) anchor.href = `/t/${id}`;
+      else anchor.removeAttribute("href");
+    }
+
+    // Claude, opened on a prompt to find new sources covering `topic`.
+    function findSourcesUrl(path, topic) {
+      const values = {
+        name: topic.name,
+        path,
+        description: topic.description || topic.name,
+        host: location.host,
+        mcp_url: `${location.origin}/mcp`,
+      };
+      const prompt = FIND_SOURCES_PROMPT.replace(/\{(\w+)\}/g, (match, key) => values[key] ?? match);
+      return FIND_SOURCES_URL_TEMPLATE.replace("{prompt}", encodeURIComponent(prompt));
     }
 
     // Same as site.py's domain_with_author.
@@ -1778,7 +1828,44 @@
       return { rows: rows.map((row) => ({ row, shared })), count: ids.length };
     }
 
+    // One page of topic_links (the topic and its children), then those links
+    // by id in its order, each with its chips under the topic highlighted.
+    async function fetchTopicLinks(path, offset) {
+      const client = await supabaseReady;
+      const { data: ids, error } = await client.rpc("topic_links", {
+        topic: path,
+        max_results: FEED_PAGE_SIZE,
+        page_offset: offset,
+      });
+      if (error) {
+        console.error("failed to load the topic's links", error);
+        return null;
+      }
+      if (ids.length === 0) return { rows: [], count: 0 };
+      const order = ids.map((r) => r.link_id);
+      const { data: rows, error: linksError } = await client.from("links").select(FEED_SELECT).in("id", order);
+      if (linksError) {
+        console.error("failed to load the topic's links", linksError);
+        return null;
+      }
+      const position = new Map(order.map((id, i) => [id, i]));
+      rows.sort((a, b) => position.get(a.id) - position.get(b.id));
+      const inTopic = (id) => id === path || id.startsWith(`${path}.`);
+      return {
+        rows: rows.map((row) => {
+          const topics = (row.link_topics || []).filter((lt) => lt.topics && inTopic(lt.topics.id));
+          return { row, shared: { entities: new Set(), topics: new Set(topics.map((lt) => lt.topics.name)) } };
+        }),
+        count: ids.length,
+      };
+    }
+
     async function fetchPage() {
+      if (feed.topic) {
+        const page = await fetchTopicLinks(feed.topic, feed.offset);
+        if (page) feed.offset += page.count;
+        return page;
+      }
       if (feed.entity) {
         const page = await fetchEntityLinks(feed.entity, feed.offset);
         if (page) feed.offset += page.count;
@@ -1818,7 +1905,7 @@
     function updateSearchEmpty() {
       const nothing = feed.done && !articleList.querySelector("li.article");
       searchEmpty.classList.toggle("visible", feed.query.length > 0 && nothing);
-      document.getElementById("focus-related-title").textContent = feed.entity
+      document.getElementById("focus-related-title").textContent = feed.entity || feed.topic
         ? nothing ? "No posts yet" : "Posts"
         : feed.related && nothing ? "Nothing related yet" : "Related";
     }
@@ -1863,6 +1950,7 @@
       feed.query = query;
       feed.related = null;
       feed.entity = null;
+      feed.topic = null;
       feed.chronological = false;
       // Ranks are computed as of this moment for every page of this feed.
       feed.asOf = new Date().toISOString();
@@ -1904,7 +1992,7 @@
 
       // A post's or an entity's own address opens on it (setupLinkPage), not
       // the feed.
-      if (linkIdFromPath() || entityIdFromPath()) {
+      if (linkIdFromPath() || entityIdFromPath() || topicPathFromPath()) {
         articleList.replaceChildren();
         return;
       }
@@ -1942,6 +2030,7 @@
     const focusMain = document.getElementById("focus-main");
     const focusStatus = document.getElementById("focus-status");
     const focusEntityHead = document.getElementById("focus-entity");
+    const focusTopicHead = document.getElementById("focus-topic");
     let focusGeneration = 0;
     let focusDepth = 0;
     // The feed as it was before the first post was focused.
@@ -1949,6 +2038,10 @@
 
     function linkIdFromPath() {
       return location.pathname.match(POST_PATH_PATTERN)?.[1] ?? null;
+    }
+
+    function topicPathFromPath() {
+      return location.pathname.match(TOPIC_PATH_PATTERN)?.[1] ?? null;
     }
 
     function entityIdFromPath() {
@@ -1959,12 +2052,12 @@
       return document.documentElement.classList.contains("focused");
     }
 
-    function tagItem(name, detail, kind, entityId = null) {
+    function tagItem(name, detail, kind, id = null) {
       const item = document.createElement("li");
       item.className = `tag ${kind}`;
-      const label = document.createElement(entityId ? "a" : "span");
+      const label = document.createElement(id ? "a" : "span");
       label.textContent = name;
-      if (entityId) setEntityHref(label, entityId);
+      if (id) (kind === "topic" ? setTopicHref : setEntityHref)(label, id);
       item.append(label);
       if (detail) {
         const extra = document.createElement("span");
@@ -2018,6 +2111,7 @@
       const start = from?.getBoundingClientRect();
       enterFocus(`/p/${id}`, { push, saveFeed });
       focusEntityHead.hidden = true;
+      focusTopicHead.hidden = true;
       // Shared with the post focused before, which no longer applies.
       for (const chip of from?.querySelectorAll(".shared") ?? []) chip.classList.remove("shared");
       let row = linkRows.get(id);
@@ -2062,7 +2156,7 @@
           (row.link_topics || [])
             .filter((lt) => lt.topics)
             .sort((a, b) => b.p - a.p)
-            .map((lt) => tagItem(lt.topics.name, "", "topic")),
+            .map((lt) => tagItem(lt.topics.name, "", "topic", lt.topics.id)),
         );
       }
       updateFocusBand();
@@ -2081,6 +2175,7 @@
       document.getElementById("focus-entity-name").textContent = name;
       document.getElementById("focus-entity-meta").textContent = "";
       focusEntityHead.hidden = false;
+      focusTopicHead.hidden = true;
 
       const details = supabaseReady.then((client) =>
         Promise.all([
@@ -2109,6 +2204,52 @@
       updateFocusBand();
     }
 
+    // A topic's own page, seb.now/t/<path>: its name, path and definition on
+    // the band with a button that asks Claude for new sources covering it, and
+    // below it every link labelled with it or one of its children, newest
+    // first (topic_links), a page at a time as you scroll.
+    async function focusTopic(path, { name = "", push = true, saveFeed = true } = {}) {
+      const generation = ++focusGeneration;
+      enterFocus(`/t/${path}`, { push, saveFeed });
+      focusMain.replaceChildren();
+      showFocusSection("focus-entities", []);
+      showFocusSection("focus-topics", []);
+      focusEntityHead.hidden = true;
+      const findSources = document.getElementById("find-sources");
+      document.getElementById("focus-topic-name").textContent = name;
+      document.getElementById("focus-topic-meta").textContent = path;
+      document.getElementById("focus-topic-description").textContent = "";
+      findSources.hidden = true;
+      focusTopicHead.hidden = false;
+
+      resetFeed("");
+      feed.topic = path;
+      articleList.replaceChildren();
+      updateSearchEmpty();
+      window.scrollTo({ top: 0, behavior: "instant" });
+      updateFocusBand();
+      loadMore();
+
+      const client = await supabaseReady;
+      const [{ data: topic, error }, { data: count }] = await Promise.all([
+        client.from("topics").select("name, description").eq("id", path).maybeSingle(),
+        client.rpc("topic_link_count", { topic: path }),
+      ]);
+      if (generation !== focusGeneration) return;
+      if (error || !topic) {
+        focusTopicHead.hidden = true;
+        focusStatus.textContent = error ? "Couldn't load this topic." : "This topic doesn't exist.";
+      } else {
+        document.getElementById("focus-topic-name").textContent = topic.name;
+        const posts = count == null ? "" : ` · ${count} ${count === 1 ? "post" : "posts"}`;
+        document.getElementById("focus-topic-meta").textContent = `${path}${posts}`;
+        document.getElementById("focus-topic-description").textContent = topic.description ?? "";
+        findSources.href = findSourcesUrl(path, topic);
+        findSources.hidden = false;
+      }
+      updateFocusBand();
+    }
+
     // Back to the feed: the one saved on the way in, where it was scrolled to,
     // with the focused post flying back into its place; `restore: false`
     // leaves the list to the caller (a search replacing it anyway).
@@ -2121,6 +2262,7 @@
       focusSection.hidden = true;
       focusMain.replaceChildren();
       focusEntityHead.hidden = true;
+      focusTopicHead.hidden = true;
       setTimeout(() => {
         if (!isFocused()) root.classList.remove("focus-bg");
       }, FOCUS_FADE_MS);
@@ -2165,11 +2307,18 @@
         if (!window.getSelection().isCollapsed) return;
         focusLink(li.dataset.linkId, { from: li });
       });
-      // Entity chips open the entity's page in place; a modified click (new
-      // tab) follows the link as usual.
+      // Topic and entity chips open their page in place; a modified click
+      // (new tab) follows the link as usual.
       document.addEventListener("click", (event) => {
-        const chip = event.target.closest("a[href^='/e/']");
+        const chip = event.target.closest("a[href^='/e/'], a[href^='/t/']");
         if (!chip || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        const path = chip.pathname.match(TOPIC_PATH_PATTERN)?.[1];
+        if (path) {
+          event.preventDefault();
+          if (feed.topic === path) window.scrollTo({ top: 0, behavior: "smooth" });
+          else focusTopic(path, { name: chip.textContent });
+          return;
+        }
         const id = chip.pathname.match(ENTITY_PATH_PATTERN)?.[1];
         if (!id) return;
         event.preventDefault();
@@ -2185,12 +2334,14 @@
         focusDepth = history.state?.focusDepth ?? 0;
         if (id) focusLink(id, { push: false });
         else if (entityId) focusEntity(entityId, { push: false });
+        else if (topicPathFromPath()) focusTopic(topicPathFromPath(), { push: false });
         else if (isFocused()) leaveFocus();
       });
       const id = linkIdFromPath();
       const entityId = entityIdFromPath();
       if (id) focusLink(id, { push: false, saveFeed: false });
       else if (entityId) focusEntity(entityId, { push: false, saveFeed: false });
+      else if (topicPathFromPath()) focusTopic(topicPathFromPath(), { push: false, saveFeed: false });
     }
 
     function setupMenu() {
