@@ -435,6 +435,21 @@ so a swipe or scroll never opens a card. Rows are transparent while the band
 shows (`.swipe-content` normally paints `--bg`). `#focus-main` is a `.link-list`,
 not `.articles`: the feed is found with `querySelector("ul.articles")`.
 
+**An entity's own page.** Every entity has a page at `seb.now/e/<id>`, built on
+the same focused view (`focusEntity`, sharing `enterFocus` with `focusLink`):
+the band shows `#focus-entity` (its name, kind and post count) instead of a
+card, and the list below is every link that mentions it, newest first, from
+`public.entity_links(entity, max_results, page_offset)` (security invoker,
+ordered `created_at desc, id desc`), paged at `FEED_PAGE_SIZE` as you scroll so
+the per-page vote/reply lookups stay page-sized; the entity's chip is
+highlighted (`.shared`) on each row. Every entity chip is a link there: the
+feed rows' footer chips (`<a class="entity" href="/e/<id>">`, pre-rendered by
+`site.py` from `EntityChip`s and filled by `fillChips` from `FEED_SELECT`'s
+`entities(id, …)`) and the focused post's entity list. A plain click opens it
+in place with `pushState`, so Back and ← Feed work as for posts; a modified
+click opens a new tab, which the catch-all document serves. Ids only become
+hrefs when they match a UUID (`setEntityHref`). Topic chips aren't links yet.
+
 Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the
 vote tints (`.swipe-bg`) and the `.post` that slides over them, so the
 favicon, domain/chips line and replies don't react. Swiping right upvotes

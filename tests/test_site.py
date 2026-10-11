@@ -15,7 +15,7 @@ from seb_now.constants import (
     FEED_SKELETON_ROWS,
     SourceType,
 )
-from seb_now.site import Article, _top_entity_names, _top_topic_names, build_articles, render
+from seb_now.site import Article, EntityChip, _top_entities, _top_topic_names, build_articles, render
 
 DOMAIN_SOURCE_TYPES = {
     "nytimes.com": SourceType.MAINSTREAM_MEDIA,
@@ -189,27 +189,32 @@ def test_render_shows_topic_chips_and_omits_them_when_untagged() -> None:
     assert "cluster" not in html
 
 
-def test_top_entity_names_orders_by_p_and_caps_at_chip_count() -> None:
+def test_top_entities_orders_by_p_and_caps_at_chip_count() -> None:
     link_entities = [
-        {"p": 0.8, "entities": {"name": "OpenAI"}},
-        {"p": 1.0, "entities": {"name": "Sam Altman"}},
-        {"p": 0.9, "entities": {"name": "Microsoft"}},
-        {"p": 0.85, "entities": {"name": "Anthropic"}},
+        {"p": 0.8, "entities": {"id": "e1", "name": "OpenAI"}},
+        {"p": 1.0, "entities": {"id": "e2", "name": "Sam Altman"}},
+        {"p": 0.9, "entities": {"id": "e3", "name": "Microsoft"}},
+        {"p": 0.85, "entities": {"id": "e4", "name": "Anthropic"}},
         {"p": 0.95, "entities": None},
     ]
 
-    expected = ["Sam Altman", "Microsoft", "Anthropic", "OpenAI"][:ARTICLE_ENTITY_CHIPS]
-    assert _top_entity_names(link_entities) == expected
+    expected = [
+        EntityChip("e2", "Sam Altman"),
+        EntityChip("e3", "Microsoft"),
+        EntityChip("e4", "Anthropic"),
+        EntityChip("e1", "OpenAI"),
+    ][:ARTICLE_ENTITY_CHIPS]
+    assert _top_entities(link_entities) == expected
 
 
-def test_render_shows_entity_chips_bottom_left_of_the_footer_and_omits_them_when_none() -> None:
+def test_render_links_entity_chips_bottom_left_of_the_footer_and_omits_them_when_none() -> None:
     with_entities = Article(
         id="a1",
         title="Tagged",
         url="https://example.com/a",
         domain="example.com",
         source_type=SourceType.DIRECT_LINK,
-        entities=("OpenAI", "<b>Sam</b>"),
+        entities=(EntityChip("e1", "OpenAI"), EntityChip("e2", "<b>Sam</b>")),
     )
     without = Article(
         id="a2",
@@ -222,8 +227,8 @@ def test_render_shows_entity_chips_bottom_left_of_the_footer_and_omits_them_when
     articles = _article_list(render([with_entities, without]))
 
     assert (
-        '<div class="post-footer"><span class="entities"><span class="entity">OpenAI</span>'
-        '<span class="entity">&lt;b&gt;Sam&lt;/b&gt;</span></span><span class="score">'
+        '<div class="post-footer"><span class="entities"><a class="entity" href="/e/e1">OpenAI</a>'
+        '<a class="entity" href="/e/e2">&lt;b&gt;Sam&lt;/b&gt;</a></span><span class="score">'
     ) in articles
     assert articles.count('<span class="entities">') == 1
 
@@ -278,7 +283,7 @@ def test_link_page_focuses_a_tapped_post_above_its_related_links() -> None:
     script = html[html.index('<script type="module">') :]
     assert 'rpc("related_links"' in script
     assert "page_offset: offset" in script
-    assert "link_entities(p, entities(name, kind))" in script
+    assert "link_entities(p, entities(id, name, kind))" in script
     assert "history.pushState" in script and "`/p/${id}`" in script
     assert "focusLink(li.dataset.linkId, { from: li })" in script
     assert "setupLinkPage();" in script
@@ -426,7 +431,7 @@ def test_render_includes_article_template_with_a_cover_and_topic_chip_to_fill() 
     assert template.count('li class="article"') == 1
     assert 'class="cover-link"' in template
     assert '<span class="topic">' in template
-    assert '<span class="entity">' in template
+    assert '<a class="entity" href="/e/">' in template
     assert 'id="feed-sentinel"' in html
     assert '<ul class="articles">' in html
 
@@ -614,3 +619,20 @@ def test_article_template_carries_an_empty_posted_date_to_fill() -> None:
     start = html.index('<template id="article-template">')
     template = html[start : html.index("</template>", start)]
     assert '<time class="posted" datetime=""></time>' in template
+
+
+def test_entity_page_lists_every_link_mentioning_it_and_chips_open_it() -> None:
+    html = render([])
+
+    focus = html[html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))]
+    assert '<div id="focus-entity" hidden>' in focus
+    assert 'id="focus-entity-name"' in focus and 'id="focus-entity-meta"' in focus
+    script = html[html.index('<script type="module">') :]
+    assert 'rpc("entity_links"' in script
+    assert "`/e/${id}`" in script
+    # Chips are links, but a plain click opens the page in place.
+    assert "closest(\"a[href^='/e/']\")" in script
+    assert "focusEntity(id, { name: chip.textContent })" in script
+    assert "else if (entityId) focusEntity(entityId, { push: false });" in script
+    # Entity ids become hrefs only when they look like one.
+    assert "function setEntityHref(anchor, id)" in script
