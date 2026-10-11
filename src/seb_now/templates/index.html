@@ -766,13 +766,12 @@
     #focus-entity-meta, #focus-topic-meta { margin: 0; font-size: 0.8rem; color: gray; }
     #focus-topic-description { margin: 0.5rem 0 0; font-size: 0.85rem; color: #b8b8b8; max-width: 40rem; }
     #focus-topic-description:empty { display: none; }
-    /* On a topic's page, floating bottom right just above the search bar
-       (below where #dock-actions shows): a .dock-action stretched to fit its
-       label. */
+    /* On a topic's page, a .dock-action stretched to fit its label, in
+       #dock-actions' spot: the two swap as that row fades in and out. */
     #find-sources {
       position: absolute;
       right: 0;
-      bottom: calc(100% + 0.75rem);
+      bottom: calc(100% + 4rem);
       width: auto;
       gap: 0.45rem;
       padding: 0 1.2rem 0 1rem;
@@ -780,9 +779,17 @@
       font: 600 0.95rem var(--brand-font);
       text-decoration: none;
       pointer-events: auto;
+      transition: opacity 0.45s ease;
     }
     #find-sources svg { width: 24px; height: 24px; }
-    #dock-inner:has(#find-sources:not([hidden])) #dock-actions { bottom: calc(100% + 4.5rem); }
+    #dock-inner:has(#dock-actions.visible) #find-sources {
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.45s ease, visibility 0s linear 0.45s;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #find-sources, #dock-inner:has(#dock-actions.visible) #find-sources { transition: none; }
+    }
     li.article.replying .reply-btn { color: var(--positive); border-color: var(--positive); }
     .swipe-content .replies {
       list-style: none;
