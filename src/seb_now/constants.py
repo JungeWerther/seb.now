@@ -32,6 +32,19 @@ FAVICON_URL_TEMPLATE = "https://icons.duckduckgo.com/ip3/{host}.ico"
 # site.py — articles pre-rendered into index.html; the page loads the rest
 # (and search results) from Supabase in pages of the same size as you scroll.
 FEED_PAGE_SIZE = 30
+# site.py — a topic page's "Find sources" button opens Claude with this prompt
+# prefilled; {prompt} is the URL-encoded text of FIND_SOURCES_PROMPT, filled
+# by the page script with the topic's {name}, {path} and {description}, the
+# site's {host} and its MCP server's {mcp_url}.
+FIND_SOURCES_URL_TEMPLATE = "https://claude.ai/new?q={prompt}"
+FIND_SOURCES_PROMPT = (
+    "Find sources that regularly cover {name} (the topic `{path}` on {host}: {description}). "
+    "Look for YouTube channels, Mastodon accounts and RSS or web feeds. "
+    "If you have the {host} connector ({mcp_url}), first call get_links_by_topic with "
+    '"{path}" to see what the feed already carries, and don\'t suggest those sources. '
+    "For each source give its YouTube channel id (UC…), its Mastodon handle as "
+    "handle@instance, or its feed URL, plus one line on why it fits."
+)
 # site.py — value of every field in the #article-template markup, which the
 # page script overwrites per link
 TEMPLATE_ARTICLE_BLANK = ""

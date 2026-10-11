@@ -11,11 +11,12 @@ from seb_now.constants import (
     ARTICLE_ENTITY_CHIPS,
     ARTICLE_TOPIC_CHIPS,
     FAVICON_URL_TEMPLATE,
+    FIND_SOURCES_URL_TEMPLATE,
     FEED_PAGE_SIZE,
     FEED_SKELETON_ROWS,
     SourceType,
 )
-from seb_now.site import Article, EntityChip, _top_entities, _top_topic_names, build_articles, render
+from seb_now.site import Article, Chip, _top_entities, _top_topics, build_articles, render
 
 DOMAIN_SOURCE_TYPES = {
     "nytimes.com": SourceType.MAINSTREAM_MEDIA,
@@ -144,32 +145,34 @@ def test_render_shows_favicon_column_with_letter_fallback() -> None:
     assert html.index('class="favicon"') < html.index('class="card-body"')
 
 def test_build_articles_keeps_feed_topics() -> None:
-    feed = [{**FEED_FIXTURE[0], "topics": ["AI models", "Open source"]}, FEED_FIXTURE[1]]
+    topics = [Chip("ai.models", "AI models"), Chip("tech.open_source", "Open source")]
+    feed = [{**FEED_FIXTURE[0], "topics": topics}, FEED_FIXTURE[1]]
 
     articles = build_articles(feed, DOMAIN_SOURCE_TYPES)
 
-    assert articles[0].topics == ("AI models", "Open source")
+    assert articles[0].topics == tuple(topics)
     assert articles[1].topics == ()
 
 
-def test_top_topic_names_orders_by_p_and_caps_at_chip_count() -> None:
+def test_top_topics_orders_by_p_and_caps_at_chip_count() -> None:
     link_topics = [
-        {"p": 0.5, "topics": {"name": "Big tech"}},
-        {"p": 0.9, "topics": {"name": "AI models"}},
-        {"p": 0.7, "topics": {"name": "Open source"}},
+        {"p": 0.5, "topics": {"id": "tech.big_tech", "name": "Big tech"}},
+        {"p": 0.9, "topics": {"id": "ai.models", "name": "AI models"}},
+        {"p": 0.7, "topics": {"id": "tech.open_source", "name": "Open source"}},
     ]
 
-    assert _top_topic_names(link_topics) == ["AI models", "Open source"][:ARTICLE_TOPIC_CHIPS]
+    expected = [Chip("ai.models", "AI models"), Chip("tech.open_source", "Open source")][:ARTICLE_TOPIC_CHIPS]
+    assert _top_topics(link_topics) == expected
 
 
-def test_render_shows_topic_chips_and_omits_them_when_untagged() -> None:
+def test_render_links_topic_chips_and_omits_them_when_untagged() -> None:
     tagged = Article(
         id="a1",
         title="Tagged",
         url="https://example.com/a",
         domain="example.com",
         source_type=SourceType.DIRECT_LINK,
-        topics=("AI models", "Open source"),
+        topics=(Chip("ai.models", "AI models"), Chip("tech.open_source", "Open source")),
     )
     untagged = Article(
         id="a2",
@@ -182,8 +185,8 @@ def test_render_shows_topic_chips_and_omits_them_when_untagged() -> None:
     html = render([tagged, untagged])
 
     assert (
-        '<span class="topics"><span class="topic">AI models</span>'
-        '<span class="topic">Open source</span></span>'
+        '<span class="topics"><a class="topic" href="/t/ai.models">AI models</a>'
+        '<a class="topic" href="/t/tech.open_source">Open source</a></span>'
     ) in html
     assert _article_list(html).count('<span class="topics">') == 1
     assert "cluster" not in html
@@ -199,10 +202,10 @@ def test_top_entities_orders_by_p_and_caps_at_chip_count() -> None:
     ]
 
     expected = [
-        EntityChip("e2", "Sam Altman"),
-        EntityChip("e3", "Microsoft"),
-        EntityChip("e4", "Anthropic"),
-        EntityChip("e1", "OpenAI"),
+        Chip("e2", "Sam Altman"),
+        Chip("e3", "Microsoft"),
+        Chip("e4", "Anthropic"),
+        Chip("e1", "OpenAI"),
     ][:ARTICLE_ENTITY_CHIPS]
     assert _top_entities(link_entities) == expected
 
@@ -214,7 +217,7 @@ def test_render_links_entity_chips_bottom_left_of_the_footer_and_omits_them_when
         url="https://example.com/a",
         domain="example.com",
         source_type=SourceType.DIRECT_LINK,
-        entities=(EntityChip("e1", "OpenAI"), EntityChip("e2", "<b>Sam</b>")),
+        entities=(Chip("e1", "OpenAI"), Chip("e2", "<b>Sam</b>")),
     )
     without = Article(
         id="a2",
@@ -430,7 +433,7 @@ def test_render_includes_article_template_with_a_cover_and_topic_chip_to_fill() 
     template = html[start : html.index("</template>", start)]
     assert template.count('li class="article"') == 1
     assert 'class="cover-link"' in template
-    assert '<span class="topic">' in template
+    assert '<a class="topic" href="/t/">' in template
     assert '<a class="entity" href="/e/">' in template
     assert 'id="feed-sentinel"' in html
     assert '<ul class="articles">' in html
@@ -499,7 +502,7 @@ def test_render_escapes_markup_in_titles_and_topics() -> None:
         url="https://example.com/a",
         domain="example",
         source_type=SourceType.DIRECT_LINK,
-        topics=("<b>AI</b>",),
+        topics=(Chip("ai", "<b>AI</b>"),),
     )
 
     html = render([article])
@@ -631,8 +634,27 @@ def test_entity_page_lists_every_link_mentioning_it_and_chips_open_it() -> None:
     assert 'rpc("entity_links"' in script
     assert "`/e/${id}`" in script
     # Chips are links, but a plain click opens the page in place.
-    assert "closest(\"a[href^='/e/']\")" in script
+    assert "closest(\"a[href^='/e/'], a[href^='/t/']\")" in script
     assert "focusEntity(id, { name: chip.textContent })" in script
     assert "else if (entityId) focusEntity(entityId, { push: false });" in script
     # Entity ids become hrefs only when they look like one.
     assert "function setEntityHref(anchor, id)" in script
+
+
+def test_topic_page_lists_its_links_with_a_find_sources_button_and_chips_open_it() -> None:
+    html = render([])
+
+    focus = html[html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))]
+    assert '<div id="focus-topic" hidden>' in focus
+    head = focus[focus.index('<div id="focus-head">') :]
+    button = head[head.index('<a id="find-sources"') :]
+    button = button[: button.index("</a>")]
+    assert 'target="_blank" rel="noopener noreferrer"' in button and button.endswith("Find sources")
+    script = _page_script(html)
+    assert 'rpc("topic_links"' in script and 'rpc("topic_link_count"' in script
+    assert "`/t/${id}`" in script
+    assert "focusTopic(path, { name: chip.textContent })" in script
+    assert "link_topics(p, topics(id, name))" in script
+    # The prompt and Claude's address come from constants.py, filled per topic.
+    assert f'"{FIND_SOURCES_URL_TEMPLATE}"' in script
+    assert "encodeURIComponent(prompt)" in script
