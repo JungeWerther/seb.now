@@ -637,6 +637,8 @@
     /* On a related link: what it shares with the focused post. */
     .meta .topic.shared { color: var(--positive); border-color: var(--positive); }
     .post-footer .entity.shared { color: var(--positive); background: var(--positive-soft); }
+    .post-footer a.entity { text-decoration: none; }
+    .post-footer a.entity:hover { color: var(--fg); }
     #feed-skeletons[hidden] { display: none; }
     .skeleton .bone {
       display: block;
@@ -749,6 +751,18 @@
     }
     .tag.entity { border-color: var(--positive); }
     .tag .tag-detail { margin-left: 0.35rem; font-size: 0.65rem; color: gray; }
+    .tag a { color: inherit; text-decoration: none; }
+    .tag a:hover { text-decoration: underline; }
+    #focus-entity[hidden] { display: none; }
+    #focus-entity-name {
+      margin: 0.6rem 0 0.2rem;
+      font-family: var(--brand-font);
+      font-size: 1.9rem;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      overflow-wrap: anywhere;
+    }
+    #focus-entity-meta { margin: 0; font-size: 0.8rem; color: gray; }
     li.article.replying .reply-btn { color: var(--positive); border-color: var(--positive); }
     .swipe-content .replies {
       list-style: none;
@@ -932,6 +946,10 @@
       <button type="button" id="focus-back" aria-label="Back to the feed"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>Feed</button>
     </div>
     <p id="focus-status"></p>
+    <div id="focus-entity" hidden>
+      <h1 id="focus-entity-name"></h1>
+      <p id="focus-entity-meta"></p>
+    </div>
     <ul class="link-list" id="focus-main"></ul>
     <p class="link-section-title" id="focus-entities-title" hidden>Entities</p>
     <ul class="tag-list" id="focus-entities"></ul>
@@ -1499,7 +1517,7 @@
     const ARTICLE_ENTITY_CHIPS = __ARTICLE_ENTITY_CHIPS__;
     const FAVICON_URL_TEMPLATE = __FAVICON_URL_TEMPLATE__;
     const FEED_SELECT =
-      "id, title, url, image_url, author, created_at, link_topics(p, topics(name)), link_entities(p, entities(name, kind))";
+      "id, title, url, image_url, author, created_at, link_topics(p, topics(name)), link_entities(p, entities(id, name, kind))";
     // Fetch the next page once the end of the list is this close to view.
     const FEED_PREFETCH_MARGIN_PX = 1200;
 
@@ -1512,13 +1530,15 @@
     const searchEmpty = document.getElementById("search-empty");
 
     // The list shows one feed at a time: the default one, ranked by the
-    // ranked_feed function, the results for `query`, newest first, or the
-    // links `related` to a focused post (see focusLink).
+    // ranked_feed function, the results for `query`, newest first, the
+    // links `related` to a focused post (see focusLink), or every link
+    // mentioning an `entity`, newest first (see focusEntity).
     // `generation` bumps whenever it's swapped, so a request still in flight
     // for the previous feed is dropped when it lands.
     const feed = {
       query: "",
       related: null,
+      entity: null,
       chronological: false,
       asOf: null,
       offset: 0,
@@ -1537,32 +1557,42 @@
       return host.startsWith("www.") ? host.slice(4) : host;
     }
 
-    // Same order as site.py's _top_names, except that names in `first` (what
+    // Same order as site.py's _top_labels, except that names in `first` (what
     // a related link shares with the focused post) come before the rest.
-    function topNames(labels, key, count, first) {
+    function topLabels(labels, key, count, first) {
       const byName = (a, b) => (a[key].name < b[key].name ? -1 : a[key].name > b[key].name ? 1 : 0);
       return labels
         .filter((label) => label[key])
         .sort((a, b) => first.has(b[key].name) - first.has(a[key].name) || b.p - a.p || byName(a, b))
         .slice(0, count)
-        .map((label) => label[key].name);
+        .map((label) => label[key]);
     }
 
-    // Fills `container` with one copy of its first chip per name, or drops it.
-    function fillChips(container, names, shared) {
-      if (names.length === 0) {
+    // Fills `container` with one copy of its first chip per label, or drops
+    // it. Entity chips are links to the entity's page.
+    function fillChips(container, labels, shared) {
+      if (labels.length === 0) {
         container.remove();
         return;
       }
       const chip = container.firstElementChild;
       container.replaceChildren(
-        ...names.map((name) => {
+        ...labels.map(({ id, name }) => {
           const el = chip.cloneNode();
           el.textContent = name;
           el.classList.toggle("shared", shared.has(name));
+          if (el instanceof HTMLAnchorElement) setEntityHref(el, id);
           return el;
         }),
       );
+    }
+
+    const UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+    const ENTITY_PATH_PATTERN = new RegExp(`^/e/(${UUID_PATTERN})/?$`);
+
+    function setEntityHref(anchor, id) {
+      if (new RegExp(`^${UUID_PATTERN}$`).test(id)) anchor.href = `/e/${id}`;
+      else anchor.removeAttribute("href");
     }
 
     // Same as site.py's domain_with_author.
@@ -1611,12 +1641,12 @@
       posted.textContent = postedLabel(row.created_at);
       fillChips(
         li.querySelector(".topics"),
-        topNames(row.link_topics || [], "topics", ARTICLE_TOPIC_CHIPS, shared.topics),
+        topLabels(row.link_topics || [], "topics", ARTICLE_TOPIC_CHIPS, shared.topics),
         shared.topics,
       );
       fillChips(
         li.querySelector(".entities"),
-        topNames(row.link_entities || [], "entities", ARTICLE_ENTITY_CHIPS, shared.entities),
+        topLabels(row.link_entities || [], "entities", ARTICLE_ENTITY_CHIPS, shared.entities),
         shared.entities,
       );
       const link = li.querySelector(".article-row a");
@@ -1720,7 +1750,42 @@
       };
     }
 
+    // One page of entity_links, then those links by id in its order, each
+    // with the entity itself highlighted among its chips. `entity.name` is a
+    // promise: a direct visit only learns the name with the page's header.
+    async function fetchEntityLinks(entity, offset) {
+      const client = await supabaseReady;
+      const { data: ids, error } = await client.rpc("entity_links", {
+        entity: entity.id,
+        max_results: FEED_PAGE_SIZE,
+        page_offset: offset,
+      });
+      if (error) {
+        console.error("failed to load the entity's links", error);
+        return null;
+      }
+      if (ids.length === 0) return { rows: [], count: 0 };
+      const order = ids.map((r) => r.link_id);
+      const [{ data: rows, error: linksError }, name] = await Promise.all([
+        client.from("links").select(FEED_SELECT).in("id", order),
+        entity.name,
+      ]);
+      if (linksError) {
+        console.error("failed to load the entity's links", linksError);
+        return null;
+      }
+      const position = new Map(order.map((id, i) => [id, i]));
+      rows.sort((a, b) => position.get(a.id) - position.get(b.id));
+      const shared = { entities: new Set(name ? [name] : []), topics: new Set() };
+      return { rows: rows.map((row) => ({ row, shared })), count: ids.length };
+    }
+
     async function fetchPage() {
+      if (feed.entity) {
+        const page = await fetchEntityLinks(feed.entity, feed.offset);
+        if (page) feed.offset += page.count;
+        return page;
+      }
       if (feed.related) {
         const page = await fetchRelated(feed.related, feed.offset);
         if (page) feed.offset += page.count;
@@ -1737,7 +1802,7 @@
       return page;
     }
 
-    // Rows are links, or {row, shared} for related links.
+    // Rows are links, or {row, shared} for related and entity links.
     function renderRows(rows) {
       return rows.map((item) => (item.row ? renderArticle(item.row, item.shared) : renderArticle(item))).filter(Boolean);
     }
@@ -1755,8 +1820,9 @@
     function updateSearchEmpty() {
       const nothing = feed.done && !articleList.querySelector("li.article");
       searchEmpty.classList.toggle("visible", feed.query.length > 0 && nothing);
-      document.getElementById("focus-related-title").textContent =
-        feed.related && nothing ? "Nothing related yet" : "Related";
+      document.getElementById("focus-related-title").textContent = feed.entity
+        ? nothing ? "No posts yet" : "Posts"
+        : feed.related && nothing ? "Nothing related yet" : "Related";
     }
 
     function sentinelNearViewport() {
@@ -1798,6 +1864,7 @@
       feed.generation++;
       feed.query = query;
       feed.related = null;
+      feed.entity = null;
       feed.chronological = false;
       // Ranks are computed as of this moment for every page of this feed.
       feed.asOf = new Date().toISOString();
@@ -1837,8 +1904,9 @@
         if (entries.some((entry) => entry.isIntersecting)) loadMore();
       }, { rootMargin: `0px 0px ${FEED_PREFETCH_MARGIN_PX}px 0px` }).observe(feedSentinel);
 
-      // A post's own address opens on that post (setupLinkPage), not the feed.
-      if (linkIdFromPath()) {
+      // A post's or an entity's own address opens on it (setupLinkPage), not
+      // the feed.
+      if (linkIdFromPath() || entityIdFromPath()) {
         articleList.replaceChildren();
         return;
       }
@@ -1875,6 +1943,7 @@
     const focusSection = document.getElementById("focus");
     const focusMain = document.getElementById("focus-main");
     const focusStatus = document.getElementById("focus-status");
+    const focusEntityHead = document.getElementById("focus-entity");
     let focusGeneration = 0;
     let focusDepth = 0;
     // The feed as it was before the first post was focused.
@@ -1884,15 +1953,20 @@
       return location.pathname.match(POST_PATH_PATTERN)?.[1] ?? null;
     }
 
+    function entityIdFromPath() {
+      return location.pathname.match(ENTITY_PATH_PATTERN)?.[1] ?? null;
+    }
+
     function isFocused() {
       return document.documentElement.classList.contains("focused");
     }
 
-    function tagItem(name, detail, kind) {
+    function tagItem(name, detail, kind, entityId = null) {
       const item = document.createElement("li");
       item.className = `tag ${kind}`;
-      const label = document.createElement("span");
+      const label = document.createElement(entityId ? "a" : "span");
       label.textContent = name;
+      if (entityId) setEntityHref(label, entityId);
       item.append(label);
       if (detail) {
         const extra = document.createElement("span");
@@ -1924,24 +1998,30 @@
       );
     }
 
+    // Shared by a post's and an entity's page: pushes `path` with its depth,
+    // and saves the feed the first time the page leaves it.
+    function enterFocus(path, { push, saveFeed }) {
+      if (push) {
+        focusDepth++;
+        history.pushState({ focusDepth }, "", path);
+      }
+      if (!isFocused()) {
+        savedFeed = saveFeed ? { items: [...articleList.children], state: { ...feed }, scrollY: window.scrollY } : null;
+      }
+      document.documentElement.classList.add("focused", "focus-bg");
+      focusSection.hidden = false;
+      focusStatus.textContent = "";
+    }
+
     // `from` is the article tapped, which moves up into place; without it
     // (history, a direct visit) the post is loaded.
     async function focusLink(id, { from = null, push = true, saveFeed = true } = {}) {
       const generation = ++focusGeneration;
-      if (push) {
-        focusDepth++;
-        history.pushState({ focusDepth }, "", `/p/${id}`);
-      }
-      const root = document.documentElement;
-      if (!isFocused()) {
-        savedFeed = saveFeed ? { items: [...articleList.children], state: { ...feed }, scrollY: window.scrollY } : null;
-      }
       const start = from?.getBoundingClientRect();
+      enterFocus(`/p/${id}`, { push, saveFeed });
+      focusEntityHead.hidden = true;
       // Shared with the post focused before, which no longer applies.
       for (const chip of from?.querySelectorAll(".shared") ?? []) chip.classList.remove("shared");
-      root.classList.add("focused", "focus-bg");
-      focusSection.hidden = false;
-      focusStatus.textContent = "";
       let row = linkRows.get(id);
       let li = from ?? (row && renderArticle(row));
       focusMain.replaceChildren(li ?? skeletonRow());
@@ -1977,7 +2057,7 @@
           (row.link_entities || [])
             .filter((le) => le.entities)
             .sort((a, b) => b.p - a.p)
-            .map((le) => tagItem(le.entities.name, le.entities.kind.replace("_", " "), "entity")),
+            .map((le) => tagItem(le.entities.name, le.entities.kind.replace("_", " "), "entity", le.entities.id)),
         );
         showFocusSection(
           "focus-topics",
@@ -1986,6 +2066,47 @@
             .sort((a, b) => b.p - a.p)
             .map((lt) => tagItem(lt.topics.name, "", "topic")),
         );
+      }
+      updateFocusBand();
+    }
+
+    // An entity's own page, seb.now/e/<id>: its name and kind on the band, and
+    // below it every link that mentions it, newest first (entity_links), a
+    // page at a time as you scroll, with its chip highlighted on each. Tapping
+    // an entity chip anywhere opens it; history works as for a post's page.
+    async function focusEntity(id, { name = "", push = true, saveFeed = true } = {}) {
+      const generation = ++focusGeneration;
+      enterFocus(`/e/${id}`, { push, saveFeed });
+      focusMain.replaceChildren();
+      showFocusSection("focus-entities", []);
+      showFocusSection("focus-topics", []);
+      document.getElementById("focus-entity-name").textContent = name;
+      document.getElementById("focus-entity-meta").textContent = "";
+      focusEntityHead.hidden = false;
+
+      const details = supabaseReady.then((client) =>
+        Promise.all([
+          client.from("entities").select("name, kind").eq("id", id).maybeSingle(),
+          client.from("link_entities").select("link_id", { count: "exact", head: true }).eq("entity_id", id),
+        ]),
+      );
+      resetFeed("");
+      feed.entity = { id, name: name ? Promise.resolve(name) : details.then(([e]) => e.data?.name ?? "") };
+      articleList.replaceChildren();
+      updateSearchEmpty();
+      window.scrollTo({ top: 0, behavior: "instant" });
+      updateFocusBand();
+      loadMore();
+
+      const [{ data: entity, error }, { count }] = await details;
+      if (generation !== focusGeneration) return;
+      if (error || !entity) {
+        focusEntityHead.hidden = true;
+        focusStatus.textContent = error ? "Couldn't load this entity." : "This entity doesn't exist.";
+      } else {
+        document.getElementById("focus-entity-name").textContent = entity.name;
+        const posts = count == null ? "" : ` · ${count} ${count === 1 ? "post" : "posts"}`;
+        document.getElementById("focus-entity-meta").textContent = `${entity.kind.replace("_", " ")}${posts}`;
       }
       updateFocusBand();
     }
@@ -2001,6 +2122,7 @@
       root.classList.remove("focused");
       focusSection.hidden = true;
       focusMain.replaceChildren();
+      focusEntityHead.hidden = true;
       setTimeout(() => {
         if (!isFocused()) root.classList.remove("focus-bg");
       }, FOCUS_FADE_MS);
@@ -2045,14 +2167,32 @@
         if (!window.getSelection().isCollapsed) return;
         focusLink(li.dataset.linkId, { from: li });
       });
+      // Entity chips open the entity's page in place; a modified click (new
+      // tab) follows the link as usual.
+      document.addEventListener("click", (event) => {
+        const chip = event.target.closest("a[href^='/e/']");
+        if (!chip || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        const id = chip.pathname.match(ENTITY_PATH_PATTERN)?.[1];
+        if (!id) return;
+        event.preventDefault();
+        if (feed.entity?.id === id) {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          return;
+        }
+        focusEntity(id, { name: chip.textContent });
+      });
       window.addEventListener("popstate", () => {
         const id = linkIdFromPath();
+        const entityId = entityIdFromPath();
         focusDepth = history.state?.focusDepth ?? 0;
         if (id) focusLink(id, { push: false });
+        else if (entityId) focusEntity(entityId, { push: false });
         else if (isFocused()) leaveFocus();
       });
       const id = linkIdFromPath();
+      const entityId = entityIdFromPath();
       if (id) focusLink(id, { push: false, saveFeed: false });
+      else if (entityId) focusEntity(entityId, { push: false, saveFeed: false });
     }
 
     function setupMenu() {

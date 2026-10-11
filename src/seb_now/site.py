@@ -7,7 +7,7 @@ Feed: the `links` table in Supabase (title + url per row), read with the
 public anon client, with each link's `link_topics` and `link_entities` labels
 embedded. Each article shows its ARTICLE_TOPIC_CHIPS highest-p topics as chips
 on its domain line and its ARTICLE_ENTITY_CHIPS highest-p entities below the
-post. Only the
+post, each a link to that entity's page (seb.now/e/<id>). Only the
 newest FEED_PAGE_SIZE links are pre-rendered; the page script fetches the
 rest (and any newer than the build) as you scroll, filling the
 `#article-template` markup emitted here so both paths share one layout.
@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from html import escape
 from pathlib import Path
-from typing import Mapping, NotRequired, Sequence, TypedDict
+from typing import Mapping, NamedTuple, NotRequired, Sequence, TypedDict
 
 from seb_now.constants import (
     ARTICLE_ENTITY_CHIPS,
@@ -59,6 +59,11 @@ CSP_PLACEHOLDER = "__CONTENT_SECURITY_POLICY__"
 FEED_COLUMNS = "id, title, url, image_url, author, created_at"
 
 
+class EntityChip(NamedTuple):
+    id: str
+    name: str
+
+
 @dataclass(frozen=True)
 class Article:
     id: str
@@ -67,7 +72,7 @@ class Article:
     domain: str
     source_type: SourceType
     topics: tuple[str, ...] = ()
-    entities: tuple[str, ...] = ()
+    entities: tuple[EntityChip, ...] = ()
     image_url: str | None = None
     created_at: str = ""
 
@@ -79,7 +84,7 @@ class FeedItem(TypedDict):
     image_url: NotRequired[str]
     author: NotRequired[str]
     topics: NotRequired[list[str]]
-    entities: NotRequired[list[str]]
+    entities: NotRequired[list[EntityChip]]
     created_at: NotRequired[str]
 
 
@@ -92,22 +97,25 @@ TEMPLATE_ARTICLE = Article(
     domain=TEMPLATE_ARTICLE_BLANK,
     source_type=SourceType.DIRECT_LINK,
     topics=(TEMPLATE_ARTICLE_BLANK,),
-    entities=(TEMPLATE_ARTICLE_BLANK,),
+    entities=(EntityChip(TEMPLATE_ARTICLE_BLANK, TEMPLATE_ARTICLE_BLANK),),
     image_url=TEMPLATE_ARTICLE_BLANK,
 )
 
 
-def _top_names(labels: Sequence[dict], key: str, count: int) -> list[str]:
+def _top_labels(labels: Sequence[dict], key: str, count: int) -> list[dict]:
     ranked = sorted((label for label in labels if label[key]), key=lambda label: (-label["p"], label[key]["name"]))
-    return [label[key]["name"] for label in ranked[:count]]
+    return [label[key] for label in ranked[:count]]
 
 
 def _top_topic_names(link_topics: Sequence[dict]) -> list[str]:
-    return _top_names(link_topics, Topic.__tablename__, ARTICLE_TOPIC_CHIPS)
+    return [topic["name"] for topic in _top_labels(link_topics, Topic.__tablename__, ARTICLE_TOPIC_CHIPS)]
 
 
-def _top_entity_names(link_entities: Sequence[dict]) -> list[str]:
-    return _top_names(link_entities, Entity.__tablename__, ARTICLE_ENTITY_CHIPS)
+def _top_entities(link_entities: Sequence[dict]) -> list[EntityChip]:
+    return [
+        EntityChip(entity["id"], entity["name"])
+        for entity in _top_labels(link_entities, Entity.__tablename__, ARTICLE_ENTITY_CHIPS)
+    ]
 
 
 def load_feed() -> list[FeedItem]:
@@ -116,7 +124,7 @@ def load_feed() -> list[FeedItem]:
         client.table(Link.__tablename__)
         .select(
             f"{FEED_COLUMNS}, {LinkTopic.__tablename__}(p, {Topic.__tablename__}(name)), "
-            f"{LinkEntity.__tablename__}(p, {Entity.__tablename__}(name))"
+            f"{LinkEntity.__tablename__}(p, {Entity.__tablename__}(id, name))"
         )
         .order("created_at", desc=True)
         .order("id", desc=True)
@@ -136,7 +144,7 @@ def load_feed() -> list[FeedItem]:
                 "image_url": safe_http_url(row["image_url"]) or "",
                 "author": row.get("author") or "",
                 "topics": _top_topic_names(row[LinkTopic.__tablename__]),
-                "entities": _top_entity_names(row.get(LinkEntity.__tablename__) or []),
+                "entities": _top_entities(row.get(LinkEntity.__tablename__) or []),
                 # Kept as PostgREST's own string so the page's pagination
                 # cursor round-trips it exactly (microseconds included).
                 "created_at": row["created_at"],
@@ -213,7 +221,9 @@ def _render_article(article: Article) -> str:
     )
     entities = (
         '<span class="entities">'
-        + "".join(f'<span class="entity">{escape(name)}</span>' for name in article.entities)
+        + "".join(
+            f'<a class="entity" href="/e/{escape(entity.id)}">{escape(entity.name)}</a>' for entity in article.entities
+        )
         + "</span>"
         if article.entities
         else ""
