@@ -460,10 +460,8 @@ invoker, `topic` passed as text and cast to `ltree`; the count comes from
 highlighted. Topic chips are links there too (`<a class="topic"
 href="/t/<path>">`, `setTopicHref`, which only accepts an ltree-shaped id), on
 feed rows and in the focused post's topic list, opened in place like entity
-chips. A **Find sources** pill (`#find-sources`, Lucide `zoom-in`), shown on a topic
-page in `#dock-actions`' spot (a `.dock-action` stretched to fit its label;
-the two swap, crossfading, as scrolling up reveals the back-to-top row and
-scrolling down hides it),
+chips. A **Find sources** pill (`#find-sources`, Lucide `zoom-in`), top right of a
+topic page, opposite ← Feed in `#focus-head` and styled like it,
 opens Claude in a new tab (`FIND_SOURCES_URL_TEMPLATE`, `claude.ai/new?q=`)
 with `FIND_SOURCES_PROMPT` prefilled (both in constants.py; the page fills in
 the topic, `location.host` and `<origin>/mcp`): find YouTube channels,

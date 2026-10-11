@@ -766,30 +766,21 @@
     #focus-entity-meta, #focus-topic-meta { margin: 0; font-size: 0.8rem; color: gray; }
     #focus-topic-description { margin: 0.5rem 0 0; font-size: 0.85rem; color: #b8b8b8; max-width: 40rem; }
     #focus-topic-description:empty { display: none; }
-    /* On a topic's page, a .dock-action stretched to fit its label, in
-       #dock-actions' spot: the two swap as that row fades in and out. */
+    /* On a topic's page, top right opposite ← Feed and styled like it. */
     #find-sources {
-      position: absolute;
-      right: 0;
-      bottom: calc(100% + 4rem);
-      width: auto;
-      gap: 0.45rem;
-      padding: 0 1.2rem 0 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      margin-left: auto;
+      padding: 0.25rem 0.7rem 0.25rem 0.5rem;
+      border: 1px solid rgba(255, 255, 255, 0.25);
       border-radius: 999px;
-      font: 600 0.95rem var(--brand-font);
+      color: inherit;
+      font-size: 0.8rem;
       text-decoration: none;
-      pointer-events: auto;
-      transition: opacity 0.45s ease;
     }
-    #find-sources svg { width: 24px; height: 24px; }
-    #dock-inner:has(#dock-actions.visible) #find-sources {
-      opacity: 0;
-      visibility: hidden;
-      transition: opacity 0.45s ease, visibility 0s linear 0.45s;
-    }
-    @media (prefers-reduced-motion: reduce) {
-      #find-sources, #dock-inner:has(#dock-actions.visible) #find-sources { transition: none; }
-    }
+    #find-sources svg { width: 16px; height: 16px; }
+    #find-sources:hover { border-color: rgba(255, 255, 255, 0.5); }
     li.article.replying .reply-btn { color: var(--positive); border-color: var(--positive); }
     .swipe-content .replies {
       list-style: none;
@@ -971,6 +962,7 @@
   <section id="focus" hidden>
     <div id="focus-head">
       <button type="button" id="focus-back" aria-label="Back to the feed"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>Feed</button>
+      <a id="find-sources" target="_blank" rel="noopener noreferrer" title="Ask Claude to find new sources covering this topic" hidden><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>Find sources</a>
     </div>
     <p id="focus-status"></p>
     <div id="focus-topic" hidden>
@@ -992,7 +984,6 @@
   <!--ARTICLES-->
   <div id="search-dock">
     <div id="dock-inner">
-    <a id="find-sources" class="dock-action" target="_blank" rel="noopener noreferrer" title="Ask Claude to find new sources covering this topic" hidden><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>Find sources</a>
     <div id="dock-actions">
       <button type="button" class="dock-action" id="back-to-top" aria-label="Back to top of a fresh feed" title="Back to top">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -2217,9 +2208,9 @@
     }
 
     // A topic's own page, seb.now/t/<path>: its name, path and definition on
-    // the band, below it every link labelled with it or one of its children,
-    // newest first (topic_links), a page at a time as you scroll, and a
-    // floating button that asks Claude for new sources covering it.
+    // the band with a button that asks Claude for new sources covering it, and
+    // below it every link labelled with it or one of its children, newest
+    // first (topic_links), a page at a time as you scroll.
     async function focusTopic(path, { name = "", push = true, saveFeed = true } = {}) {
       const generation = ++focusGeneration;
       enterFocus(`/t/${path}`, { push, saveFeed });
