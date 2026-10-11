@@ -641,12 +641,13 @@ def test_entity_page_lists_every_link_mentioning_it_and_chips_open_it() -> None:
     assert "function setEntityHref(anchor, id)" in script
 
 
-def test_topic_page_lists_its_links_with_a_find_sources_button_and_chips_open_it() -> None:
+def test_topic_page_lists_its_links_with_a_floating_find_sources_button_and_chips_open_it() -> None:
     html = render([])
 
     focus = html[html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))]
     assert '<div id="focus-topic" hidden>' in focus
-    button = focus[focus.index('<a id="find-sources"') :]
+    dock = html[html.index('<div id="search-dock">') :]
+    button = dock[dock.index('<a id="find-sources"') :]
     button = button[: button.index("</a>")]
     assert 'target="_blank" rel="noopener noreferrer"' in button and button.endswith("Find sources")
     script = _page_script(html)
