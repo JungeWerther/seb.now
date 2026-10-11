@@ -767,25 +767,22 @@
     #focus-topic-description { margin: 0.5rem 0 0; font-size: 0.85rem; color: #b8b8b8; max-width: 40rem; }
     #focus-topic-description:empty { display: none; }
     /* On a topic's page, floating bottom right just above the search bar
-       (below where #dock-actions shows). */
+       (below where #dock-actions shows): a .dock-action stretched to fit its
+       label. */
     #find-sources {
       position: absolute;
       right: 0;
       bottom: calc(100% + 0.75rem);
-      display: inline-flex;
-      align-items: center;
+      width: auto;
       gap: 0.45rem;
-      padding: 0.65rem 1.1rem 0.65rem 0.9rem;
+      padding: 0 1.2rem 0 1rem;
       border-radius: 999px;
-      background: var(--positive-soft);
-      color: var(--positive);
-      font: 600 0.9rem var(--brand-font);
+      font: 600 0.95rem var(--brand-font);
       text-decoration: none;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
       pointer-events: auto;
     }
-    #find-sources:hover { filter: brightness(1.05); }
-    #find-sources svg { width: 18px; height: 18px; }
+    #find-sources svg { width: 24px; height: 24px; }
+    #dock-inner:has(#find-sources:not([hidden])) #dock-actions { bottom: calc(100% + 4.5rem); }
     li.article.replying .reply-btn { color: var(--positive); border-color: var(--positive); }
     .swipe-content .replies {
       list-style: none;
@@ -988,7 +985,7 @@
   <!--ARTICLES-->
   <div id="search-dock">
     <div id="dock-inner">
-    <a id="find-sources" target="_blank" rel="noopener noreferrer" title="Ask Claude to find new sources covering this topic" hidden><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>Find sources</a>
+    <a id="find-sources" class="dock-action" target="_blank" rel="noopener noreferrer" title="Ask Claude to find new sources covering this topic" hidden><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>Find sources</a>
     <div id="dock-actions">
       <button type="button" class="dock-action" id="back-to-top" aria-label="Back to top of a fresh feed" title="Back to top">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
