@@ -240,6 +240,22 @@ links with `public.links_to_enrich(step, max_results)` (newest first over the
 whole table; execute revoked from clients). Both functions share
 `functions/_shared/jev.ts`.
 
+**Identity witnesses — a prototype.** `public.identity_witnesses` (service_role
+only) keeps sameness unflattened: each row says that in one `sense` an entity
+has a `value`, on the evidence of one link, with `p` and `labeled_by`. Two
+witnesses of the same sense and value make two entities the same in that
+sense. Senses so far: `label` (a mention's surface, normalised by
+`public.witness_label`; one row per `link_entities` row, kept in step by an
+insert trigger) and `kind` (`entities.kind`, with no link, labeled_by
+`entities.kind`, since `entity-extract` doesn't keep Jev's per-link kind yet).
+`public.merge_proposals(max_results, min_score)` (execute revoked from
+clients) pairs entities sharing a label *and* a kind, composes the best
+witness on each side per label, combines labels by noisy-OR, skips pairs with
+differing `wikidata_id`s, and returns the evidence links and a co-mention
+count. It's a review queue for entity resolution, not a merge: same label and
+kind also pairs a product with its versions (Mac / macOS). Witnesses aren't
+moved when entities are merged; a deleted entity's witnesses cascade away.
+
 **Events — `event-extract`.** What a link announces and when, from its own
 page, with no per-site code; on its own `pg_cron` job (`4-59/10 * * * *`, up
 to 10 links a run, only links `entity-extract` has done, since the venue is
