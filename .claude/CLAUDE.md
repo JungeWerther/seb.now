@@ -328,7 +328,9 @@ Search is server-side and newest-first: a debounced `ilike` on
 `links.search_text`, a stored generated column (lowercased title + host
 without `www.`) with a `pg_trgm` GIN index, keyset-paged on
 `(created_at desc, id desc)` — `id` breaks ties because one ingest upsert
-stamps all its rows with the same `now()`. **The search box is also a query: `query-parse` + `feed_query`.** What's typed
+stamps all its rows with the same `now()`.
+
+**The search box is also a query: `query-parse` + `feed_query`.** What's typed
 is read for a sort order, a topic and search words, e.g. "latest on ai agents"
 → newest first, `ai.agents`, no words; "top openai news" → most upvoted,
 search "openai". On every keystroke the page matches the text against the whole
