@@ -457,6 +457,22 @@ bar for a reply composer in the same dock; replies are loaded
 client-side and listed under the post. No moderation or rate limiting
 yet — anyone with an anonymous session can post.
 
+**Visits and how readers come back.** `public.link_visits` is one row per
+click on a row's title or cover (private to the visitor by RLS; the page also
+greys visited links from it). The click is sent as a `keepalive` POST with a
+client-made id, so it survives a click that unloads the page. Article links open
+in a new tab, which keeps the page: when it becomes visible again the row gets
+`away_ms` (from when the page was hidden) and `return_kind = 'tab'`. A click that
+does leave the page waits in `sessionStorage`, and its return is `pageshow` from
+the back/forward cache or the next load in that tab (`back`/`reload`/`other` by
+navigation type); a page hidden without unloading is `app`. Over
+`VISIT_AWAY_MAX_MS` (one day, matching the `away_ms` check) no return is
+recorded, so a visit without `away_ms` never came back. The first thing done
+after returning is `next_action` (`visit`, `open`, `upvote`, `downvote`, `reply`,
+or `left` when the page is hidden first) with `next_link_id`. These are raw
+facts: the thresholds that make a visit a bounce or a read aren't in the page,
+they're meant to be fitted against votes.
+
 **A link's own page.** Every link has a page at `seb.now/p/<id>` (the same
 address a federated post links to, served by the catch-all document). Tapping a
 feed row (`li.article`: the card or the area around it) anywhere but its links,

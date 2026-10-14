@@ -1,7 +1,9 @@
 import base64
 import hashlib
+import math
 import re
 from html import unescape
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -667,3 +669,36 @@ def test_entity_page_offers_find_sources_with_its_own_prompt() -> None:
     assert FIND_ENTITY_SOURCES_PROMPT.split("(")[0] in script
     assert "findSourcesUrl(FIND_ENTITY_SOURCES_PROMPT, {" in script
     assert "findSourcesUrl(FIND_SOURCES_PROMPT, {" in script
+
+
+VISIT_RETURNS_MIGRATION = Path(__file__).parent.parent / "supabase/migrations/20261014200000_link_visit_returns.sql"
+
+
+def test_a_clicked_link_records_its_visit_with_keepalive_and_how_the_reader_came_back() -> None:
+    script = _page_script(render([]))
+
+    assert 'document.addEventListener("auxclick"' in script
+    assert 'startVisit(li.dataset.linkId, newTab || opened.target === "_blank")' in script
+    assert "keepalive: true" in script
+    assert 'window.addEventListener("pageshow"' in script
+    assert 'window.addEventListener("pagehide"' in script
+    assert 'performance.getEntriesByType("navigation")' in script
+    assert "sessionStorage.setItem(VISIT_STORAGE_KEY" in script
+    assert 'upsert({' in script and 'away_ms: Math.round(awayMs)' in script
+    assert "setupVisitReturns();" in script
+
+
+def test_visit_returns_only_send_values_the_link_visits_checks_allow() -> None:
+    script = _page_script(render([]))
+    sql = VISIT_RETURNS_MIGRATION.read_text()
+
+    js_cap = re.search(r"const VISIT_AWAY_MAX_MS = ([\d *]+);", script).group(1)
+    assert math.prod(int(n) for n in js_cap.split("*")) == int(re.search(r"away_ms between 0 and (\d+)", sql).group(1))
+    return_kinds = set(re.findall(r"'(\w+)'", re.search(r"return_kind in \(([^)]*)\)", sql).group(1)))
+    next_actions = set(re.findall(r"'(\w+)'", re.search(r"next_action in \(([^)]*)\)", sql).group(1)))
+    calls = " ".join(re.findall(r"resolveReturn\(([^;]*)\);", script))
+    mapping = re.search(r"const NAVIGATION_RETURN_KINDS = \{([^}]*)\}", script).group(1)
+    sent_kinds = set(re.findall(r'"(\w+)"', calls)) | set(re.findall(r': "(\w+)"', mapping))
+    assert sent_kinds <= return_kinds, sent_kinds - return_kinds
+    sent_actions = set(re.findall(r'noteNextAction\("(\w+)"', script)) | set(re.findall(r'value === 1 \? "(\w+)" : "(\w+)"', script)[0])
+    assert sent_actions == next_actions, sent_actions ^ next_actions

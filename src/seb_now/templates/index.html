@@ -1073,8 +1073,10 @@
 
     // Loaded without blocking the rest of this script, so swiping and the
     // other UI work while supabase-js is still downloading.
+    const SUPABASE_URL = __SUPABASE_URL__;
+    const SUPABASE_ANON_KEY = __SUPABASE_ANON_KEY__;
     const supabaseReady = import(__SUPABASE_JS_MODULE_URL__).then(({ createClient }) =>
-      createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__),
+      createClient(SUPABASE_URL, SUPABASE_ANON_KEY),
     );
 
     // Covers point at arbitrary third-party sites, so drop one that fails to
@@ -1163,18 +1165,149 @@
       return new Set(data.map((row) => row.link_id));
     }
 
-    async function markVisited(session, linkId) {
+    // A clicked link's visit records how the reader came back. Article links
+    // open in a new tab (or another app), which keeps this page: the return is
+    // the page becoming visible again, and the time away runs from when it was
+    // hidden. A click that leaves this page instead leaves the visit in
+    // sessionStorage, and the return is the page shown again (pageshow from the
+    // back/forward cache, or a fresh load in the same tab). The first thing done
+    // after returning is the visit's next_action.
+    const VISIT_STORAGE_KEY = "seb.pendingVisit";
+    // Must match the link_visits away_ms check; a longer absence counts as
+    // never coming back.
+    const VISIT_AWAY_MAX_MS = 24 * 60 * 60 * 1000;
+    // A fresh load's navigation type, as the visit's return_kind.
+    const NAVIGATION_RETURN_KINDS = { back_forward: "back", reload: "reload" };
+    let pendingVisit = readPendingVisit();
+    let returnedVisit = null;
+    let leftPage = false;
+    let visitWrites = Promise.resolve();
+
+    function readPendingVisit() {
+      try {
+        return JSON.parse(sessionStorage.getItem(VISIT_STORAGE_KEY));
+      } catch {
+        return null;
+      }
+    }
+
+    function savePendingVisit() {
+      try {
+        if (pendingVisit) sessionStorage.setItem(VISIT_STORAGE_KEY, JSON.stringify(pendingVisit));
+        else sessionStorage.removeItem(VISIT_STORAGE_KEY);
+      } catch {
+        // No sessionStorage: a same-tab return can't be measured.
+      }
+    }
+
+    // Writes for one visit run in order, so a return never lands before its click.
+    function queueVisitWrite(write) {
+      visitWrites = visitWrites.then(write).catch((error) => console.error("visit write failed", error));
+    }
+
+    function startVisit(linkId, newTab) {
+      noteNextAction("visit", linkId);
+      const visit = { id: crypto.randomUUID(), linkId, at: Date.now(), newTab, hiddenAt: null };
+      pendingVisit = visit;
+      leftPage = false;
+      savePendingVisit();
+      queueVisitWrite(() => recordVisit(visit));
+    }
+
+    // keepalive, because a same-tab click unloads this page and an ordinary
+    // request would be cancelled with it. The request is still delivered then,
+    // but its response never reaches this page, so the fetch rejects.
+    async function recordVisit(visit) {
+      if (!(await pendingSession)) return;
+      const { data: { session } } = await (await supabaseReady).auth.getSession();
       if (!session) return;
-      const { error } = await (await supabaseReady)
-        .from("link_visits")
-        .upsert(
-          { link_id: linkId, visitor_id: session.user.id },
-          { onConflict: "link_id,visitor_id", ignoreDuplicates: true },
-        );
-      if (error) console.error("mark visited failed", error);
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/link_visits`, {
+        method: "POST",
+        keepalive: true,
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+          Prefer: "resolution=ignore-duplicates,return=minimal",
+        },
+        body: JSON.stringify({
+          id: visit.id,
+          link_id: visit.linkId,
+          visitor_id: session.user.id,
+          visited_at: new Date(visit.at).toISOString(),
+        }),
+      }).catch(() => null);
+      if (response && !response.ok) console.error("recording the visit failed", response.status);
+    }
+
+    function resolveReturn(kind) {
+      const visit = pendingVisit;
+      if (!visit) return;
+      pendingVisit = null;
+      savePendingVisit();
+      const awayMs = Date.now() - (visit.hiddenAt ?? visit.at);
+      if (awayMs < 0 || awayMs > VISIT_AWAY_MAX_MS) return;
+      returnedVisit = visit;
+      // An upsert, so a click whose insert never arrived is still recorded.
+      queueVisitWrite(async () => {
+        const session = await pendingSession;
+        if (!session) return;
+        const { error } = await (await supabaseReady).from("link_visits").upsert({
+          id: visit.id,
+          link_id: visit.linkId,
+          visitor_id: session.user.id,
+          visited_at: new Date(visit.at).toISOString(),
+          away_ms: Math.round(awayMs),
+          return_kind: kind,
+        }, { onConflict: "id" });
+        if (error) console.error("recording the return failed", error);
+      });
+    }
+
+    function noteNextAction(action, linkId = null) {
+      const visit = returnedVisit;
+      if (!visit) return;
+      returnedVisit = null;
+      queueVisitWrite(async () => {
+        const { error } = await (await supabaseReady)
+          .from("link_visits")
+          .update({ next_action: action, next_link_id: linkId })
+          .eq("id", visit.id);
+        if (error) console.error("recording the next action failed", error);
+      });
+    }
+
+    function setupVisitReturns() {
+      // A visit left in this tab's sessionStorage by a click before this load.
+      if (pendingVisit) {
+        const navigation = performance.getEntriesByType("navigation")[0]?.type;
+        resolveReturn(NAVIGATION_RETURN_KINDS[navigation] ?? "other");
+      }
+      window.addEventListener("pagehide", () => {
+        leftPage = true;
+        noteNextAction("left");
+      });
+      window.addEventListener("pageshow", (event) => {
+        if (event.persisted) {
+          leftPage = false;
+          resolveReturn("back");
+        }
+      });
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+          if (pendingVisit && pendingVisit.hiddenAt === null) {
+            pendingVisit.hiddenAt = Date.now();
+            savePendingVisit();
+          }
+          noteNextAction("left");
+        } else if (pendingVisit?.hiddenAt != null && !leftPage) {
+          resolveReturn(pendingVisit.newTab ? "tab" : "app");
+        }
+      });
     }
 
     async function castVote(pendingSession, linkId, value) {
+      noteNextAction(value === 1 ? "upvote" : "downvote", linkId);
       const session = await pendingSession;
       if (!session) return;
       const { error } = await (await supabaseReady)
@@ -2046,12 +2179,16 @@
     }
 
     function setupFeed(initialQuery) {
-      document.addEventListener("click", (e) => {
+      const onLinkOpened = (e, newTab) => {
         const opened = e.target.closest(".article-row a, .cover-link");
         const li = opened?.closest("li.article");
         if (!li) return;
         li.querySelector(".article-row a").classList.add("visited");
-        pendingSession.then((session) => markVisited(session, li.dataset.linkId));
+        startVisit(li.dataset.linkId, newTab || opened.target === "_blank");
+      };
+      document.addEventListener("click", (e) => onLinkOpened(e, e.ctrlKey || e.metaKey || e.shiftKey));
+      document.addEventListener("auxclick", (e) => {
+        if (e.button === 1) onLinkOpened(e, true);
       });
       new IntersectionObserver((entries) => {
         if (entries.some((entry) => entry.isIntersecting)) loadMore();
@@ -2385,6 +2522,7 @@
         const li = event.target.closest("li.article");
         if (!li || !articleList.contains(li)) return;
         if (!window.getSelection().isCollapsed) return;
+        noteNextAction("open", li.dataset.linkId);
         focusLink(li.dataset.linkId, { from: li });
       });
       // Topic and entity chips open their page in place; a modified click
@@ -2907,6 +3045,7 @@
         sending = true;
         refresh();
         const li = target;
+        noteNextAction("reply", li.dataset.linkId);
         const session = await ensureSession();
         if (!session) {
           sending = false;
@@ -3394,6 +3533,7 @@
     }
 
     setupFeed(savedSearchQuery().trim());
+    setupVisitReturns();
     setupMenu();
     setupTaste();
     setupProfile();
