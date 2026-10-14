@@ -1,0 +1,601 @@
+link_id,node,score,jev_labelled,matches_hand_label,hand_labels
+000fd832-287a-4049-a0d8-e1d7663eb6b7,security.surveillance_privacy,0.9539,1,1,security.surveillance_privacy
+000fd832-287a-4049-a0d8-e1d7663eb6b7,promo.sponsored,0.3000,0,0,security.surveillance_privacy
+000fd832-287a-4049-a0d8-e1d7663eb6b7,security.breaches,0.0000,0,0,security.surveillance_privacy
+01581d19-1d16-4ecb-986a-4abbc24a1952,hardware.retro_computing,0.8944,1,1,hardware.retro_computing
+01581d19-1d16-4ecb-986a-4abbc24a1952,software.operating_systems,0.4025,0,0,hardware.retro_computing
+01581d19-1d16-4ecb-986a-4abbc24a1952,software.open_source,0.1342,0,0,hardware.retro_computing
+01d06a0a-b858-49de-badb-6bdc8fa9a297,ai.models,1.0000,1,1,ai.models
+01d06a0a-b858-49de-badb-6bdc8fa9a297,ai.agents,0.0000,0,0,ai.models
+01d06a0a-b858-49de-badb-6bdc8fa9a297,ai.industry,0.0000,0,0,ai.models
+022944f1-f048-4daf-b637-2413aafe375f,ai.industry,0.8190,1,1,ai.industry business.startups_funding business.work_labor
+022944f1-f048-4daf-b637-2413aafe375f,ai.agents,0.3592,0,0,ai.industry business.startups_funding business.work_labor
+022944f1-f048-4daf-b637-2413aafe375f,business.work_labor,0.3477,0,1,ai.industry business.startups_funding business.work_labor
+02c0703e-d0c9-4724-82cc-21fa2eac1229,transport.aviation_transit,0.6708,1,1,culture.history software.programming transport.aviation_transit
+02c0703e-d0c9-4724-82cc-21fa2eac1229,software.infrastructure,0.5158,1,0,culture.history software.programming transport.aviation_transit
+02c0703e-d0c9-4724-82cc-21fa2eac1229,software.operating_systems,0.1775,0,0,culture.history software.programming transport.aviation_transit
+048d9298-783f-43e9-ac9f-690cbab0ce6a,software.programming,0.6892,1,0,culture.design
+048d9298-783f-43e9-ac9f-690cbab0ce6a,software.open_source,0.5929,1,0,culture.design
+048d9298-783f-43e9-ac9f-690cbab0ce6a,software.devtools,0.3233,0,0,culture.design
+049041c7-b22e-4406-a898-8a05e4679459,none,0.4700,0,0,business.markets_ipos economy.G.G1.G10
+049041c7-b22e-4406-a898-8a05e4679459,politics.elections,0.3000,0,0,business.markets_ipos economy.G.G1.G10
+049041c7-b22e-4406-a898-8a05e4679459,politics.government_policy,0.2784,0,0,business.markets_ipos economy.G.G1.G10
+04f30f04-61fb-4c9f-80ab-da0dfdc27072,media.social_platforms,0.7206,1,0,media.gonzo_journalism
+04f30f04-61fb-4c9f-80ab-da0dfdc27072,culture.film_music,0.4313,0,0,media.gonzo_journalism
+04f30f04-61fb-4c9f-80ab-da0dfdc27072,media.gonzo_journalism,0.2429,0,1,media.gonzo_journalism
+05d16ddc-dd4e-4ef1-892b-f6e847c5cb85,ai.models,0.8542,1,1,ai.agents ai.models software.open_source
+05d16ddc-dd4e-4ef1-892b-f6e847c5cb85,software.open_source,0.4596,0,1,ai.agents ai.models software.open_source
+05d16ddc-dd4e-4ef1-892b-f6e847c5cb85,ai.agents,0.1744,0,1,ai.agents ai.models software.open_source
+066aa3bc-f30c-4f6b-b6f9-80cd45ef5540,promo.event_promotion,0.9950,1,1,promo.event_promotion
+066aa3bc-f30c-4f6b-b6f9-80cd45ef5540,business.startups_funding,0.0985,0,0,promo.event_promotion
+066aa3bc-f30c-4f6b-b6f9-80cd45ef5540,business.big_tech,0.0173,0,0,promo.event_promotion
+0710396f-adaa-4cda-a4e8-cd73ec139cce,software.open_source,0.7139,1,1,software.open_source software.programming
+0710396f-adaa-4cda-a4e8-cd73ec139cce,software.programming,0.5857,1,1,software.open_source software.programming
+0710396f-adaa-4cda-a4e8-cd73ec139cce,software.devtools,0.3569,0,0,software.open_source software.programming
+0a3f6573-5d19-4646-a627-a167b1d28533,science.biology_medicine,0.5913,1,0,culture.writing_language
+0a3f6573-5d19-4646-a627-a167b1d28533,culture.writing_language,0.4583,0,1,culture.writing_language
+0a3f6573-5d19-4646-a627-a167b1d28533,science.physics_space,0.3323,0,0,culture.writing_language
+0ac27936-cb8f-4ad4-b090-b5f365b6f90d,ai.industry,0.6458,1,0,culture.film_music media.social_platforms
+0ac27936-cb8f-4ad4-b090-b5f365b6f90d,ai.models,0.5743,1,0,culture.film_music media.social_platforms
+0ac27936-cb8f-4ad4-b090-b5f365b6f90d,ai.agents,0.4620,0,0,culture.film_music media.social_platforms
+0d383f5e-a636-42cb-b8a9-554c958b9b29,ai.safety_policy,1.0000,1,1,ai.safety_policy
+0d383f5e-a636-42cb-b8a9-554c958b9b29,ai.agents,0.0000,0,0,ai.safety_policy
+0d383f5e-a636-42cb-b8a9-554c958b9b29,ai.industry,0.0000,0,0,ai.safety_policy
+10c24126-8a13-4f27-8536-7cacb7bbf6ce,science.physics_space,1.0000,1,1,science.physics_space
+10c24126-8a13-4f27-8536-7cacb7bbf6ce,science.mathematics,0.0000,0,0,science.physics_space
+10c24126-8a13-4f27-8536-7cacb7bbf6ce,science.biology_medicine,0.0000,0,0,science.physics_space
+14e54ee9-1344-4e07-9331-24c1915238e7,software.operating_systems,0.9747,1,1,software.open_source software.operating_systems
+14e54ee9-1344-4e07-9331-24c1915238e7,software.open_source,0.2236,0,1,software.open_source software.operating_systems
+14e54ee9-1344-4e07-9331-24c1915238e7,software.devtools,0.0000,0,0,software.open_source software.operating_systems
+1639f25b-f283-4d45-863c-93041ac6fece,business.markets_ipos,0.7082,1,1,ai.industry business.markets_ipos
+1639f25b-f283-4d45-863c-93041ac6fece,business.startups_funding,0.6151,1,0,ai.industry business.markets_ipos
+1639f25b-f283-4d45-863c-93041ac6fece,ai.industry,0.3464,0,1,ai.industry business.markets_ipos
+16c928c0-dbaa-427b-8467-aa6a9ff31a67,ai.models,0.7978,1,0,ai.agents business.big_tech
+16c928c0-dbaa-427b-8467-aa6a9ff31a67,ai.safety_policy,0.4359,0,0,ai.agents business.big_tech
+16c928c0-dbaa-427b-8467-aa6a9ff31a67,ai.industry,0.3233,0,0,ai.agents business.big_tech
+178f66d9-b777-4e15-a17f-4797bd5a5b95,software.programming,0.8674,1,1,ai.models software.programming
+178f66d9-b777-4e15-a17f-4797bd5a5b95,ai.research,0.4010,0,0,ai.models software.programming
+178f66d9-b777-4e15-a17f-4797bd5a5b95,ai.agents,0.2078,0,0,ai.models software.programming
+19def9db-2633-4fa8-93b2-28ccfd1f325f,politics.law_courts,0.5962,1,0,ai.safety_policy politics.government_policy
+19def9db-2633-4fa8-93b2-28ccfd1f325f,politics.government_policy,0.5479,1,1,ai.safety_policy politics.government_policy
+19def9db-2633-4fa8-93b2-28ccfd1f325f,ai.safety_policy,0.4583,0,1,ai.safety_policy politics.government_policy
+1a4e5195-ed8a-4aac-99cf-a1390e510e8e,security.surveillance_privacy,0.5303,1,1,ai.safety_policy security.surveillance_privacy
+1a4e5195-ed8a-4aac-99cf-a1390e510e8e,business.big_tech,0.5292,1,0,ai.safety_policy security.surveillance_privacy
+1a4e5195-ed8a-4aac-99cf-a1390e510e8e,promo.sponsored,0.4123,0,0,ai.safety_policy security.surveillance_privacy
+1a81b517-d1af-49d1-9049-86f73a12a2f5,culture.history,0.8169,1,1,culture.design culture.history
+1a81b517-d1af-49d1-9049-86f73a12a2f5,politics.geopolitics_military,0.5385,1,0,culture.design culture.history
+1a81b517-d1af-49d1-9049-86f73a12a2f5,culture.design,0.2064,0,1,culture.design culture.history
+1ada2a05-ff3b-4830-b7aa-1a9028e7da4a,energy_climate.energy,0.7416,1,1,business.big_tech energy_climate.energy
+1ada2a05-ff3b-4830-b7aa-1a9028e7da4a,business.startups_funding,0.6504,1,0,business.big_tech energy_climate.energy
+1ada2a05-ff3b-4830-b7aa-1a9028e7da4a,business.big_tech,0.1643,0,1,business.big_tech energy_climate.energy
+1b0c0a6f-b68f-42c0-a7a5-f063fe56b9f1,business.startups_funding,0.9800,1,1,business.startups_funding business.work_labor
+1b0c0a6f-b68f-42c0-a7a5-f063fe56b9f1,business.work_labor,0.1400,0,1,business.startups_funding business.work_labor
+1b0c0a6f-b68f-42c0-a7a5-f063fe56b9f1,culture.writing_language,0.0728,0,0,business.startups_funding business.work_labor
+1b27ac1e-346b-4020-9ec3-b10dcd755b28,software.programming,1.0000,1,1,software.programming
+1b27ac1e-346b-4020-9ec3-b10dcd755b28,software.devtools,0.0000,0,0,software.programming
+1b27ac1e-346b-4020-9ec3-b10dcd755b28,software.infrastructure,0.0000,0,0,software.programming
+1b486d53-3a8d-47b6-b7d8-4b2ed5d022f2,media.journalism,0.8743,1,1,media.journalism media.social_platforms
+1b486d53-3a8d-47b6-b7d8-4b2ed5d022f2,media.social_platforms,0.4643,0,1,media.journalism media.social_platforms
+1b486d53-3a8d-47b6-b7d8-4b2ed5d022f2,culture.writing_language,0.1386,0,0,media.journalism media.social_platforms
+1d280d13-8fd3-488a-ba3d-966ac76a04ce,culture.film_music,0.8037,1,0,culture.writing_language media.gonzo_journalism
+1d280d13-8fd3-488a-ba3d-966ac76a04ce,media.gonzo_journalism,0.5282,1,1,culture.writing_language media.gonzo_journalism
+1d280d13-8fd3-488a-ba3d-966ac76a04ce,culture.writing_language,0.1844,0,1,culture.writing_language media.gonzo_journalism
+1e27b832-ffbe-44ba-b040-355370c7550e,ai.industry,0.8497,1,1,ai.industry ai.models software.open_source
+1e27b832-ffbe-44ba-b040-355370c7550e,economy.O.O3.O36,0.6076,1,0,ai.industry ai.models software.open_source
+1e27b832-ffbe-44ba-b040-355370c7550e,economy.O.O3.O33,0.3998,0,0,ai.industry ai.models software.open_source
+203d3a44-6a66-4fc6-8819-264729b16953,business.big_tech,0.9799,1,1,business.big_tech politics.law_courts
+203d3a44-6a66-4fc6-8819-264729b16953,economy.G.G2.G21,0.3579,0,0,business.big_tech politics.law_courts
+203d3a44-6a66-4fc6-8819-264729b16953,economy.G.G2.G23,0.2333,0,0,business.big_tech politics.law_courts
+23febb5d-6efc-40bb-b339-89cd0f2886c7,culture.film_music,0.9327,1,1,culture.film_music media.gonzo_journalism
+23febb5d-6efc-40bb-b339-89cd0f2886c7,media.gonzo_journalism,0.3344,0,1,culture.film_music media.gonzo_journalism
+23febb5d-6efc-40bb-b339-89cd0f2886c7,media.social_platforms,0.1196,0,0,culture.film_music media.gonzo_journalism
+2565bbae-ae7c-49aa-b55d-270bc01f03ef,ai.agents,0.6887,1,1,ai.agents ai.safety_policy
+2565bbae-ae7c-49aa-b55d-270bc01f03ef,security.breaches,0.6066,1,0,ai.agents ai.safety_policy
+2565bbae-ae7c-49aa-b55d-270bc01f03ef,politics.government_policy,0.2766,0,0,ai.agents ai.safety_policy
+26a9e634-6de9-4562-81fb-ea33d031d24d,software.programming,0.9695,1,1,ai.agents software.programming
+26a9e634-6de9-4562-81fb-ea33d031d24d,ai.agents,0.2449,0,1,ai.agents software.programming
+26a9e634-6de9-4562-81fb-ea33d031d24d,software.devtools,0.0000,0,0,ai.agents software.programming
+272860f8-8845-4580-abbe-dbb8c5a45f22,politics.law_courts,0.6283,1,1,business.big_tech politics.law_courts security.surveillance_privacy
+272860f8-8845-4580-abbe-dbb8c5a45f22,security.surveillance_privacy,0.5154,1,1,business.big_tech politics.law_courts security.surveillance_privacy
+272860f8-8845-4580-abbe-dbb8c5a45f22,business.big_tech,0.4123,0,1,business.big_tech politics.law_courts security.surveillance_privacy
+27dd3b30-6426-4ad4-8084-aec608a29f61,security.cybercrime,1.0000,1,1,security.cybercrime
+27dd3b30-6426-4ad4-8084-aec608a29f61,security.breaches,0.0000,0,0,security.cybercrime
+27dd3b30-6426-4ad4-8084-aec608a29f61,security.surveillance_privacy,0.0000,0,0,security.cybercrime
+2862c085-40df-41a1-86b5-e6c7ff429667,politics.geopolitics_military,0.9950,1,1,politics.geopolitics_military
+2862c085-40df-41a1-86b5-e6c7ff429667,security.surveillance_privacy,0.0980,0,0,politics.geopolitics_military
+2862c085-40df-41a1-86b5-e6c7ff429667,security.vulnerabilities,0.0200,0,0,politics.geopolitics_military
+2aba959a-56f4-4a0a-9559-001a3c06bf39,ai.agents,0.6680,1,1,ai.agents ai.industry
+2aba959a-56f4-4a0a-9559-001a3c06bf39,ai.research,0.5022,1,0,ai.agents ai.industry
+2aba959a-56f4-4a0a-9559-001a3c06bf39,ai.models,0.4293,0,0,ai.agents ai.industry
+2e61a8d4-77e0-4cfe-95c1-0172cf1cc991,promo.sponsored,0.4772,0,0,media.journalism software.devtools
+2e61a8d4-77e0-4cfe-95c1-0172cf1cc991,software.devtools,0.4080,0,1,media.journalism software.devtools
+2e61a8d4-77e0-4cfe-95c1-0172cf1cc991,software.programming,0.3854,0,0,media.journalism software.devtools
+2e8892bb-5b4c-4f58-a702-f146d27ac298,ai.research,0.8898,1,1,ai.research
+2e8892bb-5b4c-4f58-a702-f146d27ac298,software.programming,0.3569,0,0,ai.research
+2e8892bb-5b4c-4f58-a702-f146d27ac298,ai.models,0.2638,0,0,ai.research
+328249c7-1224-4825-bbfc-71551eb326f8,business.startups_funding,0.8832,1,1,business.startups_funding hardware.chips
+328249c7-1224-4825-bbfc-71551eb326f8,hardware.chips,0.3952,0,1,business.startups_funding hardware.chips
+328249c7-1224-4825-bbfc-71551eb326f8,hardware.gadgets,0.2526,0,0,business.startups_funding hardware.chips
+33da179f-00cc-4c68-b570-a85114f3f554,security.breaches,0.6403,1,0,security.vulnerabilities
+33da179f-00cc-4c68-b570-a85114f3f554,security.cybercrime,0.6325,1,0,security.vulnerabilities
+33da179f-00cc-4c68-b570-a85114f3f554,security.vulnerabilities,0.4359,0,1,security.vulnerabilities
+3522af8f-be2a-40f7-9fb9-f8290cb02da1,ai.models,0.9080,1,0,ai.agents business.big_tech
+3522af8f-be2a-40f7-9fb9-f8290cb02da1,ai.industry,0.3814,0,0,ai.agents business.big_tech
+3522af8f-be2a-40f7-9fb9-f8290cb02da1,business.big_tech,0.1000,0,1,ai.agents business.big_tech
+3967ed46-ce21-4e67-b04a-08eaf0afc15f,transport.evs,0.8559,1,0,business.markets_ipos economy.G.G1.G10
+3967ed46-ce21-4e67-b04a-08eaf0afc15f,business.work_labor,0.3020,0,0,business.markets_ipos economy.G.G1.G10
+3967ed46-ce21-4e67-b04a-08eaf0afc15f,business.big_tech,0.2814,0,0,business.markets_ipos economy.G.G1.G10
+3a954aab-d76b-4dc3-a84c-4ec7d2eea139,ai.industry,0.7275,1,1,ai.industry media.social_platforms
+3a954aab-d76b-4dc3-a84c-4ec7d2eea139,media.social_platforms,0.4472,0,1,ai.industry media.social_platforms
+3a954aab-d76b-4dc3-a84c-4ec7d2eea139,business.big_tech,0.4123,0,0,ai.industry media.social_platforms
+3b56ee7f-a6df-4db2-a782-1ead7dab72aa,ai.industry,0.7550,1,1,ai.industry business.markets_ipos
+3b56ee7f-a6df-4db2-a782-1ead7dab72aa,business.startups_funding,0.4729,0,0,ai.industry business.markets_ipos
+3b56ee7f-a6df-4db2-a782-1ead7dab72aa,business.markets_ipos,0.4496,0,1,ai.industry business.markets_ipos
+3d1b5219-51f0-4d4d-b39e-76a9d3af6048,hardware.gadgets,0.9899,1,1,culture.history hardware.gadgets
+3d1b5219-51f0-4d4d-b39e-76a9d3af6048,business.big_tech,0.1414,0,0,culture.history hardware.gadgets
+3d1b5219-51f0-4d4d-b39e-76a9d3af6048,hardware.chips,0.0000,0,0,culture.history hardware.gadgets
+3d73fc50-5524-4c56-bc19-7e70b38bea30,software.devtools,0.9327,1,1,software.devtools software.open_source
+3d73fc50-5524-4c56-bc19-7e70b38bea30,software.open_source,0.3606,0,1,software.devtools software.open_source
+3d73fc50-5524-4c56-bc19-7e70b38bea30,software.infrastructure,0.0000,0,0,software.devtools software.open_source
+421d7f0e-69dc-4895-be27-ce4e3dea6f1f,software.programming,0.9220,1,1,software.programming
+421d7f0e-69dc-4895-be27-ce4e3dea6f1f,software.infrastructure,0.3873,0,0,software.programming
+421d7f0e-69dc-4895-be27-ce4e3dea6f1f,software.devtools,0.0000,0,0,software.programming
+429a20f0-0142-4b44-847a-e8cc6157a8de,software.operating_systems,0.6997,1,0,hardware.retro_computing
+429a20f0-0142-4b44-847a-e8cc6157a8de,software.open_source,0.6274,1,0,hardware.retro_computing
+429a20f0-0142-4b44-847a-e8cc6157a8de,hardware.retro_computing,0.2000,0,1,hardware.retro_computing
+44b4cd17-2165-4851-89f1-1292103249b6,hardware.gadgets,0.8426,1,1,business.big_tech hardware.gadgets
+44b4cd17-2165-4851-89f1-1292103249b6,ai.industry,0.4517,0,0,business.big_tech hardware.gadgets
+44b4cd17-2165-4851-89f1-1292103249b6,business.big_tech,0.2236,0,1,business.big_tech hardware.gadgets
+47549652-36b8-4f01-92ff-fc2a21c56db6,sports.us_sports,0.9798,1,1,sports.us_sports
+47549652-36b8-4f01-92ff-fc2a21c56db6,ai.research,0.1470,0,0,sports.us_sports
+47549652-36b8-4f01-92ff-fc2a21c56db6,security.surveillance_privacy,0.0975,0,0,sports.us_sports
+4c3eb4bf-92dd-4ec6-b2fd-d337da2a5728,software.operating_systems,0.8357,1,0,hardware.retro_computing
+4c3eb4bf-92dd-4ec6-b2fd-d337da2a5728,hardware.retro_computing,0.3854,0,1,hardware.retro_computing
+4c3eb4bf-92dd-4ec6-b2fd-d337da2a5728,culture.design,0.1625,0,0,hardware.retro_computing
+4ce7f773-cb08-40a3-ac60-59b32b405f6a,business.big_tech,0.9165,1,1,business.big_tech politics.law_courts
+4ce7f773-cb08-40a3-ac60-59b32b405f6a,politics.law_courts,0.3162,0,1,business.big_tech politics.law_courts
+4ce7f773-cb08-40a3-ac60-59b32b405f6a,hardware.gadgets,0.2449,0,0,business.big_tech politics.law_courts
+4cf1432f-4737-40ca-9b4a-3cba5d4cd510,politics.elections,1.0000,1,1,media.gonzo_journalism politics.elections
+4cf1432f-4737-40ca-9b4a-3cba5d4cd510,politics.competition_antitrust,0.0000,0,0,media.gonzo_journalism politics.elections
+4cf1432f-4737-40ca-9b4a-3cba5d4cd510,politics.geopolitics_military,0.0000,0,0,media.gonzo_journalism politics.elections
+4e20d152-e713-4dcd-9b61-bdd721a11e33,politics.government_policy,0.9281,1,0,business.work_labor economy.J.J5.J50
+4e20d152-e713-4dcd-9b61-bdd721a11e33,politics.elections,0.3447,0,0,business.work_labor economy.J.J5.J50
+4e20d152-e713-4dcd-9b61-bdd721a11e33,politics.competition_antitrust,0.0995,0,0,business.work_labor economy.J.J5.J50
+4fcd625d-5ad7-40b7-a98e-2d2a4e909c06,culture.visual_art,1.0000,1,1,culture.visual_art
+4fcd625d-5ad7-40b7-a98e-2d2a4e909c06,culture.film_music,0.0000,0,0,culture.visual_art
+4fcd625d-5ad7-40b7-a98e-2d2a4e909c06,culture.design,0.0000,0,0,culture.visual_art
+51f09b50-84bb-4496-952d-8a2656db096d,software.programming,0.9899,1,1,promo.event_promotion software.programming
+51f09b50-84bb-4496-952d-8a2656db096d,software.open_source,0.1414,0,0,promo.event_promotion software.programming
+51f09b50-84bb-4496-952d-8a2656db096d,software.devtools,0.0000,0,0,promo.event_promotion software.programming
+53207ee3-bc25-4de7-9298-87367cfae642,media.social_platforms,0.7106,1,0,business.big_tech hardware.gadgets
+53207ee3-bc25-4de7-9298-87367cfae642,ai.safety_policy,0.4975,0,0,business.big_tech hardware.gadgets
+53207ee3-bc25-4de7-9298-87367cfae642,business.big_tech,0.3000,0,1,business.big_tech hardware.gadgets
+53d23dcb-735e-470d-8f0c-a04c73dfad8f,security.vulnerabilities,1.0000,1,1,security.vulnerabilities
+53d23dcb-735e-470d-8f0c-a04c73dfad8f,security.cybercrime,0.0000,0,0,security.vulnerabilities
+53d23dcb-735e-470d-8f0c-a04c73dfad8f,security.breaches,0.0000,0,0,security.vulnerabilities
+5527c3e1-a838-4f4d-868b-83036d6d96e4,culture.visual_art,1.0000,1,1,culture.visual_art
+5527c3e1-a838-4f4d-868b-83036d6d96e4,culture.film_music,0.0000,0,0,culture.visual_art
+5527c3e1-a838-4f4d-868b-83036d6d96e4,culture.design,0.0000,0,0,culture.visual_art
+564a733e-31a3-4467-8ca5-3898c02e6a5e,security.vulnerabilities,0.9695,1,1,ai.models security.vulnerabilities
+564a733e-31a3-4467-8ca5-3898c02e6a5e,ai.safety_policy,0.2400,0,0,ai.models security.vulnerabilities
+564a733e-31a3-4467-8ca5-3898c02e6a5e,ai.agents,0.0346,0,0,ai.models security.vulnerabilities
+567f32ec-89bf-4f50-95dc-2838fc56ac5a,software.programming,0.9498,1,1,software.programming
+567f32ec-89bf-4f50-95dc-2838fc56ac5a,science.mathematics,0.1706,0,0,software.programming
+567f32ec-89bf-4f50-95dc-2838fc56ac5a,software.infrastructure,0.1670,0,0,software.programming
+56a8ff17-6df7-43ec-8802-2e335aaba0e2,ai.safety_policy,0.9799,1,1,ai.safety_policy business.work_labor
+56a8ff17-6df7-43ec-8802-2e335aaba0e2,ai.agents,0.1407,0,0,ai.safety_policy business.work_labor
+56a8ff17-6df7-43ec-8802-2e335aaba0e2,ai.industry,0.0995,0,0,ai.safety_policy business.work_labor
+56e6fcad-4164-4aad-a5ff-390f4601d6ec,business.big_tech,0.7897,1,1,ai.safety_policy business.big_tech
+56e6fcad-4164-4aad-a5ff-390f4601d6ec,software.devtools,0.3912,0,0,ai.safety_policy business.big_tech
+56e6fcad-4164-4aad-a5ff-390f4601d6ec,security.surveillance_privacy,0.2145,0,0,ai.safety_policy business.big_tech
+57c28951-5fec-4dea-b24f-f366a82ecf75,business.startups_funding,0.9487,1,1,ai.industry business.startups_funding science.biology_medicine
+57c28951-5fec-4dea-b24f-f366a82ecf75,ai.industry,0.2828,0,1,ai.industry business.startups_funding science.biology_medicine
+57c28951-5fec-4dea-b24f-f366a82ecf75,science.biology_medicine,0.1414,0,1,ai.industry business.startups_funding science.biology_medicine
+593768cf-7620-4ed7-bf90-a3028f472413,ai.safety_policy,0.8617,1,1,ai.safety_policy science.mathematics
+593768cf-7620-4ed7-bf90-a3028f472413,ai.research,0.4975,0,0,ai.safety_policy science.mathematics
+593768cf-7620-4ed7-bf90-a3028f472413,science.mathematics,0.1000,0,1,ai.safety_policy science.mathematics
+5ac82c11-09b3-41c3-ad81-5664bd2079e4,science.mathematics,0.9339,1,1,culture.history science.mathematics
+5ac82c11-09b3-41c3-ad81-5664bd2079e4,software.programming,0.2460,0,0,culture.history science.mathematics
+5ac82c11-09b3-41c3-ad81-5664bd2079e4,software.infrastructure,0.2200,0,0,culture.history science.mathematics
+5bb31287-fdc2-40c9-bd66-03018e83fe06,culture.visual_art,0.9950,1,1,culture.visual_art culture.writing_language
+5bb31287-fdc2-40c9-bd66-03018e83fe06,culture.writing_language,0.1000,0,1,culture.visual_art culture.writing_language
+5bb31287-fdc2-40c9-bd66-03018e83fe06,culture.design,0.0000,0,0,culture.visual_art culture.writing_language
+5bf4a8ad-f8e4-4719-9d55-e44cf587ab9e,ai.safety_policy,0.9649,1,1,ai.safety_policy politics.government_policy
+5bf4a8ad-f8e4-4719-9d55-e44cf587ab9e,politics.government_policy,0.2202,0,1,ai.safety_policy politics.government_policy
+5bf4a8ad-f8e4-4719-9d55-e44cf587ab9e,ai.industry,0.1378,0,0,ai.safety_policy politics.government_policy
+5ced9d2e-dc29-41bc-a62e-4e314a01f5e0,culture.visual_art,0.9539,1,1,culture.visual_art
+5ced9d2e-dc29-41bc-a62e-4e314a01f5e0,science.biology_medicine,0.2000,0,0,culture.visual_art
+5ced9d2e-dc29-41bc-a62e-4e314a01f5e0,media.journalism,0.1723,0,0,culture.visual_art
+605ad24b-81f5-4c4b-b079-f72d3340c900,media.social_platforms,0.9274,1,0,culture.film_music
+605ad24b-81f5-4c4b-b079-f72d3340c900,culture.film_music,0.3606,0,1,culture.film_music
+605ad24b-81f5-4c4b-b079-f72d3340c900,none,0.0100,0,0,culture.film_music
+6187b4fa-1294-403d-856f-23663b996676,none,0.6300,0,0,science.biology_medicine
+6187b4fa-1294-403d-856f-23663b996676,business.big_tech,0.3076,0,0,science.biology_medicine
+6187b4fa-1294-403d-856f-23663b996676,business.work_labor,0.2482,0,0,science.biology_medicine
+61aebc55-f276-46d7-8578-fa45b8f035ed,media.social_platforms,0.6557,1,1,ai.agents media.social_platforms
+61aebc55-f276-46d7-8578-fa45b8f035ed,ai.models,0.5539,1,0,ai.agents media.social_platforms
+61aebc55-f276-46d7-8578-fa45b8f035ed,ai.industry,0.3305,0,0,ai.agents media.social_platforms
+63a9e8dd-4cff-4d8c-b554-45c1d72f1cb2,economy.F.F1.F15,0.6164,1,0,business.markets_ipos economy.G.G1.G10
+63a9e8dd-4cff-4d8c-b554-45c1d72f1cb2,economy.F.F5.F53,0.5849,1,0,business.markets_ipos economy.G.G1.G10
+63a9e8dd-4cff-4d8c-b554-45c1d72f1cb2,politics.government_policy,0.5599,1,0,business.markets_ipos economy.G.G1.G10
+64165d3b-a370-4739-ab60-04794aeaad46,software.programming,0.6735,1,0,ai.research culture.design
+64165d3b-a370-4739-ab60-04794aeaad46,ai.research,0.4734,0,1,ai.research culture.design
+64165d3b-a370-4739-ab60-04794aeaad46,software.devtools,0.3175,0,0,ai.research culture.design
+649f9cb4-a065-4f9f-98e4-7bf9cd3ab44e,media.social_platforms,0.8775,1,0,culture.film_music
+649f9cb4-a065-4f9f-98e4-7bf9cd3ab44e,culture.film_music,0.4690,0,1,culture.film_music
+649f9cb4-a065-4f9f-98e4-7bf9cd3ab44e,none,0.0100,0,0,culture.film_music
+64ea5369-2d76-4c82-989e-49432ebb33da,ai.industry,0.8062,1,1,ai.industry business.startups_funding security.vulnerabilities
+64ea5369-2d76-4c82-989e-49432ebb33da,business.startups_funding,0.5358,1,1,ai.industry business.startups_funding security.vulnerabilities
+64ea5369-2d76-4c82-989e-49432ebb33da,security.vulnerabilities,0.2135,0,1,ai.industry business.startups_funding security.vulnerabilities
+655d19d2-2cdc-4f35-9862-00b7ef1283d3,ai.models,0.9849,1,1,ai.models
+655d19d2-2cdc-4f35-9862-00b7ef1283d3,ai.agents,0.1414,0,0,ai.models
+655d19d2-2cdc-4f35-9862-00b7ef1283d3,ai.research,0.1000,0,0,ai.models
+65dd69e7-0d56-448f-8dc0-9fc01db79536,software.infrastructure,0.9950,1,1,software.infrastructure software.programming
+65dd69e7-0d56-448f-8dc0-9fc01db79536,software.programming,0.1000,0,1,software.infrastructure software.programming
+65dd69e7-0d56-448f-8dc0-9fc01db79536,software.devtools,0.0000,0,0,software.infrastructure software.programming
+66849a52-c6dc-4b86-a6b5-4f567eee9f56,culture.history,0.7894,1,0,culture.writing_language science.biology_medicine
+66849a52-c6dc-4b86-a6b5-4f567eee9f56,science.biology_medicine,0.5385,1,1,culture.writing_language science.biology_medicine
+66849a52-c6dc-4b86-a6b5-4f567eee9f56,culture.writing_language,0.2166,0,1,culture.writing_language science.biology_medicine
+67807cdb-d1c1-47e4-b34d-369b3e8ec4dc,hardware.gadgets,0.9644,1,1,business.big_tech hardware.gadgets
+67807cdb-d1c1-47e4-b34d-369b3e8ec4dc,business.big_tech,0.2646,0,1,business.big_tech hardware.gadgets
+67807cdb-d1c1-47e4-b34d-369b3e8ec4dc,ai.industry,0.0000,0,0,business.big_tech hardware.gadgets
+680acef0-0b62-49c6-999a-4c3707347553,ai.research,0.7616,1,0,science.mathematics
+680acef0-0b62-49c6-999a-4c3707347553,science.mathematics,0.6481,1,1,science.mathematics
+680acef0-0b62-49c6-999a-4c3707347553,business.big_tech,0.0000,0,0,science.mathematics
+689dd586-3a18-4218-b1b3-087e906a77ca,hardware.chips,0.8516,1,1,hardware.chips security.vulnerabilities
+689dd586-3a18-4218-b1b3-087e906a77ca,software.programming,0.4825,0,0,hardware.chips security.vulnerabilities
+689dd586-3a18-4218-b1b3-087e906a77ca,security.vulnerabilities,0.1414,0,1,hardware.chips security.vulnerabilities
+6ab9575e-c702-47b6-87d2-5986b250b161,ai.industry,0.9400,1,1,ai.industry ai.models
+6ab9575e-c702-47b6-87d2-5986b250b161,business.big_tech,0.2449,0,0,ai.industry ai.models
+6ab9575e-c702-47b6-87d2-5986b250b161,ai.agents,0.1371,0,0,ai.industry ai.models
+6baa156a-4d4c-4e3f-84ba-0670604d33d3,culture.history,0.7668,1,1,culture.history
+6baa156a-4d4c-4e3f-84ba-0670604d33d3,sports.us_sports,0.3674,0,0,culture.history
+6baa156a-4d4c-4e3f-84ba-0670604d33d3,politics.geopolitics_military,0.2245,0,0,culture.history
+6be9ecba-d399-482d-a4c5-583d2eb5d0c6,culture.writing_language,0.5970,1,0,culture.film_music culture.history
+6be9ecba-d399-482d-a4c5-583d2eb5d0c6,culture.design,0.5248,1,0,culture.film_music culture.history
+6be9ecba-d399-482d-a4c5-583d2eb5d0c6,science.physics_space,0.3795,0,0,culture.film_music culture.history
+6d7d02ff-b1b0-468e-8ced-31835dcaf7a1,ai.models,1.0000,1,1,ai.models
+6d7d02ff-b1b0-468e-8ced-31835dcaf7a1,ai.industry,0.0000,0,0,ai.models
+6d7d02ff-b1b0-468e-8ced-31835dcaf7a1,ai.agents,0.0000,0,0,ai.models
+6e53f758-8e9c-459d-b51b-c30db269a499,transport.autonomous_vehicles,0.7348,1,1,transport.autonomous_vehicles
+6e53f758-8e9c-459d-b51b-c30db269a499,business.work_labor,0.6607,1,0,transport.autonomous_vehicles
+6e53f758-8e9c-459d-b51b-c30db269a499,business.big_tech,0.1162,0,0,transport.autonomous_vehicles
+6e95267f-669d-4a3b-b775-27b3eec15cfb,ai.research,0.9592,1,1,ai.research
+6e95267f-669d-4a3b-b775-27b3eec15cfb,ai.models,0.2828,0,0,ai.research
+6e95267f-669d-4a3b-b775-27b3eec15cfb,ai.agents,0.0000,0,0,ai.research
+6f79de35-03ee-4fbf-b374-f44b7c273d21,security.breaches,0.7578,1,1,ai.agents security.breaches
+6f79de35-03ee-4fbf-b374-f44b7c273d21,ai.agents,0.4796,0,1,ai.agents security.breaches
+6f79de35-03ee-4fbf-b374-f44b7c273d21,politics.government_policy,0.3800,0,0,ai.agents security.breaches
+71927b9b-827f-4b30-b64d-b23908e6421c,business.cooperatives,0.8660,1,0,business.work_labor economy.J.J5.J54
+71927b9b-827f-4b30-b64d-b23908e6421c,transport.aviation_transit,0.4062,0,0,business.work_labor economy.J.J5.J54
+71927b9b-827f-4b30-b64d-b23908e6421c,transport.autonomous_vehicles,0.2062,0,0,business.work_labor economy.J.J5.J54
+71cc6b96-1ac3-481d-ae34-593a458ad294,software.open_source,0.9227,1,1,software.open_source software.operating_systems
+71cc6b96-1ac3-481d-ae34-593a458ad294,software.operating_systems,0.3723,0,1,software.open_source software.operating_systems
+71cc6b96-1ac3-481d-ae34-593a458ad294,promo.sponsored,0.0954,0,0,software.open_source software.operating_systems
+72199d30-b06a-4a47-99e5-0954d16d502e,security.surveillance_privacy,0.7071,1,1,media.social_platforms security.surveillance_privacy
+72199d30-b06a-4a47-99e5-0954d16d502e,media.social_platforms,0.5831,1,1,media.social_platforms security.surveillance_privacy
+72199d30-b06a-4a47-99e5-0954d16d502e,business.big_tech,0.4000,0,0,media.social_platforms security.surveillance_privacy
+72bfcddd-1137-4ae8-91cb-0d8e7e01cf89,software.programming,0.7211,1,1,culture.design software.programming
+72bfcddd-1137-4ae8-91cb-0d8e7e01cf89,ai.research,0.5238,1,0,culture.design software.programming
+72bfcddd-1137-4ae8-91cb-0d8e7e01cf89,none,0.1000,0,0,culture.design software.programming
+739f87e2-24a6-4b80-84b6-6d559a6fb2b7,hardware.gadgets,0.9487,1,1,business.big_tech hardware.gadgets
+739f87e2-24a6-4b80-84b6-6d559a6fb2b7,promo.sponsored,0.3162,0,0,business.big_tech hardware.gadgets
+739f87e2-24a6-4b80-84b6-6d559a6fb2b7,ai.industry,0.0000,0,0,business.big_tech hardware.gadgets
+76b52e7a-9c7d-4152-a44c-90421a7f147f,business.markets_ipos,0.8185,1,1,business.markets_ipos economy.G.G1.G10
+76b52e7a-9c7d-4152-a44c-90421a7f147f,ai.industry,0.5745,1,0,business.markets_ipos economy.G.G1.G10
+76b52e7a-9c7d-4152-a44c-90421a7f147f,business.big_tech,0.0000,0,0,business.markets_ipos economy.G.G1.G10
+77057dd0-d99e-48e9-bfb6-7ec9eedd6aba,business.startups_funding,1.0000,1,1,business.startups_funding
+77057dd0-d99e-48e9-bfb6-7ec9eedd6aba,business.cooperatives,0.0000,0,0,business.startups_funding
+77057dd0-d99e-48e9-bfb6-7ec9eedd6aba,business.big_tech,0.0000,0,0,business.startups_funding
+771338f7-f9eb-49c6-bf2c-81399aa60758,software.operating_systems,1.0000,1,1,software.operating_systems
+771338f7-f9eb-49c6-bf2c-81399aa60758,software.infrastructure,0.0000,0,0,software.operating_systems
+771338f7-f9eb-49c6-bf2c-81399aa60758,software.devtools,0.0000,0,0,software.operating_systems
+7714d2f9-0ed2-4fde-a863-8a32994a5f86,transport.autonomous_vehicles,0.9798,1,1,politics.law_courts transport.autonomous_vehicles
+7714d2f9-0ed2-4fde-a863-8a32994a5f86,business.big_tech,0.1393,0,0,politics.law_courts transport.autonomous_vehicles
+7714d2f9-0ed2-4fde-a863-8a32994a5f86,ai.safety_policy,0.1371,0,0,politics.law_courts transport.autonomous_vehicles
+7a7b6ccf-55b6-461b-b4d5-369c67b6d677,science.physics_space,0.8598,1,1,science.biology_medicine science.physics_space
+7a7b6ccf-55b6-461b-b4d5-369c67b6d677,science.biology_medicine,0.4699,0,1,science.biology_medicine science.physics_space
+7a7b6ccf-55b6-461b-b4d5-369c67b6d677,energy_climate.climate,0.1010,0,0,science.biology_medicine science.physics_space
+7b8dcf51-871c-4782-b144-f217d6dd96b2,security.vulnerabilities,0.9899,1,1,security.vulnerabilities software.devtools
+7b8dcf51-871c-4782-b144-f217d6dd96b2,security.breaches,0.1414,0,0,security.vulnerabilities software.devtools
+7b8dcf51-871c-4782-b144-f217d6dd96b2,security.cybercrime,0.0000,0,0,security.vulnerabilities software.devtools
+7d73a090-25af-491b-a0e4-328ea2ed83eb,security.vulnerabilities,0.7755,1,1,security.vulnerabilities software.programming
+7d73a090-25af-491b-a0e4-328ea2ed83eb,security.surveillance_privacy,0.6071,1,0,security.vulnerabilities software.programming
+7d73a090-25af-491b-a0e4-328ea2ed83eb,software.programming,0.1688,0,1,security.vulnerabilities software.programming
+7f6acba0-dbe4-4e14-bf86-6ca3f1e5886b,software.infrastructure,0.8139,1,1,software.devtools software.infrastructure
+7f6acba0-dbe4-4e14-bf86-6ca3f1e5886b,software.devtools,0.5455,1,1,software.devtools software.infrastructure
+7f6acba0-dbe4-4e14-bf86-6ca3f1e5886b,business.big_tech,0.1000,0,0,software.devtools software.infrastructure
+8259876f-8147-4357-a1fd-cd5c19100d88,politics.government_policy,1.0000,1,1,politics.government_policy
+8259876f-8147-4357-a1fd-cd5c19100d88,politics.competition_antitrust,0.0000,0,0,politics.government_policy
+8259876f-8147-4357-a1fd-cd5c19100d88,politics.elections,0.0000,0,0,politics.government_policy
+826535a6-397b-4470-8056-bfeb11327940,software.programming,0.6079,1,1,hardware.gadgets software.programming
+826535a6-397b-4470-8056-bfeb11327940,hardware.gadgets,0.3857,0,1,hardware.gadgets software.programming
+826535a6-397b-4470-8056-bfeb11327940,hardware.retro_computing,0.2638,0,0,hardware.gadgets software.programming
+831fd6f3-1737-4037-a569-e2428238a06a,politics.geopolitics_military,0.7746,1,1,ai.safety_policy politics.geopolitics_military
+831fd6f3-1737-4037-a569-e2428238a06a,ai.safety_policy,0.6040,1,1,ai.safety_policy politics.geopolitics_military
+831fd6f3-1737-4037-a569-e2428238a06a,security.vulnerabilities,0.1249,0,0,ai.safety_policy politics.geopolitics_military
+859877ac-561e-467b-8ad1-c44ab153078c,business.markets_ipos,0.8780,1,1,ai.industry business.markets_ipos
+859877ac-561e-467b-8ad1-c44ab153078c,ai.industry,0.4243,0,1,ai.industry business.markets_ipos
+859877ac-561e-467b-8ad1-c44ab153078c,business.startups_funding,0.2025,0,0,ai.industry business.markets_ipos
+87ab489e-18c6-4b12-a36e-5cec429c3586,ai.agents,0.9849,1,1,ai.agents security.breaches
+87ab489e-18c6-4b12-a36e-5cec429c3586,security.breaches,0.1308,0,1,ai.agents security.breaches
+87ab489e-18c6-4b12-a36e-5cec429c3586,security.vulnerabilities,0.1039,0,0,ai.agents security.breaches
+88687e39-d328-4c6a-b9f5-bcdf8e293fb9,hardware.chips,1.0000,1,1,hardware.chips
+88687e39-d328-4c6a-b9f5-bcdf8e293fb9,hardware.retro_computing,0.0000,0,0,hardware.chips
+88687e39-d328-4c6a-b9f5-bcdf8e293fb9,hardware.gadgets,0.0000,0,0,hardware.chips
+891dbc68-0095-4ec8-9bb2-e5b14c7c15d4,science.physics_space,1.0000,1,1,science.physics_space
+891dbc68-0095-4ec8-9bb2-e5b14c7c15d4,science.biology_medicine,0.0000,0,0,science.physics_space
+891dbc68-0095-4ec8-9bb2-e5b14c7c15d4,science.mathematics,0.0000,0,0,science.physics_space
+89a4d95c-2f37-4c6c-b061-c3c37cb11512,software.operating_systems,0.6403,1,0,business.big_tech hardware.gadgets
+89a4d95c-2f37-4c6c-b061-c3c37cb11512,ai.industry,0.4589,0,0,business.big_tech hardware.gadgets
+89a4d95c-2f37-4c6c-b061-c3c37cb11512,ai.models,0.3900,0,0,business.big_tech hardware.gadgets
+8bd10da6-d856-4a89-91ad-db459f72cffd,business.big_tech,0.9334,1,1,ai.industry business.big_tech
+8bd10da6-d856-4a89-91ad-db459f72cffd,ai.industry,0.3376,0,1,ai.industry business.big_tech
+8bd10da6-d856-4a89-91ad-db459f72cffd,business.markets_ipos,0.0938,0,0,ai.industry business.big_tech
+8ea645c6-b5ef-43d0-8b9c-7abcbbfc8e86,politics.government_policy,0.7036,1,1,media.social_platforms politics.government_policy
+8ea645c6-b5ef-43d0-8b9c-7abcbbfc8e86,media.social_platforms,0.6928,1,1,media.social_platforms politics.government_policy
+8ea645c6-b5ef-43d0-8b9c-7abcbbfc8e86,business.big_tech,0.1000,0,0,media.social_platforms politics.government_policy
+8ebd89ef-22e4-4ee1-806b-042839da54b6,ai.models,1.0000,1,1,ai.models
+8ebd89ef-22e4-4ee1-806b-042839da54b6,ai.agents,0.0000,0,0,ai.models
+8ebd89ef-22e4-4ee1-806b-042839da54b6,ai.industry,0.0000,0,0,ai.models
+8ee32527-a930-4e7f-9581-aba4f919f5ed,politics.geopolitics_military,0.8307,1,1,politics.geopolitics_military science.physics_space
+8ee32527-a930-4e7f-9581-aba4f919f5ed,security.surveillance_privacy,0.4625,0,0,politics.geopolitics_military science.physics_space
+8ee32527-a930-4e7f-9581-aba4f919f5ed,security.vulnerabilities,0.2427,0,0,politics.geopolitics_military science.physics_space
+90170473-02a5-4708-851c-446d9c2cb7ec,ai.industry,0.7668,1,1,ai.industry promo.event_promotion transport.autonomous_vehicles
+90170473-02a5-4708-851c-446d9c2cb7ec,ai.safety_policy,0.6182,1,0,ai.industry promo.event_promotion transport.autonomous_vehicles
+90170473-02a5-4708-851c-446d9c2cb7ec,transport.autonomous_vehicles,0.1414,0,1,ai.industry promo.event_promotion transport.autonomous_vehicles
+92b8e742-d0aa-4295-b6e8-dfbc97f0b63f,culture.games,0.7416,1,1,culture.games culture.history
+92b8e742-d0aa-4295-b6e8-dfbc97f0b63f,sports.general,0.3795,0,0,culture.games culture.history
+92b8e742-d0aa-4295-b6e8-dfbc97f0b63f,sports.us_sports,0.2939,0,0,culture.games culture.history
+92c2ef8c-2b00-474e-b461-3c171a050581,culture.history,0.8426,1,1,culture.history culture.visual_art
+92c2ef8c-2b00-474e-b461-3c171a050581,culture.visual_art,0.5385,1,1,culture.history culture.visual_art
+92c2ef8c-2b00-474e-b461-3c171a050581,culture.design,0.0000,0,0,culture.history culture.visual_art
+941f5c58-083a-4b7c-81cc-cee836fa54d9,software.programming,1.0000,1,1,software.programming
+941f5c58-083a-4b7c-81cc-cee836fa54d9,software.infrastructure,0.0000,0,0,software.programming
+941f5c58-083a-4b7c-81cc-cee836fa54d9,software.devtools,0.0000,0,0,software.programming
+94e227dc-5330-4abb-938d-323385802f1e,software.programming,0.9950,1,1,software.programming
+94e227dc-5330-4abb-938d-323385802f1e,culture.writing_language,0.0954,0,0,software.programming
+94e227dc-5330-4abb-938d-323385802f1e,culture.design,0.0245,0,0,software.programming
+966f5f79-cb81-4dab-b8d5-bc6992d45fe8,hardware.gadgets,0.8485,1,1,hardware.gadgets science.biology_medicine
+966f5f79-cb81-4dab-b8d5-bc6992d45fe8,science.biology_medicine,0.3873,0,1,hardware.gadgets science.biology_medicine
+966f5f79-cb81-4dab-b8d5-bc6992d45fe8,business.startups_funding,0.3447,0,0,hardware.gadgets science.biology_medicine
+98a5ed9b-db08-4b64-8c1a-d98af91e81d1,transport.autonomous_vehicles,0.8198,1,1,transport.autonomous_vehicles transport.aviation_transit
+98a5ed9b-db08-4b64-8c1a-d98af91e81d1,promo.sponsored,0.5254,1,0,transport.autonomous_vehicles transport.aviation_transit
+98a5ed9b-db08-4b64-8c1a-d98af91e81d1,transport.aviation_transit,0.1673,0,1,transport.autonomous_vehicles transport.aviation_transit
+9abf3a85-c8fc-4568-8bd3-499e0a7a2e27,software.infrastructure,0.9950,1,1,software.infrastructure
+9abf3a85-c8fc-4568-8bd3-499e0a7a2e27,software.open_source,0.1000,0,0,software.infrastructure
+9abf3a85-c8fc-4568-8bd3-499e0a7a2e27,software.devtools,0.0000,0,0,software.infrastructure
+9af55696-8dcd-4649-bf09-d8db45af3c89,culture.visual_art,0.9950,1,1,culture.visual_art
+9af55696-8dcd-4649-bf09-d8db45af3c89,media.social_platforms,0.0995,0,0,culture.visual_art
+9af55696-8dcd-4649-bf09-d8db45af3c89,media.journalism,0.0100,0,0,culture.visual_art
+9affa3f8-ab59-42e8-87fa-3fff38a3ad8f,culture.film_music,0.5480,1,0,media.gonzo_journalism
+9affa3f8-ab59-42e8-87fa-3fff38a3ad8f,media.social_platforms,0.5374,1,0,media.gonzo_journalism
+9affa3f8-ab59-42e8-87fa-3fff38a3ad8f,media.gonzo_journalism,0.3020,0,1,media.gonzo_journalism
+9c71a4a0-8193-4c7e-bb7e-c9b4db41fc8d,software.infrastructure,0.9649,1,1,software.infrastructure
+9c71a4a0-8193-4c7e-bb7e-c9b4db41fc8d,software.programming,0.2214,0,0,software.infrastructure
+9c71a4a0-8193-4c7e-bb7e-c9b4db41fc8d,security.vulnerabilities,0.1105,0,0,software.infrastructure
+9ca6ca68-a311-4edf-9103-d4bbef901d88,business.big_tech,0.8060,1,0,business.markets_ipos economy.G.G1.G10
+9ca6ca68-a311-4edf-9103-d4bbef901d88,economy.G.G3.G32,0.6982,1,0,business.markets_ipos economy.G.G1.G10
+9ca6ca68-a311-4edf-9103-d4bbef901d88,economy.G.G1.G12,0.3722,0,0,business.markets_ipos economy.G.G1.G10
+9cb22f29-a54d-49d4-a541-4dad34a28f6b,software.programming,0.9747,1,1,software.devtools software.programming
+9cb22f29-a54d-49d4-a541-4dad34a28f6b,software.open_source,0.1732,0,0,software.devtools software.programming
+9cb22f29-a54d-49d4-a541-4dad34a28f6b,software.devtools,0.1414,0,1,software.devtools software.programming
+9cf08f97-4d16-4d58-ba53-57f9dc142efe,security.surveillance_privacy,0.5196,1,0,ai.safety_policy politics.geopolitics_military politics.government_policy
+9cf08f97-4d16-4d58-ba53-57f9dc142efe,ai.models,0.5112,1,0,ai.safety_policy politics.geopolitics_military politics.government_policy
+9cf08f97-4d16-4d58-ba53-57f9dc142efe,ai.industry,0.5046,1,0,ai.safety_policy politics.geopolitics_military politics.government_policy
+9d80b31d-52b6-4a9b-afb9-f5a3d43c5a53,economy.E.E2.E24,0.7578,1,0,business.markets_ipos economy.G.G1.G10
+9d80b31d-52b6-4a9b-afb9-f5a3d43c5a53,economy.J.J1.J11,0.6162,1,0,business.markets_ipos economy.G.G1.G10
+9d80b31d-52b6-4a9b-afb9-f5a3d43c5a53,economy.P.P1.P17,0.5378,1,0,business.markets_ipos economy.G.G1.G10
+9de52ae7-3565-4d71-975b-806661cbc9b8,politics.government_policy,0.7880,1,0,culture.film_music media.gonzo_journalism
+9de52ae7-3565-4d71-975b-806661cbc9b8,politics.geopolitics_military,0.3912,0,0,culture.film_music media.gonzo_journalism
+9de52ae7-3565-4d71-975b-806661cbc9b8,politics.elections,0.3421,0,0,culture.film_music media.gonzo_journalism
+9f4b2762-6df0-45c3-8b20-97b53422f939,hardware.robotics,0.7746,1,1,business.startups_funding hardware.robotics
+9f4b2762-6df0-45c3-8b20-97b53422f939,business.startups_funding,0.5165,1,1,business.startups_funding hardware.robotics
+9f4b2762-6df0-45c3-8b20-97b53422f939,transport.autonomous_vehicles,0.2775,0,0,business.startups_funding hardware.robotics
+a44c124e-6038-43a7-8f60-906260de2acc,ai.safety_policy,0.9950,1,1,ai.safety_policy promo.event_promotion
+a44c124e-6038-43a7-8f60-906260de2acc,ai.industry,0.1000,0,0,ai.safety_policy promo.event_promotion
+a44c124e-6038-43a7-8f60-906260de2acc,ai.agents,0.0000,0,0,ai.safety_policy promo.event_promotion
+a48afa58-dffd-4120-8d71-c02463516862,energy_climate.climate,0.9849,1,1,business.big_tech energy_climate.climate
+a48afa58-dffd-4120-8d71-c02463516862,business.big_tech,0.1732,0,1,business.big_tech energy_climate.climate
+a48afa58-dffd-4120-8d71-c02463516862,energy_climate.energy,0.0000,0,0,business.big_tech energy_climate.climate
+a5713541-1e15-4c37-b1c2-3b0a71e0f9ad,ai.industry,0.9165,1,1,ai.industry business.startups_funding
+a5713541-1e15-4c37-b1c2-3b0a71e0f9ad,business.startups_funding,0.4000,0,1,ai.industry business.startups_funding
+a5713541-1e15-4c37-b1c2-3b0a71e0f9ad,ai.agents,0.0000,0,0,ai.industry business.startups_funding
+a59207a2-96f6-4b75-99db-074648feeed5,ai.models,0.8754,1,1,ai.models software.open_source
+a59207a2-96f6-4b75-99db-074648feeed5,economy.C.C6.C63,0.3793,0,0,ai.models software.open_source
+a59207a2-96f6-4b75-99db-074648feeed5,software.programming,0.3666,0,0,ai.models software.open_source
+a69f83ad-aabe-4de0-ad5b-5661f2cdbec7,economy.Q.Q4.Q43,0.6120,1,0,business.markets_ipos economy.G.G1.G10
+a69f83ad-aabe-4de0-ad5b-5661f2cdbec7,politics.government_policy,0.5484,1,0,business.markets_ipos economy.G.G1.G10
+a69f83ad-aabe-4de0-ad5b-5661f2cdbec7,economy.Q.Q3.Q35,0.5020,1,0,business.markets_ipos economy.G.G1.G10
+a7349a05-5b7d-4d63-8703-fa98257887d4,hardware.gadgets,0.9950,1,1,business.big_tech hardware.gadgets
+a7349a05-5b7d-4d63-8703-fa98257887d4,business.big_tech,0.1000,0,1,business.big_tech hardware.gadgets
+a7349a05-5b7d-4d63-8703-fa98257887d4,hardware.chips,0.0000,0,0,business.big_tech hardware.gadgets
+ab56297e-b55c-4115-b149-8b74ab2dded4,politics.elections,0.7937,1,0,politics.geopolitics_military
+ab56297e-b55c-4115-b149-8b74ab2dded4,politics.government_policy,0.6083,1,0,politics.geopolitics_military
+ab56297e-b55c-4115-b149-8b74ab2dded4,politics.competition_antitrust,0.0000,0,0,politics.geopolitics_military
+ab9ffbfb-29eb-464a-a628-b3729cc36606,security.surveillance_privacy,0.5130,1,0,business.big_tech business.work_labor
+ab9ffbfb-29eb-464a-a628-b3729cc36606,business.big_tech,0.5048,1,1,business.big_tech business.work_labor
+ab9ffbfb-29eb-464a-a628-b3729cc36606,software.infrastructure,0.3633,0,0,business.big_tech business.work_labor
+ac089d8e-ef4a-45b1-8010-87edca3411ae,security.vulnerabilities,1.0000,1,1,security.vulnerabilities
+ac089d8e-ef4a-45b1-8010-87edca3411ae,security.breaches,0.0000,0,0,security.vulnerabilities
+ac089d8e-ef4a-45b1-8010-87edca3411ae,security.cybercrime,0.0000,0,0,security.vulnerabilities
+ad2a289b-b5fa-4c71-b84e-aba286e5a3c6,ai.agents,0.7616,1,1,ai.agents software.devtools
+ad2a289b-b5fa-4c71-b84e-aba286e5a3c6,software.devtools,0.5265,1,1,ai.agents software.devtools
+ad2a289b-b5fa-4c71-b84e-aba286e5a3c6,promo.sponsored,0.2646,0,0,ai.agents software.devtools
+adb7a4f8-8b6a-4399-b870-32e6c33a7eee,ai.research,0.7874,1,1,ai.research culture.games
+adb7a4f8-8b6a-4399-b870-32e6c33a7eee,ai.agents,0.5196,1,0,ai.research culture.games
+adb7a4f8-8b6a-4399-b870-32e6c33a7eee,ai.models,0.3317,0,0,ai.research culture.games
+b052b4ef-8712-426f-b9f8-c4600b41341c,software.operating_systems,0.7280,1,1,software.devtools software.operating_systems
+b052b4ef-8712-426f-b9f8-c4600b41341c,software.devtools,0.6708,1,1,software.devtools software.operating_systems
+b052b4ef-8712-426f-b9f8-c4600b41341c,software.infrastructure,0.1000,0,0,software.devtools software.operating_systems
+b09b0f90-5120-41bf-9ce8-9ebea8e00b6a,culture.film_music,0.8384,1,0,culture.writing_language media.gonzo_journalism
+b09b0f90-5120-41bf-9ce8-9ebea8e00b6a,media.gonzo_journalism,0.4632,0,1,culture.writing_language media.gonzo_journalism
+b09b0f90-5120-41bf-9ce8-9ebea8e00b6a,media.social_platforms,0.2220,0,0,culture.writing_language media.gonzo_journalism
+b5410614-eea5-4a4e-a141-98f3a380ffb4,software.programming,0.9950,1,1,software.programming
+b5410614-eea5-4a4e-a141-98f3a380ffb4,transport.aviation_transit,0.0985,0,0,software.programming
+b5410614-eea5-4a4e-a141-98f3a380ffb4,transport.evs,0.0141,0,0,software.programming
+b5afba18-dfec-41b2-9e7c-208ec5bc7268,business.startups_funding,0.8832,1,1,ai.industry business.startups_funding
+b5afba18-dfec-41b2-9e7c-208ec5bc7268,ai.industry,0.4690,0,1,ai.industry business.startups_funding
+b5afba18-dfec-41b2-9e7c-208ec5bc7268,business.big_tech,0.0000,0,0,ai.industry business.startups_funding
+b60c9555-5076-4ae5-b6cd-08aa87966997,culture.visual_art,1.0000,1,1,culture.visual_art
+b60c9555-5076-4ae5-b6cd-08aa87966997,culture.film_music,0.0000,0,0,culture.visual_art
+b60c9555-5076-4ae5-b6cd-08aa87966997,culture.design,0.0000,0,0,culture.visual_art
+b64d267a-61bc-4c69-a5e0-0fc3ff127232,hardware.chips,0.7746,1,1,hardware.chips software.operating_systems
+b64d267a-61bc-4c69-a5e0-0fc3ff127232,software.operating_systems,0.6164,1,1,hardware.chips software.operating_systems
+b64d267a-61bc-4c69-a5e0-0fc3ff127232,promo.sponsored,0.1400,0,0,hardware.chips software.operating_systems
+b7221922-a44c-4876-a836-9c4126260e77,promo.sponsored,0.6714,1,0,culture.games
+b7221922-a44c-4876-a836-9c4126260e77,software.open_source,0.3693,0,0,culture.games
+b7221922-a44c-4876-a836-9c4126260e77,software.programming,0.3521,0,0,culture.games
+b86d9b25-016a-4144-938a-ce283ed1d689,culture.film_music,0.7416,1,1,culture.film_music culture.history
+b86d9b25-016a-4144-938a-ce283ed1d689,media.social_platforms,0.5612,1,0,culture.film_music culture.history
+b86d9b25-016a-4144-938a-ce283ed1d689,media.journalism,0.3612,0,0,culture.film_music culture.history
+b8898818-c30d-47bb-86c5-e1b00ceca01b,media.journalism,0.5857,1,0,ai.safety_policy culture.visual_art
+b8898818-c30d-47bb-86c5-e1b00ceca01b,culture.visual_art,0.5570,1,1,ai.safety_policy culture.visual_art
+b8898818-c30d-47bb-86c5-e1b00ceca01b,ai.safety_policy,0.5385,1,1,ai.safety_policy culture.visual_art
+b9e62c3b-d8d7-4bdf-9399-26ba021bcc49,software.programming,1.0000,1,1,software.programming
+b9e62c3b-d8d7-4bdf-9399-26ba021bcc49,software.devtools,0.0000,0,0,software.programming
+b9e62c3b-d8d7-4bdf-9399-26ba021bcc49,software.infrastructure,0.0000,0,0,software.programming
+ba3393b2-6b84-400c-b07b-4b6b9fba1797,culture.design,0.8544,1,1,culture.design culture.history
+ba3393b2-6b84-400c-b07b-4b6b9fba1797,hardware.gadgets,0.4772,0,0,culture.design culture.history
+ba3393b2-6b84-400c-b07b-4b6b9fba1797,hardware.retro_computing,0.0480,0,0,culture.design culture.history
+bba73ccb-2077-4e71-be34-924a4f1fd628,politics.geopolitics_military,0.7936,1,0,media.gonzo_journalism
+bba73ccb-2077-4e71-be34-924a4f1fd628,media.social_platforms,0.2771,0,0,media.gonzo_journalism
+bba73ccb-2077-4e71-be34-924a4f1fd628,none,0.2400,0,0,media.gonzo_journalism
+bbe264b7-3aeb-4e0f-a54e-8ddbf91ca609,software.programming,0.9227,1,1,ai.agents hardware.chips software.programming
+bbe264b7-3aeb-4e0f-a54e-8ddbf91ca609,ai.agents,0.3647,0,1,ai.agents hardware.chips software.programming
+bbe264b7-3aeb-4e0f-a54e-8ddbf91ca609,software.open_source,0.0927,0,0,ai.agents hardware.chips software.programming
+bcb1674d-275c-4126-bc08-d0833103990e,hardware.robotics,0.9381,1,1,hardware.robotics promo.event_promotion
+bcb1674d-275c-4126-bc08-d0833103990e,business.startups_funding,0.2121,0,0,hardware.robotics promo.event_promotion
+bcb1674d-275c-4126-bc08-d0833103990e,ai.industry,0.2107,0,0,hardware.robotics promo.event_promotion
+bd0c32df-60ff-40fe-a9d6-81eeb241d66d,politics.elections,0.9119,1,0,business.work_labor economy.J.J5.J50
+bd0c32df-60ff-40fe-a9d6-81eeb241d66d,politics.government_policy,0.3854,0,0,business.work_labor economy.J.J5.J50
+bd0c32df-60ff-40fe-a9d6-81eeb241d66d,politics.competition_antitrust,0.0995,0,0,business.work_labor economy.J.J5.J50
+c3b0b9ed-7150-465e-884c-4610c537e773,software.programming,0.5612,1,0,culture.design culture.games
+c3b0b9ed-7150-465e-884c-4610c537e773,media.journalism,0.3081,0,0,culture.design culture.games
+c3b0b9ed-7150-465e-884c-4610c537e773,software.devtools,0.3066,0,0,culture.design culture.games
+c4a62d27-a84e-4d7e-9980-870a1f7be5f0,energy_climate.energy,1.0000,1,1,energy_climate.climate energy_climate.energy
+c4a62d27-a84e-4d7e-9980-870a1f7be5f0,energy_climate.climate,0.0000,0,1,energy_climate.climate energy_climate.energy
+c4a62d27-a84e-4d7e-9980-870a1f7be5f0,ai.industry,0.0000,0,0,energy_climate.climate energy_climate.energy
+c66d9c05-a5c0-41f6-8015-fd2e7a9018b3,hardware.chips,0.9699,1,0,culture.writing_language hardware.retro_computing
+c66d9c05-a5c0-41f6-8015-fd2e7a9018b3,culture.history,0.1597,0,0,culture.writing_language hardware.retro_computing
+c66d9c05-a5c0-41f6-8015-fd2e7a9018b3,hardware.retro_computing,0.1386,0,1,culture.writing_language hardware.retro_computing
+c7123428-bb62-492a-9b6b-5527a1c19628,software.programming,0.9220,1,1,software.operating_systems software.programming
+c7123428-bb62-492a-9b6b-5527a1c19628,software.open_source,0.3873,0,0,software.operating_systems software.programming
+c7123428-bb62-492a-9b6b-5527a1c19628,software.devtools,0.0000,0,0,software.operating_systems software.programming
+c8eec174-ee67-46fb-a2ae-8b041b5d2779,software.devtools,0.9899,1,1,ai.agents software.devtools
+c8eec174-ee67-46fb-a2ae-8b041b5d2779,ai.agents,0.1414,0,1,ai.agents software.devtools
+c8eec174-ee67-46fb-a2ae-8b041b5d2779,software.infrastructure,0.0000,0,0,ai.agents software.devtools
+c9555664-7f63-4abc-a07a-0014fd2464a6,ai.models,0.9899,1,1,ai.models
+c9555664-7f63-4abc-a07a-0014fd2464a6,promo.sponsored,0.0990,0,0,ai.models
+c9555664-7f63-4abc-a07a-0014fd2464a6,energy_climate.energy,0.0949,0,0,ai.models
+cbe45362-631b-4761-901c-9c7fb19199a3,software.programming,0.5470,1,0,ai.safety_policy culture.writing_language
+cbe45362-631b-4761-901c-9c7fb19199a3,media.journalism,0.3795,0,0,ai.safety_policy culture.writing_language
+cbe45362-631b-4761-901c-9c7fb19199a3,software.open_source,0.2966,0,0,ai.safety_policy culture.writing_language
+ccdf2e87-9536-4332-86f9-6ff6d26adeb8,ai.research,0.5713,1,0,hardware.chips software.programming
+ccdf2e87-9536-4332-86f9-6ff6d26adeb8,software.programming,0.4792,0,1,hardware.chips software.programming
+ccdf2e87-9536-4332-86f9-6ff6d26adeb8,software.open_source,0.4150,0,0,hardware.chips software.programming
+cf70ee6f-0aa2-4f53-b506-936106edac1c,promo.event_promotion,0.8888,1,1,promo.event_promotion
+cf70ee6f-0aa2-4f53-b506-936106edac1c,business.startups_funding,0.4583,0,0,promo.event_promotion
+cf70ee6f-0aa2-4f53-b506-936106edac1c,ai.industry,0.0000,0,0,promo.event_promotion
+cfa09bcd-71e4-412d-bd0d-3684c3513930,transport.aviation_transit,0.7141,1,0,business.work_labor economy.D.D4.D43 economy.L.L9.L91
+cfa09bcd-71e4-412d-bd0d-3684c3513930,transport.evs,0.4225,0,0,business.work_labor economy.D.D4.D43 economy.L.L9.L91
+cfa09bcd-71e4-412d-bd0d-3684c3513930,transport.autonomous_vehicles,0.4019,0,0,business.work_labor economy.D.D4.D43 economy.L.L9.L91
+cfd71677-3232-45ba-b7df-3c3dad2ce0cb,software.programming,0.6448,1,0,business.big_tech software.devtools
+cfd71677-3232-45ba-b7df-3c3dad2ce0cb,software.operating_systems,0.5970,1,0,business.big_tech software.devtools
+cfd71677-3232-45ba-b7df-3c3dad2ce0cb,software.devtools,0.4102,0,1,business.big_tech software.devtools
+d16a5d5e-f33a-4827-bdc1-6fd3453594a6,software.programming,0.7231,1,0,ai.research culture.games
+d16a5d5e-f33a-4827-bdc1-6fd3453594a6,software.open_source,0.3175,0,0,ai.research culture.games
+d16a5d5e-f33a-4827-bdc1-6fd3453594a6,culture.games,0.3162,0,1,ai.research culture.games
+d27037a6-dca2-4141-9bb2-221f523456a0,culture.film_music,0.9050,1,0,culture.visual_art culture.writing_language media.gonzo_journalism
+d27037a6-dca2-4141-9bb2-221f523456a0,culture.writing_language,0.3017,0,1,culture.visual_art culture.writing_language media.gonzo_journalism
+d27037a6-dca2-4141-9bb2-221f523456a0,media.gonzo_journalism,0.2782,0,1,culture.visual_art culture.writing_language media.gonzo_journalism
+d431341b-306c-4e7a-a587-2fae7b0e84c9,hardware.gadgets,0.9850,1,1,hardware.gadgets hardware.retro_computing
+d431341b-306c-4e7a-a587-2fae7b0e84c9,promo.sponsored,0.1000,0,0,hardware.gadgets hardware.retro_computing
+d431341b-306c-4e7a-a587-2fae7b0e84c9,hardware.retro_computing,0.0990,0,1,hardware.gadgets hardware.retro_computing
+d576fae2-023e-47c7-99e7-5db061ccd7bb,culture.visual_art,0.9798,1,1,culture.visual_art
+d576fae2-023e-47c7-99e7-5db061ccd7bb,culture.writing_language,0.2000,0,0,culture.visual_art
+d576fae2-023e-47c7-99e7-5db061ccd7bb,culture.design,0.0000,0,0,culture.visual_art
+d66e34f3-6e01-48ab-82e3-fced8eb82fb7,software.operating_systems,0.9950,1,1,software.operating_systems
+d66e34f3-6e01-48ab-82e3-fced8eb82fb7,none,0.0100,0,0,software.operating_systems
+d66e34f3-6e01-48ab-82e3-fced8eb82fb7,software.devtools,0.0000,0,0,software.operating_systems
+d9bea5ce-4a03-45bf-abae-4740a16b6b8c,culture.film_music,0.9950,1,1,culture.film_music science.physics_space
+d9bea5ce-4a03-45bf-abae-4740a16b6b8c,science.physics_space,0.1000,0,1,culture.film_music science.physics_space
+d9bea5ce-4a03-45bf-abae-4740a16b6b8c,culture.design,0.0000,0,0,culture.film_music science.physics_space
+db6ad6ce-30eb-4018-93a7-cd768c6761ea,software.operating_systems,0.6525,1,0,hardware.retro_computing
+db6ad6ce-30eb-4018-93a7-cd768c6761ea,business.work_labor,0.5687,1,0,hardware.retro_computing
+db6ad6ce-30eb-4018-93a7-cd768c6761ea,hardware.retro_computing,0.4899,0,1,hardware.retro_computing
+dccd583c-bfd1-42fa-b9f5-2c0464bc09a1,media.social_platforms,0.9539,1,1,culture.film_music media.social_platforms
+dccd583c-bfd1-42fa-b9f5-2c0464bc09a1,business.big_tech,0.3000,0,0,culture.film_music media.social_platforms
+dccd583c-bfd1-42fa-b9f5-2c0464bc09a1,media.gonzo_journalism,0.0000,0,0,culture.film_music media.social_platforms
+df48abc5-f426-4204-be8c-57c1bc08f712,security.breaches,0.9899,1,1,security.breaches software.infrastructure
+df48abc5-f426-4204-be8c-57c1bc08f712,security.vulnerabilities,0.1414,0,0,security.breaches software.infrastructure
+df48abc5-f426-4204-be8c-57c1bc08f712,security.cybercrime,0.0000,0,0,security.breaches software.infrastructure
+dfcef067-8471-4d93-b255-cef3f0ca8b80,hardware.chips,0.7874,1,1,hardware.chips software.operating_systems
+dfcef067-8471-4d93-b255-cef3f0ca8b80,software.open_source,0.4932,0,0,hardware.chips software.operating_systems
+dfcef067-8471-4d93-b255-cef3f0ca8b80,software.operating_systems,0.3487,0,1,hardware.chips software.operating_systems
+e04d866c-683b-456e-b66e-b2e33e118503,ai.agents,0.8844,1,0,ai.industry ai.models
+e04d866c-683b-456e-b66e-b2e33e118503,ai.models,0.3980,0,1,ai.industry ai.models
+e04d866c-683b-456e-b66e-b2e33e118503,ai.industry,0.1723,0,1,ai.industry ai.models
+e1044b86-0bcb-46ff-a49f-ee94f6888e2b,culture.design,0.8944,1,1,culture.design culture.history
+e1044b86-0bcb-46ff-a49f-ee94f6888e2b,hardware.gadgets,0.3980,0,0,culture.design culture.history
+e1044b86-0bcb-46ff-a49f-ee94f6888e2b,hardware.retro_computing,0.0400,0,0,culture.design culture.history
+e25b4225-ae1c-40b3-b65f-de8cb0ba1078,ai.safety_policy,1.0000,1,1,ai.safety_policy
+e25b4225-ae1c-40b3-b65f-de8cb0ba1078,ai.industry,0.0000,0,0,ai.safety_policy
+e25b4225-ae1c-40b3-b65f-de8cb0ba1078,ai.agents,0.0000,0,0,ai.safety_policy
+e5dcccdc-a483-4b04-b8a7-058423617855,ai.agents,0.8307,1,1,ai.agents software.devtools
+e5dcccdc-a483-4b04-b8a7-058423617855,software.programming,0.3976,0,0,ai.agents software.devtools
+e5dcccdc-a483-4b04-b8a7-058423617855,software.devtools,0.2893,0,1,ai.agents software.devtools
+e63e0d55-81ea-493f-afe9-62fa29d6a5be,culture.visual_art,1.0000,1,1,culture.visual_art
+e63e0d55-81ea-493f-afe9-62fa29d6a5be,culture.film_music,0.0000,0,0,culture.visual_art
+e63e0d55-81ea-493f-afe9-62fa29d6a5be,culture.design,0.0000,0,0,culture.visual_art
+e696c5aa-487b-41f5-ae9f-59fecd833a0a,ai.industry,0.6957,1,0,media.social_platforms
+e696c5aa-487b-41f5-ae9f-59fecd833a0a,ai.models,0.4783,0,0,media.social_platforms
+e696c5aa-487b-41f5-ae9f-59fecd833a0a,media.social_platforms,0.3464,0,1,media.social_platforms
+e995308c-8e7a-46ae-99f2-5bd2b64a40d6,transport.aviation_transit,0.8485,1,0,economy.J.J5.J54 economy.L.L9.L91
+e995308c-8e7a-46ae-99f2-5bd2b64a40d6,business.cooperatives,0.4472,0,0,economy.J.J5.J54 economy.L.L9.L91
+e995308c-8e7a-46ae-99f2-5bd2b64a40d6,transport.evs,0.2191,0,0,economy.J.J5.J54 economy.L.L9.L91
+ea4b3de3-3fe2-411b-963f-264d9171345a,culture.writing_language,1.0000,1,0,media.gonzo_journalism
+ea4b3de3-3fe2-411b-963f-264d9171345a,culture.design,0.0000,0,0,media.gonzo_journalism
+ea4b3de3-3fe2-411b-963f-264d9171345a,culture.film_music,0.0000,0,0,media.gonzo_journalism
+eee09d27-d50a-4a84-95e9-edabd0a4f86c,ai.research,0.9199,1,1,ai.research software.programming
+eee09d27-d50a-4a84-95e9-edabd0a4f86c,ai.agents,0.2728,0,0,ai.research software.programming
+eee09d27-d50a-4a84-95e9-edabd0a4f86c,software.programming,0.2437,0,1,ai.research software.programming
+ef8897a5-631e-4fbc-9d5e-25bf89805c2c,business.big_tech,0.8185,1,0,media.social_platforms politics.law_courts
+ef8897a5-631e-4fbc-9d5e-25bf89805c2c,politics.law_courts,0.4583,0,1,media.social_platforms politics.law_courts
+ef8897a5-631e-4fbc-9d5e-25bf89805c2c,media.social_platforms,0.3162,0,1,media.social_platforms politics.law_courts
+f1c623be-58ea-4915-b362-ea555913c823,software.operating_systems,0.7416,1,1,business.big_tech software.operating_systems
+f1c623be-58ea-4915-b362-ea555913c823,business.big_tech,0.6000,1,1,business.big_tech software.operating_systems
+f1c623be-58ea-4915-b362-ea555913c823,media.journalism,0.1578,0,0,business.big_tech software.operating_systems
+f28545eb-520b-46b9-949a-60fe42ba868b,business.startups_funding,0.6258,1,0,ai.research media.journalism software.open_source
+f28545eb-520b-46b9-949a-60fe42ba868b,media.journalism,0.5249,1,1,ai.research media.journalism software.open_source
+f28545eb-520b-46b9-949a-60fe42ba868b,science.physics_space,0.4756,0,0,ai.research media.journalism software.open_source
+f47eb73c-8c44-4aab-a5a8-58cd622d7acf,ai.safety_policy,0.9043,1,0,business.markets_ipos economy.G.G1.G10
+f47eb73c-8c44-4aab-a5a8-58cd622d7acf,economy.O.O3.O33,0.3915,0,0,business.markets_ipos economy.G.G1.G10
+f47eb73c-8c44-4aab-a5a8-58cd622d7acf,ai.industry,0.3496,0,0,business.markets_ipos economy.G.G1.G10
+f61c59c2-c152-43c5-a474-a5d2e8098a6e,hardware.retro_computing,0.7668,1,1,hardware.retro_computing science.physics_space
+f61c59c2-c152-43c5-a474-a5d2e8098a6e,transport.aviation_transit,0.4102,0,0,hardware.retro_computing science.physics_space
+f61c59c2-c152-43c5-a474-a5d2e8098a6e,science.physics_space,0.3000,0,1,hardware.retro_computing science.physics_space
+f86ede7e-3d8e-4e91-ad9c-d39240959f8b,economy.E.E4.E40,0.8409,1,0,politics.geopolitics_military
+f86ede7e-3d8e-4e91-ad9c-d39240959f8b,economy.E.E4.E42,0.5274,1,0,politics.geopolitics_military
+f86ede7e-3d8e-4e91-ad9c-d39240959f8b,economy.A.A1.A10,0.5207,1,0,politics.geopolitics_military
+f9cdd7a9-e921-4b6a-92d1-235ab7f338af,transport.aviation_transit,0.8425,1,0,economy.J.J5.J54 economy.L.L9.L91
+f9cdd7a9-e921-4b6a-92d1-235ab7f338af,business.cooperatives,0.4583,0,0,economy.J.J5.J54 economy.L.L9.L91
+f9cdd7a9-e921-4b6a-92d1-235ab7f338af,transport.autonomous_vehicles,0.1975,0,0,economy.J.J5.J54 economy.L.L9.L91
+fa136e38-dd40-4578-b5c4-6cca156fd6b2,business.startups_funding,0.6708,1,1,business.startups_funding hardware.robotics
+fa136e38-dd40-4578-b5c4-6cca156fd6b2,hardware.robotics,0.6325,1,1,business.startups_funding hardware.robotics
+fa136e38-dd40-4578-b5c4-6cca156fd6b2,software.operating_systems,0.3305,0,0,business.startups_funding hardware.robotics
+fa6c36ed-ec13-4b8d-9a2f-702f38455d5f,ai.agents,0.9499,1,0,ai.research hardware.robotics
+fa6c36ed-ec13-4b8d-9a2f-702f38455d5f,ai.research,0.2400,0,1,ai.research hardware.robotics
+fa6c36ed-ec13-4b8d-9a2f-702f38455d5f,hardware.robotics,0.2000,0,1,ai.research hardware.robotics
+fa93ffa1-3a99-4ec5-968c-0590a2f89f4d,transport.aviation_transit,1.0000,1,1,transport.aviation_transit
+fa93ffa1-3a99-4ec5-968c-0590a2f89f4d,transport.evs,0.0000,0,0,transport.aviation_transit
+fa93ffa1-3a99-4ec5-968c-0590a2f89f4d,transport.autonomous_vehicles,0.0000,0,0,transport.aviation_transit
+fb31b7c7-12fa-49f2-b8a2-683a800d9401,software.programming,1.0000,1,1,software.programming
+fb31b7c7-12fa-49f2-b8a2-683a800d9401,software.infrastructure,0.0000,0,0,software.programming
+fb31b7c7-12fa-49f2-b8a2-683a800d9401,software.devtools,0.0000,0,0,software.programming
+fe926e07-848d-4629-b54f-bfee7dd626d0,science.mathematics,0.7211,1,1,science.biology_medicine science.mathematics science.physics_space
+fe926e07-848d-4629-b54f-bfee7dd626d0,science.biology_medicine,0.6708,1,1,science.biology_medicine science.mathematics science.physics_space
+fe926e07-848d-4629-b54f-bfee7dd626d0,science.physics_space,0.1732,0,1,science.biology_medicine science.mathematics science.physics_space
+ff25613e-9988-4c9a-b176-688d64ebd3c4,promo.event_promotion,1.0000,1,1,promo.event_promotion
+ff25613e-9988-4c9a-b176-688d64ebd3c4,promo.sponsored,0.0000,0,0,promo.event_promotion
+ff25613e-9988-4c9a-b176-688d64ebd3c4,ai.industry,0.0000,0,0,promo.event_promotion

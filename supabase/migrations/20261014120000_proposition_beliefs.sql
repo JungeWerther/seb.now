@@ -28,17 +28,43 @@ create aggregate public.beta_sum(public.beta_counts) (
   parallel = safe
 );
 
--- The hook from a labeller's probability to counts: a judgement p with weight
--- w is w*p for and w*(1-p) against, so a confident labeller moves the mean and
--- a heavier one moves it further.
-create function public.beta_evidence(p double precision, weight double precision default 1)
+-- A judgement p made n times is n*p for and n*(1-p) against.
+create function public.beta_evidence(p double precision, n double precision default 1)
 returns public.beta_counts
 language sql
 immutable
 strict
 parallel safe
 as $$
-  select row(weight * p, weight * (1 - p))::public.beta_counts
+  select row(n * p, n * (1 - p))::public.beta_counts
+$$;
+
+-- A monoid homomorphism (it commutes with beta_sum), so a source's weight can be
+-- applied per term or once to that source's folded counts.
+create function public.beta_scale(c public.beta_counts, w double precision)
+returns public.beta_counts
+language sql
+immutable
+strict
+parallel safe
+as $$
+  select row(w * (c).alpha, w * (c).beta)::public.beta_counts
+$$;
+
+-- Platt scaling, sigmoid(a * logit(p) + b). Not a homomorphism, so it applies to
+-- each judgement before it becomes counts, never to a folded sum.
+create function public.beta_calibrate(p double precision, a double precision, b double precision)
+returns double precision
+language sql
+immutable
+strict
+parallel safe
+as $$
+  select case
+    when p <= 0 then 0
+    when p >= 1 then 1
+    else 1 / (1 + exp(-(a * ln(p / (1 - p)) + b)))
+  end
 $$;
 
 -- One claim about a link: `predicate` names what is claimed (`is_accurate`,
@@ -61,38 +87,70 @@ create index propositions_link_id_idx on public.propositions (link_id);
 alter table public.propositions enable row level security;
 create policy "propositions are public" on public.propositions for select to anon, authenticated using (true);
 
--- One row per source per proposition: the fold assumes its terms are
+-- How each source's judgements are mapped before folding: Platt calibration
+-- (calib_a, calib_b) and a weight in pseudo-observations. A source with no row
+-- is taken as is (1, 0, 1). topic-label's row is fitted on 200 hand-labelled
+-- links (research/data/topic_label_calibration_2026-10-14.csv): Jev's scores are
+-- overconfident (0.94 is right 84% of the time), and beyond a weight of 16 the
+-- held-out fit barely improves. Public-read, service_role-write.
+create table public.evidence_sources (
+  source text primary key check (char_length(source) between 1 and 200),
+  calib_a double precision not null default 1 check (calib_a > 0),
+  calib_b double precision not null default 0,
+  weight double precision not null default 1 check (weight > 0),
+  notes text,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.evidence_sources enable row level security;
+create policy "evidence_sources are public" on public.evidence_sources for select to anon, authenticated using (true);
+
+insert into public.evidence_sources (source, calib_a, calib_b, weight, notes) values
+  ('topic-label', 0.5, -0.25, 16, 'Jev topic labels; Platt fit on 593 beam leaves of 200 hand-labelled links, 2026-10-14');
+
+-- One judgement per source per proposition: the fold assumes its terms are
 -- independent, so a source re-judging a claim replaces its row rather than
--- adding a second. `source` is that source's identity (`jev`, `manual`, a
--- feed's host, ...).
+-- adding a second. `p` is the judgement as the source made it, uncalibrated, and
+-- `n` how many observations it stands for (counts (alpha, beta) are p =
+-- alpha / (alpha + beta), n = alpha + beta). `source` is that source's identity
+-- (`topic-label`, `manual`, a feed's host, ...).
 create table public.proposition_evidence (
   id uuid primary key default gen_random_uuid(),
   proposition_id uuid not null references public.propositions (id) on delete cascade,
   source text not null check (char_length(source) between 1 and 200),
-  alpha double precision not null check (alpha >= 0),
-  beta double precision not null check (beta >= 0),
+  p double precision not null check (p >= 0 and p <= 1),
+  n double precision not null default 1 check (n > 0),
   labeled_by text not null default 'manual' check (labeled_by in ('jev', 'manual')),
   created_at timestamptz not null default now(),
-  check (alpha + beta > 0),
   unique (proposition_id, source)
 );
 
 alter table public.proposition_evidence enable row level security;
 create policy "proposition_evidence is public" on public.proposition_evidence for select to anon, authenticated using (true);
 
--- `confidence` is n / (n + prior mass), n the evidence's total count: the
--- weight the evidence has against the prior in the posterior mean, so
+-- Each term is f(e) = scale(evidence(calibrate(p), n), weight), with its
+-- source's mapping. `confidence` is evidence mass / (evidence mass + prior
+-- mass), the weight the evidence has against the prior, so
 -- mean = (1 - confidence) * prior mean + confidence * evidence mean.
 create view public.proposition_beliefs
 with (security_invoker = true) as
-with folded as (
+with terms as (
+  select
+    ev.proposition_id,
+    public.beta_scale(
+      public.beta_evidence(public.beta_calibrate(ev.p, coalesce(s.calib_a, 1), coalesce(s.calib_b, 0)), ev.n),
+      coalesce(s.weight, 1)
+    ) as c
+  from public.proposition_evidence ev
+  left join public.evidence_sources s on s.source = ev.source
+),
+folded as (
   select
     p0.id,
-    count(ev.id)::integer as sources,
-    public.beta_sum(row(ev.alpha, ev.beta)::public.beta_counts)
-      filter (where ev.id is not null) as s
+    count(t.c)::integer as sources,
+    public.beta_sum(t.c) filter (where t.c is not null) as s
   from public.propositions p0
-  left join public.proposition_evidence ev on ev.proposition_id = p0.id
+  left join terms t on t.proposition_id = p0.id
   group by p0.id
 )
 select
