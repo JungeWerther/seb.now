@@ -208,8 +208,9 @@
     }
     .query-chip.reading { background: var(--positive-soft); }
     .query-chip .query-chip-kind { color: var(--positive); }
-    button.query-chip { cursor: pointer; border-style: dashed; color: gray; }
-    button.query-chip:hover { color: var(--fg); }
+    a.query-chip { cursor: pointer; border-style: dashed; color: gray; text-decoration: none; }
+    a.query-chip:hover { color: var(--fg); }
+    a.query-chip[data-kind]::before { content: attr(data-kind) " "; color: var(--positive); }
     #reply-composer {
       position: relative;
       width: 100%;
@@ -2958,6 +2959,9 @@
     // and how many of them show as chips while it reads.
     const QUERY_TOPIC_CANDIDATES = 8;
     const QUERY_TOPIC_SUGGESTIONS = 3;
+    const QUERY_ENTITY_SUGGESTIONS = 3;
+    // Entity matches wait for this pause in typing (each is a request).
+    const QUERY_ENTITY_PAUSE_MS = 150;
     // The word still being typed matches topic-name words it begins once it's
     // this long; a finished word matches the same word, or its singular or
     // plural ("agent", "agents").
@@ -3031,6 +3035,40 @@
         .map((s) => s.topic);
     }
 
+    // Entities whose names the typed words cover (match_entities), as the
+    // search box's entity suggestions. The last word counts as still being
+    // typed unless a space follows, as in matchTopics.
+    function matchEntities(text) {
+      const typed = queryWords(text);
+      if (!typed.length) return Promise.resolve([]);
+      const partial = /[a-z0-9]$/i.test(text) ? typed.pop() : null;
+      const key = JSON.stringify([typed, partial]);
+      if (!entityMatches.has(key)) {
+        entityMatches.set(key, (async () => {
+          const { data, error } = await (await supabaseReady).rpc("match_entities", {
+            words: typed,
+            partial,
+            max_results: QUERY_ENTITY_SUGGESTIONS,
+          });
+          if (error) throw error;
+          return data;
+        })().catch((error) => {
+          console.error("failed to match entities", error);
+          entityMatches.delete(key);
+          return [];
+        }));
+      }
+      return entityMatches.get(key);
+    }
+
+    async function suggestEntities(text) {
+      const entities = await matchEntities(text);
+      const input = document.getElementById("search-input");
+      if (input.value.trim() !== text) return;
+      entitySuggestions = entities;
+      showQueryChips(text, feed.intent);
+    }
+
     const readQueries = new Map();
 
     // What query-parse makes of `text` with these candidate topics, or null.
@@ -3084,15 +3122,16 @@
     }
 
     const queryChips = document.getElementById("query-chips");
-    // A suggested topic the reader tapped, kept while the text still matches it.
-    let pinnedTopic = null;
     let queryGeneration = 0;
+    // The latest entity matches, shown until the next ones arrive so the chips
+    // don't flicker while typing.
+    let entitySuggestions = [];
+    const entityMatches = new Map();
     let lastQueryText = null;
 
-    function queryChip(kind, label, { reading = false } = {}) {
-      const chip = document.createElement(reading ? "span" : "button");
-      chip.className = reading ? "query-chip reading" : "query-chip";
-      if (!reading) chip.type = "button";
+    function queryChip(kind, label) {
+      const chip = document.createElement("span");
+      chip.className = "query-chip reading";
       if (kind) {
         const kindEl = document.createElement("span");
         kindEl.className = "query-chip-kind";
@@ -3108,17 +3147,27 @@
     function showQueryChips(text, intent) {
       const chips = [];
       if (intent) {
-        if (SORT_LABELS[intent.sort]) chips.push(queryChip("", SORT_LABELS[intent.sort], { reading: true }));
-        if (intent.topic) chips.push(queryChip("topic ", intent.topic.name, { reading: true }));
-        if (intent.search) chips.push(queryChip("search ", `“${intent.search}”`, { reading: true }));
+        if (SORT_LABELS[intent.sort]) chips.push(queryChip("", SORT_LABELS[intent.sort]));
+        if (intent.topic) chips.push(queryChip("topic ", intent.topic.name));
+        if (intent.search) chips.push(queryChip("search ", `“${intent.search}”`));
       }
+      // Suggestions are links to the topic's or entity's page, opened in place
+      // by the chip-link click handler.
       const suggestions = text ? matchTopics(text).filter((t) => t.id !== intent?.topic?.id).slice(0, QUERY_TOPIC_SUGGESTIONS) : [];
       for (const topic of suggestions) {
-        const chip = queryChip("", topic.name);
-        chip.addEventListener("click", () => {
-          pinnedTopic = topic;
-          runQuery(document.getElementById("search-input").value.trim(), { force: true });
-        });
+        const chip = document.createElement("a");
+        chip.className = "query-chip";
+        chip.dataset.kind = "topic";
+        chip.textContent = topic.name;
+        setTopicHref(chip, topic.id);
+        chips.push(chip);
+      }
+      for (const entity of text ? entitySuggestions : []) {
+        const chip = document.createElement("a");
+        chip.className = "query-chip";
+        chip.dataset.kind = entity.kind.replace("_", " ");
+        chip.textContent = entity.name;
+        setEntityHref(chip, entity.id);
         chips.push(chip);
       }
       queryChips.replaceChildren(...chips);
@@ -3132,15 +3181,14 @@
       lastQueryText = text;
       const generation = ++queryGeneration;
       if (!text) {
-        pinnedTopic = null;
+        entitySuggestions = [];
         showQueryChips("", null);
         if (force || feed.query || feed.intent) showFeed("");
         return;
       }
       await loadTopicIndex();
       if (generation !== queryGeneration) return;
-      if (pinnedTopic && !matchTopics(text).some((t) => t.id === pinnedTopic.id)) pinnedTopic = null;
-      const candidates = pinnedTopic ? [pinnedTopic] : matchTopics(text);
+      const candidates = matchTopics(text);
       showQueryChips(text, feed.intent);
       queryChips.classList.add("pending");
       const intent = await readQuery(text.slice(0, QUERY_MAX_LENGTH), candidates.map((t) => t.id));
@@ -3151,7 +3199,6 @@
         if (feed.intent || feed.query !== text) showFeed(text);
         return;
       }
-      if (pinnedTopic) intent.topic = { id: pinnedTopic.id, name: pinnedTopic.name };
       showQueryChips(text, intent);
       if (!force && sameIntent(feed.intent, intent)) {
         feed.query = text;
@@ -3164,6 +3211,7 @@
       const input = document.getElementById("search-input");
       const clearBtn = document.getElementById("search-clear");
       let timer = null;
+      let entityTimer = null;
 
       function search() {
         clearTimeout(timer);
@@ -3186,8 +3234,13 @@
           // private browsing / storage disabled - search still works, just isn't remembered
         }
         clearBtn.classList.toggle("visible", input.value.length > 0);
-        // Topic matches show on every keystroke; Jev reads once a word is done.
-        showQueryChips(input.value.trim(), feed.intent);
+        // Topic matches show on every keystroke, entity matches after a short
+        // pause; Jev reads once a word is done.
+        const text = input.value.trim();
+        if (!text) entitySuggestions = [];
+        showQueryChips(text, feed.intent);
+        clearTimeout(entityTimer);
+        if (text) entityTimer = setTimeout(() => suggestEntities(text), QUERY_ENTITY_PAUSE_MS);
         clearTimeout(timer);
         timer = setTimeout(search, /\s$/.test(input.value) ? 0 : QUERY_PARSE_PAUSE_MS);
       });

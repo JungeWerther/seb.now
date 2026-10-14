@@ -352,8 +352,17 @@ sort, `topic …`, `search "…"`), and the feed becomes
 (security invoker; `for_you` is `ranked_feed`'s rank, `latest` newest, `top`
 net votes, `discussed` reply count; `topic` filters to it and its children;
 every search word must be in `search_text`), unless the reading is the same as
-the feed already showing. Tapping a suggested topic pins it as the topic while
-the text still matches it. If `query-parse` fails, the box falls back to the
+the feed already showing. Entities are suggested alongside topics: after
+`QUERY_ENTITY_PAUSE_MS` without typing, the page sends its `queryWords` (the
+last one as `partial` while still being typed) to
+`public.match_entities(words, partial, max_results)` (security invoker; a name
+word matches a typed word exactly, as its singular/plural, or by prefix for the
+partial one, accents ignored via `unaccent`; at least half the name's words must
+match; ranked by that share, then post count), and the latest matches stay up
+until the next arrive. Suggestion chips are links (`/t/<path>`, `/e/<id>`, the
+kind drawn by CSS from `data-kind` so `textContent` stays the name), so tapping
+one opens that topic's or entity's page through the chip-link click handler
+rather than changing the search. If `query-parse` fails, the box falls back to the
 plain newest-first title search. Order names live in `SORTS` (the function) and
 `SORT_LABELS` (the page) and must match `feed_query`'s check.
 
