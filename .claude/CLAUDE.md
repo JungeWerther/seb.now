@@ -267,6 +267,20 @@ marks the link. `POST {"link_ids": [...], "dry_run": true}` reports without
 writing. Events aren't entities yet: a listing's headings are headlines, not
 clean names, so merging them into `entities` (kind `event`) is a later step.
 
+**Propositions — beliefs about a link.** `public.propositions` is one claim
+about a link (`predicate`, optional `object`, a Beta prior defaulting to
+(1, 1)); `public.proposition_evidence` holds one row per `source` per claim as
+non-negative `(alpha, beta)` counts — one per source, since the fold assumes
+independent terms. Evidence combines in the Beta monoid: the composite type
+`beta_counts`, `beta_add` (componentwise `+`, identity `(0, 0)`) and the
+aggregate `beta_sum`; `beta_evidence(p, weight)` turns a labeller's
+probability into counts (`w·p` for, `w·(1−p)` against). The
+`proposition_beliefs` view (`security_invoker`) charts each claim onto
+[0, 1]²: `mean = α / (α + β)` and `confidence = n / (n + prior mass)`, the
+evidence's weight against the prior. Public-read, service_role-write; nothing
+writes evidence yet. `user_topic_preferences` is the same construction over
+votes, not yet rewritten on top of `beta_sum`.
+
 A user's preference is derived, not stored: the
 `public.user_topic_preferences` view (`security_invoker`, so RLS on
 `votes`/`link_topics` applies) gives per `(voter_id, topic_id)` the
