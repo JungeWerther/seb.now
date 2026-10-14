@@ -285,7 +285,7 @@ def test_link_page_focuses_a_tapped_post_above_its_related_links() -> None:
         assert f'id="{list_id}-title" hidden' in focus
     assert html.index('<section id="focus"') < html.index('<ul class="articles">')
     script = html[html.index('<script type="module">') :]
-    assert 'rpc("related_links"' in script
+    assert 'rpc("related_feed"' in script
     assert "page_offset: offset" in script
     assert "link_entities(p, entities(id, name, kind))" in script
     assert "history.pushState" in script and "`/p/${id}`" in script

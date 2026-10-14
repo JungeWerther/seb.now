@@ -1835,11 +1835,12 @@
       return { rows, count: ranks.length };
     }
 
-    // One page of related_links, then those links by id in its order, each
-    // with what it shares with the focused post.
+    // One page of related_feed: related_links with each link's row in the
+    // same response, in its order, each with what it shares with the
+    // focused post.
     async function fetchRelated(id, offset) {
       const client = await supabaseReady;
-      const { data: related, error } = await client.rpc("related_links", {
+      const { data: related, error } = await client.rpc("related_feed", {
         link: id,
         max_results: FEED_PAGE_SIZE,
         page_offset: offset,
@@ -1848,21 +1849,11 @@
         console.error("failed to load related links", error);
         return null;
       }
-      if (related.length === 0) return { rows: [], count: 0 };
-      const ids = related.map((r) => r.link_id);
-      const { data: rows, error: linksError } = await client.from("links").select(FEED_SELECT).in("id", ids);
-      if (linksError) {
-        console.error("failed to load related links", linksError);
-        return null;
-      }
-      const byId = new Map(rows.map((row) => [row.id, row]));
       return {
-        rows: related
-          .filter((r) => byId.has(r.link_id))
-          .map((r) => ({
-            row: byId.get(r.link_id),
-            shared: { entities: new Set(r.shared_entities), topics: new Set(r.shared_topics) },
-          })),
+        rows: related.map((r) => ({
+          row: r.link_row,
+          shared: { entities: new Set(r.shared_entities), topics: new Set(r.shared_topics) },
+        })),
         count: related.length,
       };
     }
@@ -2092,7 +2083,7 @@
     // this page there): tapping a post's card anywhere but its links and
     // buttons lifts it to the top of the page onto a black band, with all its
     // entities and topics, and the feed below is swapped for the links related
-    // to it (related_links; what each shares with it is highlighted among its
+    // to it (related_feed; what each shares with it is highlighted among its
     // chips), a page at a time as
     // you scroll, voted on and replied to like any feed. Each step is pushed
     // onto history with its depth, so Back steps between posts and finally

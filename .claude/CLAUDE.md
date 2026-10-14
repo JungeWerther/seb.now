@@ -463,7 +463,10 @@ list itself is swapped for the related links (`feed.related`, the same
 repliable, and look exactly like feed rows), from
 `public.related_links(link, max_results, page_offset)` (security invoker):
 shared entities count double, shared leaf topics once, each weighted p × p,
-newest first on ties, then id, so pages never skip or repeat; what each shares
+newest first on ties, then id, so pages never skip or repeat. The page calls it
+through `public.related_feed` (same arguments), which adds each link's row in
+`FEED_SELECT`'s shape as `link_row`, so a page is one round trip rather than an
+rpc followed by a fetch by id; keep the two shapes in sync. What each shares
 with the focused post is shown by its chips (shared ones sorted first and
 tinted `.shared`, green), and tapping one goes a level deeper. Every rendered
 row is kept in `linkRows` by id, so focusing a link the page has already shown
