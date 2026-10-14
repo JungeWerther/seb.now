@@ -310,24 +310,6 @@
     }
     #menu-btn:hover, #menu-btn[aria-expanded="true"] { opacity: 1; }
     #menu-btn[aria-expanded="true"] { color: var(--positive); }
-    /* Query reads left (query_credits_left), beside the menu icon. */
-    #query-balance {
-      align-self: center;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.2rem;
-      margin-left: 0.5rem;
-      padding: 0 0.5rem;
-      font-size: 0.75rem;
-      line-height: 1.6;
-      font-variant-numeric: tabular-nums;
-      border-radius: 999px;
-      background: var(--positive-soft);
-      color: var(--positive);
-      white-space: nowrap;
-    }
-    #query-balance[hidden] { display: none; }
-    #query-balance.empty { background: rgba(128, 128, 128, 0.15); color: gray; }
     #menu-bubbles {
       position: absolute;
       /* The menu is centred in the header, so this is the header's bottom edge. */
@@ -381,6 +363,9 @@
       color: var(--bg);
     }
     .bubble .bubble-icon svg { width: 1rem; height: 1rem; }
+    /* The reader's query credits left (query_credits_left): shown, not tapped. */
+    .bubble.balance { cursor: default; font-variant-numeric: tabular-nums; }
+    .bubble.balance.empty .bubble-icon { background: gray; }
     dialog.overlay {
       width: min(420px, calc(100vw - 2 * var(--gutter)));
       max-height: calc(100dvh - 2 * var(--header-height));
@@ -965,13 +950,11 @@
             <circle cx="12" cy="12" r="10"/>
           </svg>
         </button>
-        <span id="query-balance" title="Query reads left" hidden>
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>
-          </svg>
-          <span id="query-balance-count"></span>
-        </span>
         <ul id="menu-bubbles">
+          <li><div class="bubble balance" id="query-balance" title="Credits left for reading your searches">
+            <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg></span>
+            <span><span id="query-balance-count">1,000</span> credits</span>
+          </div></li>
           <li><button class="bubble" data-overlay="taste-overlay" tabindex="-1">
             <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></span>
             <span>My Algorithm</span>
@@ -2452,8 +2435,8 @@
     function setupMenu() {
       const btn = document.getElementById("menu-btn");
       const bubbles = document.getElementById("menu-bubbles");
-      const items = [...bubbles.querySelectorAll(".bubble")];
-      items.forEach((item, i) => item.style.setProperty("--i", i));
+      [...bubbles.querySelectorAll(".bubble")].forEach((item, i) => item.style.setProperty("--i", i));
+      const items = [...bubbles.querySelectorAll(".bubble[data-overlay]")];
 
       const setOpen = (open) => {
         bubbles.classList.toggle("open", open);
@@ -2462,7 +2445,9 @@
       };
       btn.addEventListener("click", (event) => {
         event.stopPropagation();
-        setOpen(!bubbles.classList.contains("open"));
+        const open = !bubbles.classList.contains("open");
+        setOpen(open);
+        if (open) loadQueryBalance();
       });
       document.addEventListener("click", (event) => {
         if (!bubbles.contains(event.target)) setOpen(false);
@@ -3090,9 +3075,10 @@
       if (typeof left !== "number") return;
       queryCreditsLeft = left;
       document.getElementById("query-balance-count").textContent = left.toLocaleString();
-      queryBalance.title = left > 0 ? `${left} query reads left` : "No query reads left: searches are plain title searches";
+      queryBalance.title = left > 0
+        ? "Credits left for reading your searches"
+        : "No credits left: searches are plain title searches";
       queryBalance.classList.toggle("empty", left <= 0);
-      queryBalance.hidden = false;
     }
 
     async function loadQueryBalance() {

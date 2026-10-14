@@ -357,16 +357,18 @@ the text still matches it. If `query-parse` fails, the box falls back to the
 plain newest-first title search. Order names live in `SORTS` (the function) and
 `SORT_LABELS` (the page) and must match `feed_query`'s check.
 
-**Query credits.** Every account (anonymous ones included) gets
-`query_credit_limit()` = 1,000 Jev reads in all, no reset. `public.query_credits
+**Query credits.** Every account (anonymous ones included) starts with
+`query_credit_limit()` = 1,000 credits, one per Jev read, in all, no reset. `public.query_credits
 (user_id, used)` counts them (readers see only their own row; no client
 writes). `query-parse` calls `spend_query_credit()` as the caller (security
 definer, takes one only while `used` is under the limit, returns what's left or
 null) before each Jev request; an answer from its isolate cache costs nothing
 and reports `query_credits_left()`. No session → 401, none left → 429. Every
-reply carries `credits_left`, which the page shows in `#query-balance`, a
-pill beside the menu icon at the top left (loaded with `query_credits_left` on
-start); at 0 it greys out and the page stops calling `query-parse`, so the box
+reply carries `credits_left`, which the page shows as "N credits" in
+`#query-balance`, the first (non-tappable) bubble of the header menu, so it
+appears when the user icon is tapped (refreshed with `query_credits_left` on
+start and each time the menu opens; `setupMenu` only wires `.bubble[data-overlay]`
+to overlays); at 0 it greys out and the page stops calling `query-parse`, so the box
 is a plain title search. A new anonymous session starts at 1,000 again, so this
 caps one session's spend, not a determined caller's.
 
