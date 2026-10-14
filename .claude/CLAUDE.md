@@ -360,7 +360,10 @@ sort, `topic …`, `search "…"`), and the feed becomes
 `public.feed_query(sort, topic, search, as_of, page_offset, page_size)`
 (security invoker; `for_you` is `ranked_feed`'s rank, `latest` newest, `top`
 net votes, `discussed` reply count; `topic` filters to it and its children;
-every search word must be in `search_text`), unless the reading is the same as
+every search word must be in `search_text`, ignoring case and accents: both
+sides go through `public.fold_text`, `lower(unaccent(…))`, so "cinema" finds
+"Cinéma"; `search_text` itself is only lowercased, so its trigram index doesn't
+serve this), unless the reading is the same as
 the feed already showing; a correction swaps the list only once its first page
 has arrived. Tapping a suggested topic pins it as the topic while the text still
 matches it. If `query-parse` fails or there are no credits, the page's own
