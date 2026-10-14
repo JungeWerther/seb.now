@@ -310,6 +310,24 @@
     }
     #menu-btn:hover, #menu-btn[aria-expanded="true"] { opacity: 1; }
     #menu-btn[aria-expanded="true"] { color: var(--positive); }
+    /* Query reads left (query_credits_left), beside the menu icon. */
+    #query-balance {
+      align-self: center;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2rem;
+      margin-left: 0.5rem;
+      padding: 0 0.5rem;
+      font-size: 0.75rem;
+      line-height: 1.6;
+      font-variant-numeric: tabular-nums;
+      border-radius: 999px;
+      background: var(--positive-soft);
+      color: var(--positive);
+      white-space: nowrap;
+    }
+    #query-balance[hidden] { display: none; }
+    #query-balance.empty { background: rgba(128, 128, 128, 0.15); color: gray; }
     #menu-bubbles {
       position: absolute;
       /* The menu is centred in the header, so this is the header's bottom edge. */
@@ -947,6 +965,12 @@
             <circle cx="12" cy="12" r="10"/>
           </svg>
         </button>
+        <span id="query-balance" title="Query reads left" hidden>
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>
+          </svg>
+          <span id="query-balance-count"></span>
+        </span>
         <ul id="menu-bubbles">
           <li><button class="bubble" data-overlay="taste-overlay" tabindex="-1">
             <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></span>
@@ -3035,12 +3059,20 @@
 
     // What query-parse makes of `text` with these candidate topics, or null.
     function readQuery(text, topicIds) {
+      // Out of reads: the box is a plain title search from here on.
+      if (queryCreditsLeft === 0) return Promise.resolve(null);
       const key = JSON.stringify([text.toLowerCase(), topicIds]);
       if (!readQueries.has(key)) {
         readQueries.set(key, (async () => {
           const client = await supabaseReady;
+          // Reads are charged to the session's account.
+          await pendingSession;
           const { data, error } = await client.functions.invoke("query-parse", { body: { text, topic_ids: topicIds } });
-          if (error) throw error;
+          if (error) {
+            if (error.context?.status === 429) showQueryBalance(0);
+            throw error;
+          }
+          showQueryBalance(data.credits_left);
           return { sort: data.sort, topic: data.topic, search: data.search };
         })().catch((error) => {
           console.error("failed to read query", error);
@@ -3049,6 +3081,25 @@
         }));
       }
       return readQueries.get(key);
+    }
+
+    const queryBalance = document.getElementById("query-balance");
+    let queryCreditsLeft = null;
+
+    function showQueryBalance(left) {
+      if (typeof left !== "number") return;
+      queryCreditsLeft = left;
+      document.getElementById("query-balance-count").textContent = left.toLocaleString();
+      queryBalance.title = left > 0 ? `${left} query reads left` : "No query reads left: searches are plain title searches";
+      queryBalance.classList.toggle("empty", left <= 0);
+      queryBalance.hidden = false;
+    }
+
+    async function loadQueryBalance() {
+      if (!(await pendingSession)) return;
+      const { data, error } = await (await supabaseReady).rpc("query_credits_left");
+      if (error) console.error("failed to load query credits", error);
+      else showQueryBalance(data);
     }
 
     function sameIntent(a, b) {
@@ -3181,6 +3232,7 @@
 
       input.value = savedSearchQuery();
       clearBtn.classList.toggle("visible", input.value.length > 0);
+      loadQueryBalance();
     }
 
     // Scrolling back up at least this far (px, since the last scroll down)

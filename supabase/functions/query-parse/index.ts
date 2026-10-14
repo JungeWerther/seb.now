@@ -10,6 +10,11 @@ import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
 // only chooses: the sort orders are feed_query's, and topics are looked up by
 // id, so nothing the page sends becomes an option's text.
 //
+// Each Jev read takes one of the caller's query credits (spend_query_credit,
+// as the caller, so it needs a signed-in session, anonymous ones included); an
+// answer served from this isolate's cache is free. Every reply carries
+// `credits_left`, and 429 means none are left.
+//
 // POST {"text": "latest on ai agents", "topic_ids": ["ai.agents", ...]}
 // → {"sort": "latest", "topic": {"id": "ai.agents", "name": "AI agents"}, "search": "", ...}
 
@@ -54,7 +59,7 @@ interface Topic {
 }
 
 let jev: JevClient | null = null;
-const cache = new Map<string, unknown>();
+const cache = new Map<string, Awaited<ReturnType<typeof parse>>>();
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
@@ -67,6 +72,12 @@ async function client(): Promise<JevClient> {
   if (error || !apiKey) throw new Error(`no ${TYPESAFE_KEY_SECRET} in Vault`);
   jev = new JevClient(apiKey, MODEL);
   return jev;
+}
+
+function asCaller(req: Request) {
+  return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+    global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
+  });
 }
 
 async function loadTopics(ids: string[]): Promise<Topic[]> {
@@ -157,14 +168,22 @@ Deno.serve(async (req: Request) => {
   ) {
     return json({ error: `topic_ids must be at most ${MAX_TOPIC_CANDIDATES} topic ids` }, 400);
   }
+  const caller = asCaller(req);
   const key = JSON.stringify([text.toLowerCase(), ids]);
   const cached = cache.get(key);
-  if (cached) return json(cached);
+  if (cached) {
+    const { data: left, error } = await caller.rpc("query_credits_left");
+    if (error) return json({ error: "sign in to search" }, 401);
+    return json({ ...cached, credits_left: left });
+  }
+  const { data: left, error: spendError } = await caller.rpc("spend_query_credit");
+  if (spendError) return json({ error: "sign in to search" }, 401);
+  if (left === null) return json({ error: "no query credits left", credits_left: 0 }, 429);
   try {
     const parsed = await parse(text, await loadTopics(ids as string[]));
     if (cache.size >= CACHE_SIZE) cache.delete(cache.keys().next().value!);
     cache.set(key, parsed);
-    return json(parsed);
+    return json({ ...parsed, credits_left: left });
   } catch (e) {
     console.error("query-parse failed", e);
     return json({ error: "could not read the query" }, 502);
