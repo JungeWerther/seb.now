@@ -328,7 +328,51 @@ Search is server-side and newest-first: a debounced `ilike` on
 `links.search_text`, a stored generated column (lowercased title + host
 without `www.`) with a `pg_trgm` GIN index, keyset-paged on
 `(created_at desc, id desc)` — `id` breaks ties because one ingest upsert
-stamps all its rows with the same `now()`. Client-fetched articles are built by
+stamps all its rows with the same `now()`.
+
+**The search box is also a query: `query-parse` + `feed_query`.** What's typed
+is read for a sort order, a topic and search words, e.g. "latest on ai agents"
+→ newest first, `ai.agents`, no words; "top openai news" → most upvoted,
+search "openai". On every keystroke the page matches the text against the whole
+topic list (loaded once on first focus, `matchTopics`: a finished word matches
+a topic-name word exactly or as its singular/plural, the word still being typed
+also by prefix, stopwords skipped) and shows the best matches as dashed chips
+in `#query-chips` above the search bar. When a word is finished (a space), on
+Enter, or after `QUERY_PARSE_PAUSE_MS` mid-word, it POSTs the text and up to 8
+matched topic ids to the **`query-parse`** Edge Function (`verify_jwt` on,
+anon/session bearer via `functions.invoke`). Code proposes, Jev only chooses:
+one Jev request asks for the sort (`for_you`/`latest`/`top`/`discussed`), which
+candidate topic is meant (or none), and each word's role (sort, topic, search,
+filler); the search words are what's left. Topics are looked up by id, so the
+page's input never becomes an option's text; text is capped at 120 chars and
+12 words, and answers are cached per isolate (and per page). ~1,000–1,400
+input tokens and ~1.2s per read. Jev's reading replaces the chips (filled: the
+sort, `topic …`, `search "…"`), and the feed becomes
+`public.feed_query(sort, topic, search, as_of, page_offset, page_size)`
+(security invoker; `for_you` is `ranked_feed`'s rank, `latest` newest, `top`
+net votes, `discussed` reply count; `topic` filters to it and its children;
+every search word must be in `search_text`), unless the reading is the same as
+the feed already showing. Tapping a suggested topic pins it as the topic while
+the text still matches it. If `query-parse` fails, the box falls back to the
+plain newest-first title search. Order names live in `SORTS` (the function) and
+`SORT_LABELS` (the page) and must match `feed_query`'s check.
+
+**Query credits.** Every account (anonymous ones included) starts with
+`query_credit_limit()` = 1,000 credits, one per Jev read, in all, no reset. `public.query_credits
+(user_id, used)` counts them (readers see only their own row; no client
+writes). `query-parse` calls `spend_query_credit()` as the caller (security
+definer, takes one only while `used` is under the limit, returns what's left or
+null) before each Jev request; an answer from its isolate cache costs nothing
+and reports `query_credits_left()`. No session → 401, none left → 429. Every
+reply carries `credits_left`, which the page shows as "N credits" in
+`#query-balance`, the first (non-tappable) bubble of the header menu, so it
+appears when the user icon is tapped (refreshed with `query_credits_left` on
+start and each time the menu opens; `setupMenu` only wires `.bubble[data-overlay]`
+to overlays); at 0 it greys out and the page stops calling `query-parse`, so the box
+is a plain title search. A new anonymous session starts at 1,000 again, so this
+caps one session's spend, not a determined caller's.
+
+Client-fetched articles are built by
 cloning `<template id="article-template">`, which `site.py` renders with the
 same `_render_article` as the pre-rendered ones, so there's one copy of the
 markup (filled via `textContent`/attributes, never `innerHTML`). Per-article

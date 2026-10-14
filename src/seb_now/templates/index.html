@@ -175,6 +175,41 @@
     #search-clear:hover { background: rgba(128, 128, 128, 0.3); color: var(--fg); }
     #search-clear.visible { display: flex; }
     #search-bar[hidden], #reply-composer[hidden] { display: none; }
+    /* What the search box is read as: instant topic matches while typing,
+       then Jev's reading (sort, topic, search words) once it answers. */
+    #query-chips {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.35rem;
+      margin-bottom: 0.5rem;
+      pointer-events: auto;
+      transition: opacity 0.2s ease;
+    }
+    #query-chips[hidden], #dock-inner:has(#search-bar[hidden]) #query-chips { display: none; }
+    #query-chips.pending .query-chip.reading { opacity: 0.45; }
+    .query-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      max-width: 100%;
+      font: inherit;
+      font-size: 0.75rem;
+      line-height: 1.5;
+      padding: 0.1rem 0.6rem;
+      border: 1px solid var(--positive);
+      border-radius: 999px;
+      background: var(--bg);
+      color: var(--fg);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: opacity 0.2s ease;
+    }
+    .query-chip.reading { background: var(--positive-soft); }
+    .query-chip .query-chip-kind { color: var(--positive); }
+    button.query-chip { cursor: pointer; border-style: dashed; color: gray; }
+    button.query-chip:hover { color: var(--fg); }
     #reply-composer {
       position: relative;
       width: 100%;
@@ -328,6 +363,9 @@
       color: var(--bg);
     }
     .bubble .bubble-icon svg { width: 1rem; height: 1rem; }
+    /* The reader's query credits left (query_credits_left): shown, not tapped. */
+    .bubble.balance { cursor: default; font-variant-numeric: tabular-nums; }
+    .bubble.balance.empty .bubble-icon { background: gray; }
     dialog.overlay {
       width: min(420px, calc(100vw - 2 * var(--gutter)));
       max-height: calc(100dvh - 2 * var(--header-height));
@@ -913,6 +951,10 @@
           </svg>
         </button>
         <ul id="menu-bubbles">
+          <li><div class="bubble balance" id="query-balance" title="Credits left for reading your searches">
+            <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg></span>
+            <span><span id="query-balance-count">1,000</span> credits</span>
+          </div></li>
           <li><button class="bubble" data-overlay="taste-overlay" tabindex="-1">
             <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></span>
             <span>My Algorithm</span>
@@ -995,8 +1037,9 @@
         </svg>
       </button>
     </div>
+    <div id="query-chips" aria-live="polite" hidden></div>
     <div id="search-bar">
-      <input id="search-input" type="search" placeholder="Search articles…" aria-label="Search articles" autocomplete="off">
+      <input id="search-input" type="search" placeholder="Search, or ask: latest on AI…" aria-label="Search articles, or ask for an order and topic" autocomplete="off">
       <button type="button" id="search-clear" aria-label="Clear search">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M18 6 6 18"/>
@@ -1561,11 +1604,14 @@
     // The list shows one feed at a time: the default one, ranked by the
     // ranked_feed function, the results for `query`, newest first, the
     // links `related` to a focused post (see focusLink), or every link
-    // mentioning an `entity`, newest first (see focusEntity).
+    // mentioning an `entity`, newest first (see focusEntity). A typed query
+    // Jev has read (see runQuery) sets `intent`, and the feed is feed_query's
+    // for it instead; `query` is then just the text it was read from.
     // `generation` bumps whenever it's swapped, so a request still in flight
     // for the previous feed is dropped when it lands.
     const feed = {
       query: "",
+      intent: null,
       related: null,
       entity: null,
       topic: null,
@@ -1753,6 +1799,30 @@
         console.error("failed to rank feed", error);
         return null;
       }
+      return linksInOrder(client, ranks);
+    }
+
+    // One page of feed_query for a typed query's intent; only its for_you
+    // order reads the caller's own votes.
+    async function fetchQueried(intent, asOf, offset) {
+      const client = await supabaseReady;
+      if (intent.sort === "for_you") await pendingSession;
+      const { data: ranks, error } = await client.rpc("feed_query", {
+        sort: intent.sort,
+        topic: intent.topic?.id ?? null,
+        search: intent.search || null,
+        as_of: asOf,
+        page_offset: offset,
+        page_size: FEED_PAGE_SIZE,
+      });
+      if (error) {
+        console.error("failed to query feed", error);
+        return null;
+      }
+      return linksInOrder(client, ranks);
+    }
+
+    async function linksInOrder(client, ranks) {
       if (ranks.length === 0) return { rows: [], count: 0 };
       const ids = ranks.map((r) => r.link_id);
       const { data: rows, error: linksError } = await client.from("links").select(FEED_SELECT).in("id", ids);
@@ -1875,6 +1945,11 @@
         if (page) feed.offset += page.count;
         return page;
       }
+      if (feed.intent) {
+        const page = await fetchQueried(feed.intent, feed.asOf, feed.offset);
+        if (page) feed.offset += page.count;
+        return page;
+      }
       if (feed.query || feed.chronological) {
         const rows = await fetchLinks({ query: feed.query, before: feed.cursor });
         if (!rows) return null;
@@ -1944,9 +2019,10 @@
       if (!feed.done && sentinelNearViewport()) loadMore();
     }
 
-    function resetFeed(query) {
+    function resetFeed(query, intent = null) {
       feed.generation++;
       feed.query = query;
+      feed.intent = intent;
       feed.related = null;
       feed.entity = null;
       feed.topic = null;
@@ -1961,8 +2037,8 @@
       updateSkeletons();
     }
 
-    function showFeed(query) {
-      resetFeed(query);
+    function showFeed(query, intent = null) {
+      resetFeed(query, intent);
       articleList.replaceChildren();
       updateSearchEmpty();
       return loadMore();
@@ -1995,7 +2071,7 @@
         articleList.replaceChildren();
         return;
       }
-      if (initialQuery) return showFeed(initialQuery);
+      if (initialQuery) return runQuery(initialQuery);
       // The build pre-renders the newest links for a fast first paint; the
       // ranked feed replaces them once its first page arrives. If ranking
       // fails, keep them and carry on newest-first.
@@ -2283,7 +2359,7 @@
       if (!restore) return;
       if (!saved) {
         window.scrollTo({ top: 0, behavior: "instant" });
-        showFeed(document.getElementById("search-input").value.trim());
+        runQuery(document.getElementById("search-input").value.trim(), { force: true });
         return;
       }
       Object.assign(feed, saved.state, { generation: feed.generation + 1, loading: false });
@@ -2359,8 +2435,8 @@
     function setupMenu() {
       const btn = document.getElementById("menu-btn");
       const bubbles = document.getElementById("menu-bubbles");
-      const items = [...bubbles.querySelectorAll(".bubble")];
-      items.forEach((item, i) => item.style.setProperty("--i", i));
+      [...bubbles.querySelectorAll(".bubble")].forEach((item, i) => item.style.setProperty("--i", i));
+      const items = [...bubbles.querySelectorAll(".bubble[data-overlay]")];
 
       const setOpen = (open) => {
         bubbles.classList.toggle("open", open);
@@ -2369,7 +2445,9 @@
       };
       btn.addEventListener("click", (event) => {
         event.stopPropagation();
-        setOpen(!bubbles.classList.contains("open"));
+        const open = !bubbles.classList.contains("open");
+        setOpen(open);
+        if (open) loadQueryBalance();
       });
       document.addEventListener("click", (event) => {
         if (!bubbles.contains(event.target)) setOpen(false);
@@ -2677,6 +2755,7 @@
         if (!tasteChanged) return;
         tasteChanged = false;
         if (!feed.query) showFeed("");
+        else if (feed.intent?.sort === "for_you") showFeed(feed.query, feed.intent);
       });
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") flushOverrides();
@@ -2881,8 +2960,22 @@
     }
 
     const SEARCH_QUERY_STORAGE_KEY = "seb-now-search-query";
-    // Wait for typing to pause before querying the server.
-    const SEARCH_DEBOUNCE_MS = 250;
+    // Mid-word, wait for typing to pause this long before Jev reads the
+    // query; finishing a word (a space) or Enter reads it at once.
+    const QUERY_PARSE_PAUSE_MS = 350;
+    // Topics proposed to Jev per query (query-parse's MAX_TOPIC_CANDIDATES),
+    // and how many of them show as chips while it reads.
+    const QUERY_TOPIC_CANDIDATES = 8;
+    const QUERY_TOPIC_SUGGESTIONS = 3;
+    // The word still being typed matches topic-name words it begins once it's
+    // this long; a finished word matches the same word, or its singular or
+    // plural ("agent", "agents").
+    const QUERY_PREFIX_MIN_LENGTH = 3;
+    const QUERY_MAX_LENGTH = 120;
+    const TOPICS_PAGE_SIZE = 1000;
+    // Words that never name a topic on their own.
+    const QUERY_STOPWORDS = new Set(["a", "an", "and", "the", "of", "on", "in", "for", "to", "about", "with", "me", "show", "news", "other", "general"]);
+    const SORT_LABELS = { latest: "Latest", top: "Top", discussed: "Most discussed" };
 
     function savedSearchQuery() {
       try {
@@ -2890,6 +2983,190 @@
       } catch {
         return "";
       }
+    }
+
+    // The whole topic list, loaded once, for matching on every keystroke.
+    let topicIndexReady = null;
+    let topicIndex = [];
+
+    function queryWords(text) {
+      return text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+        .split(/[^a-z0-9]+/).filter((w) => w && !QUERY_STOPWORDS.has(w));
+    }
+
+    function loadTopicIndex() {
+      topicIndexReady ??= (async () => {
+        const client = await supabaseReady;
+        const topics = [];
+        for (let from = 0; ; from += TOPICS_PAGE_SIZE) {
+          const { data, error } = await client.from("topics").select("id, name")
+            .order("id").range(from, from + TOPICS_PAGE_SIZE - 1);
+          if (error) throw error;
+          topics.push(...data);
+          if (data.length < TOPICS_PAGE_SIZE) break;
+        }
+        topicIndex = topics.map((t) => ({ ...t, words: queryWords(t.name) })).filter((t) => t.words.length);
+      })().catch((error) => {
+        console.error("failed to load topics", error);
+        topicIndexReady = null;
+      });
+      return topicIndexReady;
+    }
+
+    function wordMatches(typed, nameWord, partial) {
+      if (typed === nameWord) return true;
+      if (typed.length < QUERY_PREFIX_MIN_LENGTH) return false;
+      if (partial && nameWord.startsWith(typed)) return true;
+      const [shorter, longer] = typed.length < nameWord.length ? [typed, nameWord] : [nameWord, typed];
+      return shorter.length >= QUERY_PREFIX_MIN_LENGTH && (longer === `${shorter}s` || longer === `${shorter}es`);
+    }
+
+    // Topics whose names the typed words cover, best covered first (the share
+    // of the name's words matched), then the more words matched, then shorter
+    // names. The last word counts as still being typed unless a space follows.
+    function matchTopics(text) {
+      const typed = queryWords(text);
+      if (!typed.length) return [];
+      const partialAt = /[a-z0-9]$/i.test(text) ? typed.length - 1 : -1;
+      const scored = [];
+      for (const topic of topicIndex) {
+        const hits = topic.words.filter((w) => typed.some((t, i) => wordMatches(t, w, i === partialAt))).length;
+        if (hits) scored.push({ topic, hits, score: hits / topic.words.length });
+      }
+      return scored
+        .sort((a, b) => b.score - a.score || b.hits - a.hits
+          || a.topic.words.length - b.topic.words.length || a.topic.id.localeCompare(b.topic.id))
+        .slice(0, QUERY_TOPIC_CANDIDATES)
+        .map((s) => s.topic);
+    }
+
+    const readQueries = new Map();
+
+    // What query-parse makes of `text` with these candidate topics, or null.
+    function readQuery(text, topicIds) {
+      // Out of reads: the box is a plain title search from here on.
+      if (queryCreditsLeft === 0) return Promise.resolve(null);
+      const key = JSON.stringify([text.toLowerCase(), topicIds]);
+      if (!readQueries.has(key)) {
+        readQueries.set(key, (async () => {
+          const client = await supabaseReady;
+          // Reads are charged to the session's account.
+          await pendingSession;
+          const { data, error } = await client.functions.invoke("query-parse", { body: { text, topic_ids: topicIds } });
+          if (error) {
+            if (error.context?.status === 429) showQueryBalance(0);
+            throw error;
+          }
+          showQueryBalance(data.credits_left);
+          return { sort: data.sort, topic: data.topic, search: data.search };
+        })().catch((error) => {
+          console.error("failed to read query", error);
+          readQueries.delete(key);
+          return null;
+        }));
+      }
+      return readQueries.get(key);
+    }
+
+    const queryBalance = document.getElementById("query-balance");
+    let queryCreditsLeft = null;
+
+    function showQueryBalance(left) {
+      if (typeof left !== "number") return;
+      queryCreditsLeft = left;
+      document.getElementById("query-balance-count").textContent = left.toLocaleString();
+      queryBalance.title = left > 0
+        ? "Credits left for reading your searches"
+        : "No credits left: searches are plain title searches";
+      queryBalance.classList.toggle("empty", left <= 0);
+    }
+
+    async function loadQueryBalance() {
+      if (!(await pendingSession)) return;
+      const { data, error } = await (await supabaseReady).rpc("query_credits_left");
+      if (error) console.error("failed to load query credits", error);
+      else showQueryBalance(data);
+    }
+
+    function sameIntent(a, b) {
+      return Boolean(a && b) && a.sort === b.sort && a.topic?.id === b.topic?.id && a.search === b.search;
+    }
+
+    const queryChips = document.getElementById("query-chips");
+    // A suggested topic the reader tapped, kept while the text still matches it.
+    let pinnedTopic = null;
+    let queryGeneration = 0;
+    let lastQueryText = null;
+
+    function queryChip(kind, label, { reading = false } = {}) {
+      const chip = document.createElement(reading ? "span" : "button");
+      chip.className = reading ? "query-chip reading" : "query-chip";
+      if (!reading) chip.type = "button";
+      if (kind) {
+        const kindEl = document.createElement("span");
+        kindEl.className = "query-chip-kind";
+        kindEl.textContent = kind;
+        chip.append(kindEl);
+      }
+      chip.append(document.createTextNode(label));
+      return chip;
+    }
+
+    // Jev's reading of the query (if any), then the topics matching what's
+    // typed that it hasn't taken, as tappable suggestions.
+    function showQueryChips(text, intent) {
+      const chips = [];
+      if (intent) {
+        if (SORT_LABELS[intent.sort]) chips.push(queryChip("", SORT_LABELS[intent.sort], { reading: true }));
+        if (intent.topic) chips.push(queryChip("topic ", intent.topic.name, { reading: true }));
+        if (intent.search) chips.push(queryChip("search ", `“${intent.search}”`, { reading: true }));
+      }
+      const suggestions = text ? matchTopics(text).filter((t) => t.id !== intent?.topic?.id).slice(0, QUERY_TOPIC_SUGGESTIONS) : [];
+      for (const topic of suggestions) {
+        const chip = queryChip("", topic.name);
+        chip.addEventListener("click", () => {
+          pinnedTopic = topic;
+          runQuery(document.getElementById("search-input").value.trim(), { force: true });
+        });
+        chips.push(chip);
+      }
+      queryChips.replaceChildren(...chips);
+      queryChips.hidden = chips.length === 0;
+    }
+
+    // Reads the typed text with Jev and shows the feed it asks for; if it
+    // can't be read, falls back to a plain newest-first title search.
+    async function runQuery(text, { force = false } = {}) {
+      if (!force && text === lastQueryText) return;
+      lastQueryText = text;
+      const generation = ++queryGeneration;
+      if (!text) {
+        pinnedTopic = null;
+        showQueryChips("", null);
+        if (force || feed.query || feed.intent) showFeed("");
+        return;
+      }
+      await loadTopicIndex();
+      if (generation !== queryGeneration) return;
+      if (pinnedTopic && !matchTopics(text).some((t) => t.id === pinnedTopic.id)) pinnedTopic = null;
+      const candidates = pinnedTopic ? [pinnedTopic] : matchTopics(text);
+      showQueryChips(text, feed.intent);
+      queryChips.classList.add("pending");
+      const intent = await readQuery(text.slice(0, QUERY_MAX_LENGTH), candidates.map((t) => t.id));
+      if (generation !== queryGeneration) return;
+      queryChips.classList.remove("pending");
+      if (!intent) {
+        showQueryChips(text, null);
+        if (feed.intent || feed.query !== text) showFeed(text);
+        return;
+      }
+      if (pinnedTopic) intent.topic = { id: pinnedTopic.id, name: pinnedTopic.name };
+      showQueryChips(text, intent);
+      if (!force && sameIntent(feed.intent, intent)) {
+        feed.query = text;
+        return;
+      }
+      showFeed(text, intent);
     }
 
     function setupSearch() {
@@ -2903,12 +3180,13 @@
         if (isFocused()) {
           history.replaceState(null, "", "/");
           leaveFocus({ restore: false });
-          showFeed(query);
-        } else if (query !== feed.query) {
-          showFeed(query);
+          runQuery(query, { force: true });
+        } else {
+          runQuery(query);
         }
       }
 
+      input.addEventListener("focus", () => loadTopicIndex(), { once: true });
       input.addEventListener("input", () => {
         try {
           if (input.value) localStorage.setItem(SEARCH_QUERY_STORAGE_KEY, input.value);
@@ -2917,8 +3195,10 @@
           // private browsing / storage disabled - search still works, just isn't remembered
         }
         clearBtn.classList.toggle("visible", input.value.length > 0);
+        // Topic matches show on every keystroke; Jev reads once a word is done.
+        showQueryChips(input.value.trim(), feed.intent);
         clearTimeout(timer);
-        timer = setTimeout(search, SEARCH_DEBOUNCE_MS);
+        timer = setTimeout(search, /\s$/.test(input.value) ? 0 : QUERY_PARSE_PAUSE_MS);
       });
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") search();
@@ -2938,6 +3218,7 @@
 
       input.value = savedSearchQuery();
       clearBtn.classList.toggle("visible", input.value.length > 0);
+      loadQueryBalance();
     }
 
     // Scrolling back up at least this far (px, since the last scroll down)
@@ -2988,7 +3269,7 @@
         window.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
         // A focused post's page just goes back up to the post.
         if (isFocused()) return;
-        resetFeed(feed.query);
+        resetFeed(feed.query, feed.intent);
         loadMore({ replace: true });
       }
 
