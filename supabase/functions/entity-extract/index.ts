@@ -241,7 +241,9 @@ async function mentionsOf(db: SupabaseClient, jev: JevClient, link: Link, phrase
     const longer = longerNames(name, found.names);
     const exact = options.find((c) => c.name.toLowerCase() === name.surface.toLowerCase());
     if (longer.length) {
-      pending.push({ name, options, longer });
+      // A longer name that is already an entity would be offered twice and split the vote.
+      const offered = new Set(longer.map((o) => o.surface.toLowerCase()));
+      pending.push({ name, options: options.filter((c) => !offered.has(c.name.toLowerCase())), longer });
     } else if (exact) {
       mentions.push({ ...name, entity_id: exact.id, entity_name: exact.name, decision: "exact" });
     } else if (options.length) {
