@@ -189,6 +189,12 @@
       padding-bottom: 0.15rem;
       color: var(--positive);
       white-space: nowrap;
+      /* A lineage label runs past its word, up to the next tag. */
+      max-width: var(--label-room, none);
+      box-sizing: border-box;
+      padding-right: 0.4em;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     #search-input:focus {
       outline: none;
@@ -3178,6 +3184,11 @@
     // The whole topic list, loaded once, for matching on every keystroke.
     let topicIndexReady = null;
     let topicIndex = [];
+    // The entity kind tree (public.kinds), loaded with the topics: each kind's
+    // path, the names it's typed as (its label, its path's last segment) and its
+    // lineage, the kind and every kind above it.
+    let kindIndex = [];
+    const kindLineages = new Map();
 
     function queryWords(text) {
       return text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
@@ -3187,6 +3198,7 @@
     function loadTopicIndex() {
       topicIndexReady ??= (async () => {
         const client = await supabaseReady;
+        const kindsLoaded = client.from("kinds").select("path, label");
         const topics = [];
         for (let from = 0; ; from += TOPICS_PAGE_SIZE) {
           const { data, error } = await client.from("topics").select("id, name")
@@ -3196,6 +3208,9 @@
           if (data.length < TOPICS_PAGE_SIZE) break;
         }
         topicIndex = topics.map((t) => ({ ...t, words: queryWords(t.name) })).filter((t) => t.words.length);
+        const { data: kinds, error } = await kindsLoaded;
+        if (error) console.error("failed to load kinds", error);
+        else indexKinds(kinds);
       })().catch((error) => {
         console.error("failed to load topics", error);
         topicIndexReady = null;
@@ -3203,12 +3218,34 @@
       return topicIndexReady;
     }
 
+    function indexKinds(kinds) {
+      const segment = (path) => path.split(".").at(-1).replace(/_/g, " ");
+      kindLineages.clear();
+      for (const { path } of kinds) {
+        const parts = path.split(".");
+        kindLineages.set(path, parts.map((_, i) => segment(parts.slice(0, i + 1).join("."))).reverse());
+      }
+      kindIndex = kinds.map((k) => ({
+        path: k.path,
+        names: [...new Set([k.label, segment(k.path)])].filter((n) => queryWords(n).length),
+      }));
+    }
+
+    // "company › org › agent › entity": `path` and every kind above it.
+    function kindLineage(path, { self = true } = {}) {
+      const lineage = kindLineages.get(path);
+      if (!lineage) return null;
+      return (self ? lineage : lineage.slice(1)).join(" › ") || "kind";
+    }
+
     function wordMatches(typed, nameWord, partial) {
       if (typed === nameWord) return true;
       if (typed.length < QUERY_PREFIX_MIN_LENGTH) return false;
       if (partial && nameWord.startsWith(typed)) return true;
       const [shorter, longer] = typed.length < nameWord.length ? [typed, nameWord] : [nameWord, typed];
-      return shorter.length >= QUERY_PREFIX_MIN_LENGTH && (longer === `${shorter}s` || longer === `${shorter}es`);
+      if (shorter.length < QUERY_PREFIX_MIN_LENGTH) return false;
+      return longer === `${shorter}s` || longer === `${shorter}es`
+        || (shorter.endsWith("y") && longer === `${shorter.slice(0, -1)}ies`);
     }
 
     // Topics whose names the typed words cover, best covered first (the share
@@ -3297,7 +3334,7 @@
             max_results: QUERY_ENTITY_SUGGESTIONS,
           });
           if (error) throw error;
-          return data;
+          return withKindPaths(data);
         })().catch((error) => {
           console.error("failed to match entities", error);
           entityMatches.delete(key);
@@ -3305,6 +3342,20 @@
         }));
       }
       return entityMatches.get(key);
+    }
+
+    // `entities` with each one's place in the kind tree, for its search-box tag.
+    // A failed lookup leaves them tagged with their flat kind.
+    async function withKindPaths(entities) {
+      if (!entities.length) return entities;
+      const { data, error } = await (await supabaseReady).from("entities").select("id, kind_path")
+        .in("id", entities.map((e) => e.id));
+      if (error) {
+        console.error("failed to load entity kinds", error);
+        return entities;
+      }
+      const paths = new Map(data.map((e) => [e.id, e.kind_path]));
+      return entities.map((e) => ({ ...e, kind_path: paths.get(e.id) ?? null }));
     }
 
     async function suggestEntities(text) {
@@ -3407,7 +3458,8 @@
       }
       // Suggestions are links to the topic's or entity's page, opened in place
       // by the chip-link click handler.
-      const suggestions = text ? matchTopics(text).filter((t) => t.id !== intent?.topic?.id).slice(0, QUERY_TOPIC_SUGGESTIONS) : [];
+      const topicMatches = text ? matchTopics(text) : [];
+      const suggestions = topicMatches.filter((t) => t.id !== intent?.topic?.id).slice(0, QUERY_TOPIC_SUGGESTIONS);
       for (const topic of suggestions) {
         const chip = document.createElement("a");
         chip.className = "query-chip";
@@ -3426,14 +3478,17 @@
       }
       queryChips.replaceChildren(...chips);
       queryChips.hidden = chips.length === 0;
-      renderSearchMarks(intent);
+      renderSearchMarks(intent, topicMatches);
     }
 
     // Tags the typed words that make a good match, in place in the search box:
-    // the reading's sort words and topic (filled), then an entity or a topic
-    // suggestion whose whole name is typed (dashed). A word is tagged once,
-    // first match wins. Spans are text nodes, never innerHTML.
-    function renderSearchMarks(intent) {
+    // the reading's sort words and topic (filled), then, dashed, an entity or a
+    // topic suggestion whose whole name is typed, then a kind of entity. A kind
+    // or an entity is labelled with its lineage up the kind tree, so "company"
+    // reads org › agent › entity and "uber" company › org › agent › entity. A
+    // word is tagged once, first match wins. Spans are text nodes, never
+    // innerHTML. `topicMatches`: matchTopics of the text, already computed.
+    function renderSearchMarks(intent, topicMatches = []) {
       const input = document.getElementById("search-input");
       const value = input.value;
       const tokens = [...value.matchAll(/[\p{L}\p{N}]+/gu)].map((m) => ({
@@ -3443,31 +3498,44 @@
         tag: null,
       })).filter((t) => t.word);
       const partialAt = /[\p{L}\p{N}]$/u.test(value) ? tokens.length - 1 : -1;
-      const open = (t) => !t.tag && !QUERY_STOPWORDS.has(t.word);
+      tokens.forEach((t, i) => {
+        t.partial = i === partialAt;
+        t.open = !QUERY_STOPWORDS.has(t.word);
+      });
 
-      // Tags the tokens covering every word of `name`, if all are typed.
+      // Tags the open tokens covering every word of `name`, if all are typed.
       function tagName(name, tag) {
         const nameWords = queryWords(name);
         if (!nameWords.length) return false;
-        const hits = tokens.filter((t, i) => open(t) && nameWords.some((n) => wordMatches(t.word, n, i === partialAt)));
-        const covered = nameWords.every((n) => hits.some((t) => wordMatches(t.word, n, tokens.indexOf(t) === partialAt)));
-        if (!covered) return false;
-        for (const t of hits) t.tag = tag;
+        const hits = tokens.filter((t) => t.open && nameWords.some((n) => wordMatches(t.word, n, t.partial)));
+        if (!nameWords.every((n) => hits.some((t) => wordMatches(t.word, n, t.partial)))) return false;
+        for (const t of hits) {
+          t.tag = tag;
+          t.open = false;
+        }
         return true;
       }
 
       if (value.trim()) {
         if (intent?.sort && SORT_LABELS[intent.sort]) {
-          tokens.forEach((t, i) => {
-            if (open(t) && i !== partialAt && QUERY_SORT_WORDS[t.word] === intent.sort) t.tag = { kind: "order" };
-          });
+          for (const t of tokens) {
+            if (t.open && !t.partial && QUERY_SORT_WORDS[t.word] === intent.sort) {
+              t.tag = { kind: "order" };
+              t.open = false;
+            }
+          }
         }
         if (intent?.topic) tagName(intent.topic.name, { kind: "topic" });
         for (const entity of entitySuggestions) {
-          tagName(entity.name, { kind: entity.kind.replace("_", " "), suggested: true });
+          const kind = kindLineage(entity.kind_path) ?? entity.kind.replace("_", " ");
+          tagName(entity.name, { kind, suggested: true });
         }
-        for (const topic of matchTopics(value.trim())) {
+        for (const topic of topicMatches) {
           tagName(topic.name, { kind: "topic", suggested: true });
+        }
+        for (const kind of kindIndex) {
+          const tag = { kind: kindLineage(kind.path, { self: false }), suggested: true };
+          kind.names.some((name) => tagName(name, tag));
         }
       }
 
@@ -3492,6 +3560,10 @@
       }
       if (at < value.length) nodes.push(document.createTextNode(value.slice(at)));
       document.getElementById("search-marks").replaceChildren(...nodes);
+      const marks = nodes.filter((n) => n.nodeName === "MARK");
+      marks.forEach((mark, i) => {
+        if (marks[i + 1]) mark.style.setProperty("--label-room", `${marks[i + 1].offsetLeft - mark.offsetLeft}px`);
+      });
       syncSearchMarks();
     }
 
