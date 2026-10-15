@@ -1,7 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
-import { pageCandidates } from "../_shared/names.ts";
+import { nameHints } from "../_shared/hints.ts";
+import { NameHints, pageCandidates } from "../_shared/names.ts";
 import { fetchPage, JsonLdEvent, PageContent, pageText, parseSections, Section } from "../_shared/page.ts";
 import { DateCandidate, dateCandidates, Source } from "./dates.ts";
 
@@ -225,7 +226,7 @@ async function loadPage(db: SupabaseClient, link: Link): Promise<{ page: PageCon
   if (error) throw new Error(error.message);
   if (!data) return { page: await fetchPage(link.url), fresh: true };
   return {
-    page: { status: data.status, lang: data.lang, sections: parseSections(data.text), jsonLdEvents: data.json_ld_events ?? [] },
+    page: { status: data.status, lang: data.lang, sections: parseSections(data.text), jsonLdEvents: data.json_ld_events ?? [], declared: [] },
     fresh: false,
   };
 }
@@ -245,7 +246,7 @@ async function processLink(db: SupabaseClient, jev: JevClient, link: Link, dryRu
     const candidates = dateCandidates(sources, reference, page.lang);
     const cutoff = new Date(reference.getTime() - RECENT_MS).toISOString().slice(0, 10);
     if (candidates.some((c) => (c.end ?? c.start) >= cutoff)) {
-      rows = (await judge(db, jev, link, page.sections, candidates, report))
+      rows = (await judge(db, jev, link, page, candidates, report))
         .filter((r) => (r.ends_on ?? r.starts_on)! >= cutoff);
     } else {
       report.dates = candidates.map((c) => ({ text: c.text, start: c.start, end: c.end, role: "past" }));
@@ -284,10 +285,11 @@ async function judge(
   db: SupabaseClient,
   jev: JevClient,
   link: Link,
-  sections: Section[],
+  content: PageContent,
   candidates: DateCandidate[],
   report: { page: string | null; dates: unknown[]; inputTokens: number },
 ): Promise<EventRow[]> {
+  const sections = content.sections;
   const places = await loadPlaces(db, link.id);
   const lead = sections.map((s) => s.text).join("\n").slice(0, LEAD_CHARS);
   const state = {
@@ -343,7 +345,8 @@ async function judge(
       criteria: { ...Object.fromEntries(places.map((p) => [p.id, p.name])), [NONE]: "None of these, or not said." },
     };
   }
-  const sectionVenues = new Map(headed.map((s) => [s, venueOptions(places, sections[s])]));
+  const hints = headed.length ? await nameHints(db, headed.map((s) => `${sections[s].heading ?? ""}\n${sections[s].text}`), content.lang) : {};
+  const sectionVenues = new Map(headed.map((s) => [s, venueOptions(places, sections[s], hints)]));
   for (const [s, { named, phrases }] of sectionVenues) {
     if (!named.length && !phrases.length) continue;
     questions[`v${s}`] = {
@@ -416,7 +419,7 @@ async function judge(
 
 // A section's venue options: the link's venue entities it names (by the text
 // they were found as or their name), and the other names code finds in it.
-function venueOptions(places: Place[], section: Section): { named: Place[]; phrases: string[] } {
+function venueOptions(places: Place[], section: Section, hints: Partial<NameHints>): { named: Place[]; phrases: string[] } {
   const text = `${section.heading ?? ""}\n${section.text}`.toLowerCase();
   const seen = new Set<string>();
   const named = places.filter((p) => {
@@ -426,7 +429,7 @@ function venueOptions(places: Place[], section: Section): { named: Place[]; phra
     return true;
   });
   const known = new Set(named.flatMap((p) => [p.surface, p.name]).filter((n): n is string => !!n).map((n) => n.toLowerCase()));
-  const phrases = pageCandidates([section], "", SECTION_VENUE_PHRASES)
+  const phrases = pageCandidates([section], "", hints, SECTION_VENUE_PHRASES)
     .map((c) => c.surface)
     .filter((phrase) => !known.has(phrase.toLowerCase()));
   return { named, phrases };
