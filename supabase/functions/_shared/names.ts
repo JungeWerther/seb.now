@@ -37,7 +37,7 @@ export const ONLY_NUMBERS = /^[\d\s.,$€£%+-]+$/;
 // first appears in. event-extract also uses it on one entry of a guide at a
 // time, to propose that entry's venue.
 
-const PAGE_CANDIDATES = 60;
+const PAGE_CANDIDATES = 80;
 const KNOWN_CANDIDATES = 25;
 const PAGE_MIN_LENGTH = 3;
 const CAP_RATE_NAME = 0.5;
@@ -51,20 +51,28 @@ const MAX_PARTICLES = 2;
 const PARTICLES = new Set(["de", "du", "des", "la", "le", "les", "et", "of", "the", "and", "for", "von", "van", "der", "den", "di", "del", "da", "y"]);
 const CONJUNCTIONS = new Set(["et", "and"]);
 const ELIDED = /^[dlDL]['’](?=\p{Lu})/u;
+// A lowercase elided article in front of a name ("d'Orsay") isn't part of it;
+// a capital one opening the name ("L'Assaggio", "D'Artagnan") is.
+const LOWER_ELIDED = /^[dl]['’](?=\p{Lu})/u;
 // The same elision on a folded word, which `name_first_word` (SQL) also drops.
 const FOLDED_ELIDED = /^[dl]'(?=\p{L})/u;
 
 // Words as `word_case_counts` (SQL) reads them; keep the two in step.
 export const WORD = /\p{L}(?:[\p{L}\p{M}\p{N}'’-]*[\p{L}\p{M}\p{N}])?/gu;
+// Tokens: those words, and numbers, which can carry on a name ("Li 6").
+const TOKEN = /\p{L}(?:[\p{L}\p{M}\p{N}'’-]*[\p{L}\p{M}\p{N}])?|\p{N}(?:[\p{N}.,]*\p{N})?\p{L}*/gu;
+const CAMEL_CASE = /\p{Ll}\p{Lu}/u;
+const SINGLE_INITIAL = /^\p{Lu}$/u;
 
 export function fold(word: string): string {
   return word.normalize("NFD").replace(/\p{M}/gu, "").replace(/’/g, "'").toLowerCase()
     .replace(/œ/g, "oe").replace(/æ/g, "ae").replace(/ß/g, "ss");
 }
 
+// Capitalised, or camel-case ("macOS", "xAI"), which is nearly always a name.
 function isCapitalised(word: string): boolean {
   const w = word.replace(ELIDED, "");
-  return w[0] !== w[0].toLowerCase();
+  return w[0] !== w[0].toLowerCase() || CAMEL_CASE.test(w);
 }
 
 export interface PagePhrase {
@@ -87,19 +95,25 @@ interface Token {
   end: number;
   cap: boolean;
   opens: boolean;
+  number: boolean;
 }
 
 function tokenize(text: string): Token[][] {
   return sentences(text).map(({ start, end }) => {
     const sentence = text.slice(start, end);
-    return [...sentence.matchAll(WORD)].map((m, i) => ({
-      text: m[0],
-      key: fold(m[0]),
-      start: start + m.index!,
-      end: start + m.index! + m[0].length,
-      cap: isCapitalised(m[0]),
-      opens: i === 0,
-    }));
+    let words = 0;
+    return [...sentence.matchAll(TOKEN)].map((m) => {
+      const number = !/^\p{L}/u.test(m[0]);
+      return {
+        text: m[0],
+        key: fold(m[0]),
+        start: start + m.index!,
+        end: start + m.index! + m[0].length,
+        cap: !number && isCapitalised(m[0]),
+        opens: !number && words++ === 0,
+        number,
+      };
+    });
   });
 }
 
@@ -112,6 +126,7 @@ export function textWords(texts: string[]): { all: string[]; nameStarts: string[
   for (const text of texts) {
     for (const tokens of tokenize(text)) {
       tokens.forEach((t, i) => {
+        if (t.number) return;
         all.add(t.key);
         if (t.cap || tokens[i + 1]?.cap) nameStarts.add(t.key.replace(FOLDED_ELIDED, ""));
       });
@@ -129,22 +144,24 @@ function calendarWords(lang: string | null): Set<string> {
   if (words) return words;
   words = new Set();
   for (const locale of [lang, "en"]) {
-    let months: Intl.DateTimeFormat, days: Intl.DateTimeFormat;
-    try {
-      months = new Intl.DateTimeFormat(locale ?? "en", { month: "long", timeZone: "UTC" });
-      days = new Intl.DateTimeFormat(locale ?? "en", { weekday: "long", timeZone: "UTC" });
-    } catch {
-      continue;
+    for (const width of ["long", "short"] as const) {
+      let months: Intl.DateTimeFormat, days: Intl.DateTimeFormat;
+      try {
+        months = new Intl.DateTimeFormat(locale ?? "en", { month: width, timeZone: "UTC" });
+        days = new Intl.DateTimeFormat(locale ?? "en", { weekday: width, timeZone: "UTC" });
+      } catch {
+        continue;
+      }
+      for (let m = 0; m < 12; m++) words.add(fold(months.format(Date.UTC(2024, m, 1))).replace(/\.$/, ""));
+      for (let d = 0; d < 7; d++) words.add(fold(days.format(Date.UTC(2024, 0, 1 + d))).replace(/\.$/, ""));
     }
-    for (let m = 0; m < 12; m++) words.add(fold(months.format(Date.UTC(2024, m, 1))));
-    for (let d = 0; d < 7; d++) words.add(fold(days.format(Date.UTC(2024, 0, 1 + d))));
   }
   calendarCache.set(key, words);
   return words;
 }
 
 function cleanSurface(phrase: string): string {
-  return phrase.replace(EDGE_PUNCTUATION, "").replace(ELIDED, "").replace(POSSESSIVE_END, "").replace(EDGE_PUNCTUATION, "").trim();
+  return phrase.replace(EDGE_PUNCTUATION, "").replace(LOWER_ELIDED, "").replace(POSSESSIVE_END, "").replace(EDGE_PUNCTUATION, "").trim();
 }
 
 // Where known names occur among these tokens. A name counts only where the
@@ -159,7 +176,7 @@ type KnownIndex = Map<string, { words: string[]; caps: boolean[] }[]>;
 function knownIndex(known: string[] = []): KnownIndex {
   const byFirst: KnownIndex = new Map();
   for (const name of known) {
-    const matches = [...name.matchAll(WORD)].map((m) => m[0]);
+    const matches = [...name.matchAll(TOKEN)].map((m) => m[0]);
     if (!matches.length || name.length < PAGE_MIN_LENGTH) continue;
     const words = matches.map((w) => fold(w).replace(FOLDED_ELIDED, ""));
     const list = byFirst.get(words[0]) ?? [];
@@ -233,64 +250,89 @@ export function pageCandidates(
     }
   };
 
+  const offerRun = (s: number, text: string, tokens: Token[], run: Token[], joins: (a: Token, b: Token) => boolean) => {
+    const i = tokens.indexOf(run[0]);
+    const first = run[0];
+    const rate = rateOf(first);
+    const end = run[run.length - 1].end;
+    // Other common words capitalised inside the run mean a title-case line
+    // ("Meet Your Seoul"), where a capital at the front says nothing either way.
+    const titleCase = run.slice(1).some((t) => t.cap && (rateOf(t) ?? 1) < CAP_RATE_NAME);
+    const commonFront = rate !== undefined && rate < CAP_RATE_NAME;
+    if (!(first.opens && rate !== undefined && rate < NAME_START_RATE && !titleCase)) {
+      offer(s, text, first.start, end, !first.opens || run.length > 1 || (rate ?? 0) >= CAP_RATE_NAME, "run");
+    }
+    // The run without a front word that is lowercase mid-sentence ("The", "Dès"), or unseen at a sentence start.
+    if (run.length > 1 && (rate === undefined ? first.opens : commonFront)) {
+      const r = run.findIndex((t, j) => j > 0 && t.cap);
+      if (r > 0) offer(s, text, run[r].start, end, true, "run");
+    }
+    // Parts joined by a conjunction, without their leading particles.
+    const parts: Token[][] = [[]];
+    run.forEach((t, r) => {
+      if (!t.cap && CONJUNCTIONS.has(t.key)) parts.push([]);
+      else {
+        if (r > 0 && text.slice(run[r - 1].end, t.start).includes("&")) parts.push([]);
+        parts[parts.length - 1].push(t);
+      }
+    });
+    const trimmed = parts.map((part) => part.slice(Math.max(0, part.findIndex((t) => t.cap)))).filter((part) => part.length);
+    if (trimmed.length > 1) {
+      for (const part of trimmed) offer(s, text, part[0].start, part[part.length - 1].end, true, "run");
+    }
+    // With the lowercase word in front that often opens a name ("musée d'Orsay", "galerie Perrotin").
+    let p = i - 1;
+    while (p >= 0 && i - p <= MAX_PARTICLES && !tokens[p].cap && PARTICLES.has(tokens[p].key) && joins(tokens[p], tokens[p + 1])) p--;
+    if (p >= 0 && !tokens[p].cap && !tokens[p].number && (rateOf(tokens[p]) ?? 0) >= PREFIX_CAP_RATE && joins(tokens[p], tokens[p + 1])) {
+      const head = trimmed[0];
+      offer(s, text, tokens[p].start, head[head.length - 1].end, true, "run");
+    }
+  };
+
   texts.forEach((text, s) => {
     const sentencesOf = tokenize(text);
-    for (const { tokens } of knownIn(sentencesOf, known, hints, true)) {
-      offer(s, text, tokens[0].start, tokens[tokens.length - 1].end, true, "known");
-    }
-    for (const tokens of sentencesOf) {
-      const joins = (a: Token, b: Token) => /^\s+$|^\s*&\s*$/.test(text.slice(a.end, b.start));
+    // Two tokens are one name's neighbours when only spaces (or "&", or an
+    // initial's full stop: "C. Thi Nguyen") stand between them.
+    const joins = (a: Token, b: Token) =>
+      /^\s+$|^\s*&\s*$/.test(text.slice(a.end, b.start)) || (SINGLE_INITIAL.test(a.text) && /^\.\s+$/.test(text.slice(a.end, b.start)));
+    // Where each token's run of capitalised words ends, so a known name inside
+    // a longer one ("Levin" in "Mylo Levin") isn't offered on its own.
+    const runsBySentence = sentencesOf.map((tokens) => {
+      const runs: Token[][] = [];
       for (let i = 0; i < tokens.length; i++) {
         if (!tokens[i].cap) continue;
-        // The run: capitalised words, and up to MAX_PARTICLES particles between two of them.
+        // Capitalised words, up to MAX_PARTICLES particles between two of them, and numbers after them.
         let last = i;
         for (let j = i + 1; j < tokens.length;) {
           let k = j;
           while (k < tokens.length && k - j < MAX_PARTICLES && !tokens[k].cap && PARTICLES.has(tokens[k].key) && joins(tokens[k - 1], tokens[k])) k++;
-          if (k < tokens.length && tokens[k].cap && joins(tokens[k - 1], tokens[k])) {
+          if (k < tokens.length && (tokens[k].cap || (tokens[k].number && k === j)) && joins(tokens[k - 1], tokens[k])) {
             last = k;
             j = k + 1;
           } else break;
         }
-        const run = tokens.slice(i, last + 1);
-        const first = run[0];
-        const rate = rateOf(first);
-        const end = run[run.length - 1].end;
-        // Other common words capitalised inside the run mean a title-case line
-        // ("Meet Your Seoul"), where a capital at the front says nothing either way.
-        const titleCase = run.slice(1).some((t) => t.cap && (rateOf(t) ?? 1) < CAP_RATE_NAME);
-        const commonFront = rate !== undefined && rate < CAP_RATE_NAME;
-        if (!(first.opens && rate !== undefined && rate < NAME_START_RATE && !titleCase)) {
-          offer(s, text, first.start, end, !first.opens || run.length > 1 || (rate ?? 0) >= CAP_RATE_NAME, "run");
-        }
-        // The run without a front word that is lowercase mid-sentence ("The", "Dès"), or unseen at a sentence start.
-        if (run.length > 1 && (rate === undefined ? first.opens : commonFront)) {
-          const r = run.findIndex((t, j) => j > 0 && t.cap);
-          if (r > 0) offer(s, text, run[r].start, end, true, "run");
-        }
-        // Parts joined by a conjunction, without their leading particles.
-        const parts: Token[][] = [[]];
-        run.forEach((t, r) => {
-          if (!t.cap && CONJUNCTIONS.has(t.key)) parts.push([]);
-          else {
-            if (r > 0 && text.slice(run[r - 1].end, t.start).includes("&")) parts.push([]);
-            parts[parts.length - 1].push(t);
-          }
-        });
-        const trimmed = parts.map((part) => part.slice(Math.max(0, part.findIndex((t) => t.cap)))).filter((part) => part.length);
-        if (trimmed.length > 1) {
-          for (const part of trimmed) offer(s, text, part[0].start, part[part.length - 1].end, true, "run");
-        }
-        // With the lowercase word in front that often opens a name ("musée d'Orsay", "galerie Perrotin").
-        let p = i - 1;
-        while (p >= 0 && i - p <= MAX_PARTICLES && !tokens[p].cap && PARTICLES.has(tokens[p].key) && joins(tokens[p], tokens[p + 1])) p--;
-        if (p >= 0 && !tokens[p].cap && (rateOf(tokens[p]) ?? 0) >= PREFIX_CAP_RATE && joins(tokens[p], tokens[p + 1])) {
-          const head = trimmed[0];
-          offer(s, text, tokens[p].start, head[head.length - 1].end, true, "run");
-        }
+        runs.push(tokens.slice(i, last + 1));
         i = last;
       }
+      return runs;
+    });
+    const runOf = new Map<Token, Token[]>();
+    for (const run of runsBySentence.flat()) for (const t of run) runOf.set(t, run);
+    for (const { tokens } of knownIn(sentencesOf, known, hints, true)) {
+      const run = runOf.get(tokens[0]);
+      const inside = run && run.length > tokens.length && run.includes(tokens[tokens.length - 1]) &&
+        run.filter((t) => t.cap).length > tokens.filter((t) => t.cap).length;
+      if (!inside) offer(s, text, tokens[0].start, tokens[tokens.length - 1].end, true, "known");
     }
+    sentencesOf.forEach((tokens, n) => {
+      for (const full of runsBySentence[n]) {
+        // A name runs on into numbers ("Li 6"); it is offered with and without them.
+        let words = full.length;
+        while (words > 1 && full[words - 1].number) words--;
+        const variants = words < full.length ? [full, full.slice(0, words)] : [full];
+        for (const run of variants) offerRun(s, text, tokens, run, joins);
+      }
+    });
   });
 
   const taken = new Set<Found>();

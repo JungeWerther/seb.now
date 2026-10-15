@@ -53,3 +53,18 @@ Deno.test("fold and textWords match the SQL folding", () => {
   assertEquals(fold("Dès L’Œuvre"), "des l'oeuvre");
   assertEquals(textWords(["le musée d'Orsay ouvre"]).nameStarts.sort(), ["musee", "orsay"]);
 });
+
+Deno.test("a known name inside a longer run isn't offered alone", () => {
+  const found = surfaces("Il dîne avec Mylo Levin et chez Levin seul.", { known: ["Levin"] });
+  assert(found.includes("Mylo Levin"));
+  assertEquals(found.filter((f) => f === "Levin").length, 1, "only where it stands alone");
+});
+
+Deno.test("numbers, initials, camel case and a capital elided article stay in names", () => {
+  const found = surfaces("Il a présenté la Li 6 sous Windows 11 avec C. Thi Nguyen, testé xAI et dîné chez L'Assaggio.");
+  for (const name of ["Li 6", "Windows 11", "Windows", "C. Thi Nguyen", "xAI", "L'Assaggio"]) assert(found.includes(name), name);
+});
+
+Deno.test("short month names are not names", () => {
+  assertEquals(surfaces("Il part le 3 Oct pour revenir en Nov."), []);
+});
