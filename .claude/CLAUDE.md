@@ -378,7 +378,14 @@ latest matches stay up until the next arrive. Suggestion chips are links
 `textContent` stays the name), so tapping one opens that topic's or entity's
 page through the chip-link click handler rather than changing the search. If
 `query-parse` fails or there are no credits, the page's own reading stays, with
-the words it couldn't place searched for too. Order names live in `SORTS` (the function) and
+the words it couldn't place searched for too. The matched words are also tagged in
+place in the box (`renderSearchMarks`, run by `showQueryChips`): `#search-marks` is a
+copy of the typed text laid out identically behind the transparent input, with the
+text invisible and good matches wrapped in `<mark data-kind>` (a small kind label
+above the word, drawn by CSS) — the reading's sort words and topic filled, an entity
+or topic suggestion whose whole name is typed dashed; neighbouring words of one name
+share one tag. It's scrolled with the input (`syncSearchMarks`) and never takes
+pointer events. Order names live in `SORTS` (the function) and
 `SORT_LABELS` (the page) and must match `feed_query`'s check.
 
 **Query credits.** Every account (anonymous ones included) starts with
