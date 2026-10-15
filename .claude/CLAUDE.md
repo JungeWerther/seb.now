@@ -633,8 +633,7 @@ pending session promise and send once it resolves.
 `activitypub`: Streamable HTTP, stateless (each POST is one JSON-RPC message
 answered with plain JSON; GET/DELETE are 405, no SSE, no sessions). Read-only
 tools: `get_feed` (`ranked_feed` as a logged-out visitor, so taste is a neutral
-0.5), `search_links` (the page's matcher, `link_search_hits`, best match first, with
-`score` and `matched_entities`), `list_topics`,
+0.5), `search_links` (same `search_text` ilike as the page), `list_topics`,
 `get_links_by_topic` (a topic id and all its children), `get_link` (with vote
 counts and replies). It queries with the **anon key**, never `service_role`, so
 RLS limits it to exactly what a logged-out visitor sees. It's deployed with
