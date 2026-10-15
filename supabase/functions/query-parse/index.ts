@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
 
 // Reads what the search box is asking for, as the reader types: the page
@@ -11,9 +11,11 @@ import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
 // id, so nothing the page sends becomes an option's text.
 //
 // Each Jev read takes one of the caller's query credits (spend_query_credit,
-// as the caller, so it needs a signed-in session, anonymous ones included); an
-// answer served from this isolate's cache is free. Every reply carries
-// `credits_left`, and 429 means none are left.
+// as the caller, so it needs a signed-in session, anonymous ones included),
+// given back if Jev fails. Answers are kept in `query_readings`, shared by
+// every reader, so a query anyone has had read is free after that (this
+// isolate keeps a copy in memory too). Every reply carries `credits_left`,
+// and 429 means none are left.
 //
 // POST {"text": "latest on ai agents", "topic_ids": ["ai.agents", ...]}
 // → {"sort": "latest", "topic": {"id": "ai.agents", "name": "AI agents"}, "search": "", ...}
@@ -58,20 +60,56 @@ interface Topic {
   description: string;
 }
 
+type Reading = Awaited<ReturnType<typeof parse>>;
+
 let jev: JevClient | null = null;
-const cache = new Map<string, Awaited<ReturnType<typeof parse>>>();
+let adminClient: SupabaseClient | null = null;
+const cache = new Map<string, Reading>();
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
+function admin(): SupabaseClient {
+  adminClient ??= createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  return adminClient;
+}
+
 async function client(): Promise<JevClient> {
   if (jev) return jev;
-  const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const { data: apiKey, error } = await admin.rpc("get_vault_secret", { secret_name: TYPESAFE_KEY_SECRET });
+  const { data: apiKey, error } = await admin().rpc("get_vault_secret", { secret_name: TYPESAFE_KEY_SECRET });
   if (error || !apiKey) throw new Error(`no ${TYPESAFE_KEY_SECRET} in Vault`);
   jev = new JevClient(apiKey, MODEL);
   return jev;
+}
+
+function remember(key: string, reading: Reading) {
+  if (cache.size >= CACHE_SIZE) cache.delete(cache.keys().next().value!);
+  cache.set(key, reading);
+}
+
+async function storedReading(key: string): Promise<Reading | null> {
+  const { data, error } = await admin().from("query_readings").select("reading").eq("key", key).maybeSingle();
+  if (error) console.error("query_readings read failed", error);
+  return (data?.reading as Reading | undefined) ?? null;
+}
+
+// The caller's user id, from the bearer token the gateway has already verified.
+function callerId(req: Request): string | null {
+  try {
+    const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer /, "");
+    const payload = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(payload)).sub ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function refundCredit(req: Request) {
+  const id = callerId(req);
+  if (!id) return;
+  const { data } = await admin().from("query_credits").select("used").eq("user_id", id).maybeSingle();
+  if (data?.used) await admin().from("query_credits").update({ used: data.used - 1 }).eq("user_id", id);
 }
 
 function asCaller(req: Request) {
@@ -170,7 +208,11 @@ Deno.serve(async (req: Request) => {
   }
   const caller = asCaller(req);
   const key = JSON.stringify([text.toLowerCase(), ids]);
-  const cached = cache.get(key);
+  let cached = cache.get(key) ?? null;
+  if (!cached) {
+    cached = await storedReading(key);
+    if (cached) remember(key, cached);
+  }
   if (cached) {
     const { data: left, error } = await caller.rpc("query_credits_left");
     if (error) return json({ error: "sign in to search" }, 401);
@@ -181,11 +223,13 @@ Deno.serve(async (req: Request) => {
   if (left === null) return json({ error: "no query credits left", credits_left: 0 }, 429);
   try {
     const parsed = await parse(text, await loadTopics(ids as string[]));
-    if (cache.size >= CACHE_SIZE) cache.delete(cache.keys().next().value!);
-    cache.set(key, parsed);
+    remember(key, parsed);
+    const { error } = await admin().from("query_readings").upsert({ key, reading: parsed }, { ignoreDuplicates: true });
+    if (error) console.error("query_readings write failed", error);
     return json({ ...parsed, credits_left: left });
   } catch (e) {
     console.error("query-parse failed", e);
-    return json({ error: "could not read the query" }, 502);
+    await refundCredit(req);
+    return json({ error: "could not read the query", credits_left: left + 1 }, 502);
   }
 });

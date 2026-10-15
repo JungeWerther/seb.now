@@ -3110,6 +3110,14 @@
     // Words that never name a topic on their own.
     const QUERY_STOPWORDS = new Set(["a", "an", "and", "the", "of", "on", "in", "for", "to", "about", "with", "me", "show", "news", "other", "general"]);
     const SORT_LABELS = { latest: "Latest", top: "Top", discussed: "Most discussed" };
+    // Words the page reads as a sort order on its own, without asking Jev.
+    const QUERY_SORT_WORDS = {
+      latest: "latest", newest: "latest", recent: "latest", fresh: "latest", today: "latest",
+      top: "top", best: "top", popular: "top", upvoted: "top",
+      discussed: "discussed", debated: "discussed", controversial: "discussed", commented: "discussed",
+    };
+    // Words that ask for nothing by themselves ("show me the most …").
+    const QUERY_FILLER_WORDS = new Set([...QUERY_STOPWORDS, "most", "articles", "posts", "stories", "links", "what", "whats", "is", "are", "happening", "now", "please", "s"]);
 
     function savedSearchQuery() {
       try {
@@ -3172,6 +3180,57 @@
           || a.topic.words.length - b.topic.words.length || a.topic.id.localeCompare(b.topic.id))
         .slice(0, QUERY_TOPIC_CANDIDATES)
         .map((s) => s.topic);
+    }
+
+    // Whether `word` is, or (while still being typed) begins, any topic-name word.
+    function isTopicWord(word, partial) {
+      return topicIndex.some((t) => t.words.some((n) => wordMatches(word, n, partial)));
+    }
+
+    // The page's own reading of `text`: order words, filler, the most specific
+    // topic whose whole name is typed, and the words no
+    // topic knows as search words. `sure` when every finished word is placed
+    // that way; otherwise some word could be part of a topic, which only Jev
+    // can settle, and `intent` leaves it out while `fallback` searches for it
+    // too. A word still being typed that could become a topic word is left
+    // out until it's finished.
+    function localRead(text, { partial = false } = {}) {
+      const words = text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+        .split(/[^a-z0-9]+/).filter(Boolean);
+      const lastAt = partial ? words.length - 1 : -1;
+      let sort = null;
+      let sure = true;
+      const rest = [];
+      words.forEach((word, i) => {
+        const wordSort = i === lastAt ? null : QUERY_SORT_WORDS[word];
+        if (wordSort) {
+          if (sort && sort !== wordSort) sure = false;
+          sort ??= wordSort;
+        } else if (!QUERY_FILLER_WORDS.has(word)) {
+          rest.push({ word, partial: i === lastAt });
+        }
+      });
+      const finished = rest.filter((r) => !r.partial).map((r) => r.word);
+      const named = topicIndex.filter((t) => t.words.every((n) => finished.some((w) => wordMatches(w, n, false))));
+      const most = Math.max(0, ...named.map((t) => t.words.length));
+      const best = named.filter((t) => t.words.length === most);
+      const topic = best.length === 1 ? best[0] : null;
+      if (best.length > 1) sure = false;
+      const search = [];
+      const unsure = [];
+      for (const { word, partial: typing } of rest) {
+        if (topic?.words.some((n) => wordMatches(word, n, typing))) continue;
+        if (typing && word.length < QUERY_PREFIX_MIN_LENGTH) continue;
+        if (!isTopicWord(word, typing)) search.push(word);
+        else if (!typing) unsure.push(word);
+      }
+      if (unsure.length) sure = false;
+      const reading = (words) => ({
+        sort: sort ?? "for_you",
+        topic: topic && { id: topic.id, name: topic.name },
+        search: words.join(" "),
+      });
+      return { sure, intent: reading(search), fallback: reading([...search, ...unsure]) };
     }
 
     // Entities whose names the typed words cover (match_entities), as the
@@ -3313,9 +3372,29 @@
       queryChips.hidden = chips.length === 0;
     }
 
-    // Reads the typed text with Jev and shows the feed it asks for; if it
-    // can't be read, falls back to a plain newest-first title search.
-    async function runQuery(text, { force = false } = {}) {
+    // Shows the feed for `intent` unless it's the one already showing. The
+    // first reading of a query clears the list; a correction swaps it only
+    // once the new page has arrived.
+    function applyIntent(text, intent, { force = false, replace = false } = {}) {
+      if (!force && sameIntent(feed.intent, intent)) {
+        feed.query = text;
+        return;
+      }
+      if (replace) {
+        resetFeed(text, intent);
+        loadMore({ replace: true });
+      } else {
+        showFeed(text, intent);
+      }
+    }
+
+    // Reads the typed text and shows the feed it asks for. The page reads it
+    // first and shows that at once; only when some word could be part of a
+    // topic does Jev read it too, and its answer replaces the page's. If Jev
+    // can't be asked (no credits) or fails, the page's reading stays, with the
+    // unsettled words searched for as well. `partial`: the last word is still
+    // being typed.
+    async function runQuery(text, { force = false, partial = false } = {}) {
       if (!force && text === lastQueryText) return;
       lastQueryText = text;
       const generation = ++queryGeneration;
@@ -3327,23 +3406,20 @@
       }
       await loadTopicIndex();
       if (generation !== queryGeneration) return;
+      const local = localRead(text, { partial });
+      const asked = !local.sure && queryCreditsLeft !== 0;
+      const first = asked ? local.intent : local.fallback;
+      showQueryChips(text, first);
+      queryChips.classList.toggle("pending", asked);
+      applyIntent(text, first, { force });
+      if (!asked) return;
       const candidates = matchTopics(text);
-      showQueryChips(text, feed.intent);
-      queryChips.classList.add("pending");
       const intent = await readQuery(text.slice(0, QUERY_MAX_LENGTH), candidates.map((t) => t.id));
       if (generation !== queryGeneration) return;
       queryChips.classList.remove("pending");
-      if (!intent) {
-        showQueryChips(text, null);
-        if (feed.intent || feed.query !== text) showFeed(text);
-        return;
-      }
-      showQueryChips(text, intent);
-      if (!force && sameIntent(feed.intent, intent)) {
-        feed.query = text;
-        return;
-      }
-      showFeed(text, intent);
+      const final = intent ?? local.fallback;
+      showQueryChips(text, final);
+      applyIntent(text, final, { replace: true });
     }
 
     function setupSearch() {
@@ -3352,15 +3428,16 @@
       let timer = null;
       let entityTimer = null;
 
-      function search() {
+      function search({ finished = false } = {}) {
         clearTimeout(timer);
         const query = input.value.trim();
+        const partial = !finished && !/\s$/.test(input.value);
         if (isFocused()) {
           history.replaceState(null, "", "/");
           leaveFocus({ restore: false });
-          runQuery(query, { force: true });
+          runQuery(query, { force: true, partial });
         } else {
-          runQuery(query);
+          runQuery(query, { partial });
         }
       }
 
@@ -3384,7 +3461,7 @@
         timer = setTimeout(search, /\s$/.test(input.value) ? 0 : QUERY_PARSE_PAUSE_MS);
       });
       input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") search();
+        if (e.key === "Enter") search({ finished: true });
       });
 
       clearBtn.addEventListener("click", () => {

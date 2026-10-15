@@ -338,32 +338,47 @@ topic list (loaded once on first focus, `matchTopics`: a finished word matches
 a topic-name word exactly or as its singular/plural, the word still being typed
 also by prefix, stopwords skipped) and shows the best matches as dashed chips
 in `#query-chips` above the search bar. When a word is finished (a space), on
-Enter, or after `QUERY_PARSE_PAUSE_MS` mid-word, it POSTs the text and up to 8
-matched topic ids to the **`query-parse`** Edge Function (`verify_jwt` on,
+Enter, or after `QUERY_PARSE_PAUSE_MS` mid-word, the page first reads the query
+itself (`localRead`): order words (`QUERY_SORT_WORDS`), filler
+(`QUERY_FILLER_WORDS`), the most specific topic whose whole name is typed, and
+words no topic name contains as search words. That reading is applied at once.
+If every finished word is placed that way it's final and Jev isn't asked (most
+queries: "latest on ai agents", "top openai news", "football"); a word still
+being typed that could become a topic word just waits. Only when a finished
+word could be part of some topic ("climate change") does the page also POST
+the text and up to 8 matched topic ids to the **`query-parse`** Edge Function (`verify_jwt` on,
 anon/session bearer via `functions.invoke`). Code proposes, Jev only chooses:
 one Jev request asks for the sort (`for_you`/`latest`/`top`/`discussed`), which
 candidate topic is meant (or none), and each word's role (sort, topic, search,
 filler); the search words are what's left. Topics are looked up by id, so the
 page's input never becomes an option's text; text is capped at 120 chars and
-12 words, and answers are cached per isolate (and per page). ~1,000–1,400
+12 words. Answers are stored in `public.query_readings` (key: lowercased text +
+candidate ids; service_role only), shared by every reader, so a query anyone
+has had read is free for everyone after (plus a per-isolate and per-page copy). ~1,000–1,400
 input tokens and ~1.2s per read. Jev's reading replaces the chips (filled: the
 sort, `topic …`, `search "…"`), and the feed becomes
 `public.feed_query(sort, topic, search, as_of, page_offset, page_size)`
 (security invoker; `for_you` is `ranked_feed`'s rank, `latest` newest, `top`
 net votes, `discussed` reply count; `topic` filters to it and its children;
-every search word must be in `search_text`), unless the reading is the same as
-the feed already showing. Entities are suggested alongside topics: after
+every search word must be in `search_text`, ignoring case and accents: both
+sides go through `public.fold_text`, `lower(unaccent(…))`, so "cinema" finds
+"Cinéma"; `search_text` itself is only lowercased, so its trigram index doesn't
+serve this), unless the reading is the same as
+the feed already showing; a correction swaps the list only once its first page
+has arrived. Entities are suggested alongside topics: after
 `QUERY_ENTITY_PAUSE_MS` without typing, the page sends its `queryWords` (the
 last one as `partial` while still being typed) to
 `public.match_entities(words, partial, max_results)` (security invoker; a name
 word matches a typed word exactly, as its singular/plural, or by prefix for the
 partial one, accents ignored via `unaccent`; at least half the name's words must
-match; ranked by that share, then post count), and the latest matches stay up
-until the next arrive. Suggestion chips are links (`/t/<path>`, `/e/<id>`, the
-kind drawn by CSS from `data-kind` so `textContent` stays the name), so tapping
-one opens that topic's or entity's page through the chip-link click handler
-rather than changing the search. If `query-parse` fails, the box falls back to the
-plain newest-first title search. Order names live in `SORTS` (the function) and
+match, not counting little words like "of"/"the"/"de", so "juggalos" suggests
+"Gathering of the Juggalos"; ranked by that share, then post count), and the
+latest matches stay up until the next arrive. Suggestion chips are links
+(`/t/<path>`, `/e/<id>`, the kind drawn by CSS from `data-kind` so
+`textContent` stays the name), so tapping one opens that topic's or entity's
+page through the chip-link click handler rather than changing the search. If
+`query-parse` fails or there are no credits, the page's own reading stays, with
+the words it couldn't place searched for too. Order names live in `SORTS` (the function) and
 `SORT_LABELS` (the page) and must match `feed_query`'s check.
 
 **Query credits.** Every account (anonymous ones included) starts with
@@ -371,14 +386,14 @@ plain newest-first title search. Order names live in `SORTS` (the function) and
 (user_id, used)` counts them (readers see only their own row; no client
 writes). `query-parse` calls `spend_query_credit()` as the caller (security
 definer, takes one only while `used` is under the limit, returns what's left or
-null) before each Jev request; an answer from its isolate cache costs nothing
-and reports `query_credits_left()`. No session → 401, none left → 429. Every
+null) before each Jev request, and gives the credit back if Jev fails; a stored
+answer costs nothing and reports `query_credits_left()`. No session → 401, none left → 429. Every
 reply carries `credits_left`, which the page shows as "N credits" in
 `#query-balance`, the first (non-tappable) bubble of the header menu, so it
 appears when the user icon is tapped (refreshed with `query_credits_left` on
 start and each time the menu opens; `setupMenu` only wires `.bubble[data-overlay]`
-to overlays); at 0 it greys out and the page stops calling `query-parse`, so the box
-is a plain title search. A new anonymous session starts at 1,000 again, so this
+to overlays); at 0 it greys out and the page stops calling `query-parse`, so
+only its own reading is used. A new anonymous session starts at 1,000 again, so this
 caps one session's spend, not a determined caller's.
 
 Client-fetched articles are built by
