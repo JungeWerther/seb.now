@@ -365,9 +365,20 @@ sides go through `public.fold_text`, `lower(unaccent(…))`, so "cinema" finds
 "Cinéma"; `search_text` itself is only lowercased, so its trigram index doesn't
 serve this), unless the reading is the same as
 the feed already showing; a correction swaps the list only once its first page
-has arrived. Tapping a suggested topic pins it as the topic while the text still
-matches it. If `query-parse` fails or there are no credits, the page's own
-reading stays, with the words it couldn't place searched for too. Order names live in `SORTS` (the function) and
+has arrived. Entities are suggested alongside topics: after
+`QUERY_ENTITY_PAUSE_MS` without typing, the page sends its `queryWords` (the
+last one as `partial` while still being typed) to
+`public.match_entities(words, partial, max_results)` (security invoker; a name
+word matches a typed word exactly, as its singular/plural, or by prefix for the
+partial one, accents ignored via `unaccent`; at least half the name's words must
+match, not counting little words like "of"/"the"/"de", so "juggalos" suggests
+"Gathering of the Juggalos"; ranked by that share, then post count), and the
+latest matches stay up until the next arrive. Suggestion chips are links
+(`/t/<path>`, `/e/<id>`, the kind drawn by CSS from `data-kind` so
+`textContent` stays the name), so tapping one opens that topic's or entity's
+page through the chip-link click handler rather than changing the search. If
+`query-parse` fails or there are no credits, the page's own reading stays, with
+the words it couldn't place searched for too. Order names live in `SORTS` (the function) and
 `SORT_LABELS` (the page) and must match `feed_query`'s check.
 
 **Query credits.** Every account (anonymous ones included) starts with
@@ -460,6 +471,22 @@ round reply button (below the post box, right-aligned, outside `.post-swipe` so 
 bar for a reply composer in the same dock; replies are loaded
 client-side and listed under the post. No moderation or rate limiting
 yet — anyone with an anonymous session can post.
+
+**Visits and how readers come back.** `public.link_visits` is one row per
+click on a row's title or cover (private to the visitor by RLS; the page also
+greys visited links from it). The click is sent as a `keepalive` POST with a
+client-made id, so it survives a click that unloads the page. Article links open
+in a new tab, which keeps the page: when it becomes visible again the row gets
+`away_ms` (from when the page was hidden) and `return_kind = 'tab'`. A click that
+does leave the page waits in `sessionStorage`, and its return is `pageshow` from
+the back/forward cache or the next load in that tab (`back`/`reload`/`other` by
+navigation type); a page hidden without unloading is `app`. Over
+`VISIT_AWAY_MAX_MS` (one day, matching the `away_ms` check) no return is
+recorded, so a visit without `away_ms` never came back. The first thing done
+after returning is `next_action` (`visit`, `open`, `upvote`, `downvote`, `reply`,
+or `left` when the page is hidden first) with `next_link_id`. These are raw
+facts: the thresholds that make a visit a bounce or a read aren't in the page,
+they're meant to be fitted against votes.
 
 **A link's own page.** Every link has a page at `seb.now/p/<id>` (the same
 address a federated post links to, served by the catch-all document). Tapping a
