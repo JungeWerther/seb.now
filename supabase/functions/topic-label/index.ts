@@ -125,7 +125,7 @@ async function labelLink(jev: JevClient, link: Link, children: Map<string, Topic
     const questions = Object.fromEntries(
       asked.map((p, i) => [`q${i}`, childQuestion(p.node, children.get(p.node)!, names)]),
     );
-    const result = asked.length ? await jev.ask(state, questions) : null;
+    const result = asked.length ? await jev.ask(state, questions, link.id) : null;
     if (result) {
       inputTokens += result.usage.input_tokens;
       requests++;
@@ -184,7 +184,7 @@ Deno.serve(async (req: Request) => {
   if (keyError || !apiKey) {
     return new Response(JSON.stringify({ error: `no ${TYPESAFE_KEY_SECRET} in Vault` }), { status: 500 });
   }
-  const jev = new JevClient(apiKey, MODEL);
+  const jev = new JevClient(apiKey, MODEL, { db, fn: "topic-label", dryRun });
   const children = await loadTopics(db);
   const names = new Map([...children.values()].flat().map((t) => [t.id, t.name]));
 
