@@ -324,11 +324,22 @@ only stops the scroll and never produces a click — and scrolls to the top and 
 feed with a fresh `as_of` (the current search, if any, from its newest result),
 keeping the old list until the new first page arrives.
 
-Search is server-side and newest-first: a debounced `ilike` on
-`links.search_text`, a stored generated column (lowercased title + host
-without `www.`) with a `pg_trgm` GIN index, keyset-paged on
-`(created_at desc, id desc)` — `id` breaks ties because one ingest upsert
-stamps all its rows with the same `now()`.
+Search is server-side and goes through `feed_query` (below), which matches with
+`public.link_search_hits(search)` (security invoker; returns every matching link
+with a relevance `score` and the `matched_entities` that pulled it in or boosted
+it). A link matches when it matches the full-text query on `links.fts` — a stored
+generated `tsvector` with a GIN index over title (weight A), host (B) and
+description (C), English and French stemmed lexemes plus unstemmed `simple` ones,
+all through `fold_text`, queried with `websearch_to_tsquery` (so "quoted phrases",
+`-exclude` and `or` work) — or is tagged with an entity whose folded name is the
+whole query (so "tsmc" finds links that never say "TSMC"), or holds every typed
+word in `fold_text(search_text)` (the old rule, kept as the partial-word
+fallback). An entity named by just one of several words ("openai" in "openai
+agents") only boosts links that already match. The score is `ts_rank_cd` +
+`0.3 * p` per tagged entity (halved when not in the title) + 0.02 for the
+substring fallback, times a mild recency boost (`0.75 + 0.25 * 0.5 ^
+(age_days / 60)`). `public.search_links(q, max_results, page_offset)` (the MCP's)
+is the same hits, best first.
 
 **The search box is also a query: `query-parse` + `feed_query`.** What's typed
 is read for a sort order, a topic and search words, e.g. "latest on ai agents"
@@ -360,10 +371,10 @@ sort, `topic …`, `search "…"`), and the feed becomes
 `public.feed_query(sort, topic, search, as_of, page_offset, page_size)`
 (security invoker; `for_you` is `ranked_feed`'s rank, `latest` newest, `top`
 net votes, `discussed` reply count; `topic` filters to it and its children;
-every search word must be in `search_text`, ignoring case and accents: both
-sides go through `public.fold_text`, `lower(unaccent(…))`, so "cinema" finds
-"Cinéma"; `search_text` itself is only lowercased, so its trigram index doesn't
-serve this), unless the reading is the same as
+with search words only `link_search_hits(search)`'s links match — see above;
+`public.fold_text` is `lower(unaccent(…))`, so "cinema" finds "Cinéma" — and
+`for_you` then orders them by relevance `score` instead of `ranked_feed`'s
+rank), unless the reading is the same as
 the feed already showing; a correction swaps the list only once its first page
 has arrived. Entities are suggested alongside topics: after
 `QUERY_ENTITY_PAUSE_MS` without typing, the page sends its `queryWords` (the
@@ -622,7 +633,8 @@ pending session promise and send once it resolves.
 `activitypub`: Streamable HTTP, stateless (each POST is one JSON-RPC message
 answered with plain JSON; GET/DELETE are 405, no SSE, no sessions). Read-only
 tools: `get_feed` (`ranked_feed` as a logged-out visitor, so taste is a neutral
-0.5), `search_links` (same `search_text` ilike as the page), `list_topics`,
+0.5), `search_links` (the page's matcher, `link_search_hits`, best match first, with
+`score` and `matched_entities`), `list_topics`,
 `get_links_by_topic` (a topic id and all its children), `get_link` (with vote
 counts and replies). It queries with the **anon key**, never `service_role`, so
 RLS limits it to exactly what a logged-out visitor sees. It's deployed with
