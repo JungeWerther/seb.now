@@ -3670,8 +3670,10 @@
     // the reading's sort words and topic (filled), then, dashed, an entity or a
     // topic suggestion whose whole name is typed, then a kind of entity. Each is
     // labelled with the level above it in the kind tree: "company" reads org,
-    // "uber" company. A word is tagged once, first match wins. Spans are text nodes, never
-    // innerHTML. `topicMatches`: matchTopics of the text, already computed.
+    // "uber" company. A word is tagged once, first match wins, and whole-word
+    // matches all go before the word still being typed is matched as a prefix,
+    // so "event" is the kind, not the product "Éventail". Spans are text nodes,
+    // never innerHTML. `topicMatches`: matchTopics of the text, already computed.
     function renderSearchMarks(intent, topicMatches = []) {
       const input = document.getElementById("search-input");
       const value = input.value;
@@ -3687,12 +3689,14 @@
         t.open = !QUERY_STOPWORDS.has(t.word);
       });
 
-      // Tags the open tokens covering every word of `name`, if all are typed.
-      function tagName(name, tag) {
+      // Tags the open tokens covering every word of `name`, if all are typed;
+      // with `prefix`, the word still being typed may cover a longer one.
+      function tagName(name, tag, prefix) {
         const nameWords = queryWords(name);
         if (!nameWords.length) return false;
-        const hits = tokens.filter((t) => t.open && nameWords.some((n) => wordMatches(t.word, n, t.partial)));
-        if (!nameWords.every((n) => hits.some((t) => wordMatches(t.word, n, t.partial)))) return false;
+        const matches = (t, n) => wordMatches(t.word, n, prefix && t.partial);
+        const hits = tokens.filter((t) => t.open && nameWords.some((n) => matches(t, n)));
+        if (!nameWords.every((n) => hits.some((t) => matches(t, n)))) return false;
         for (const t of hits) {
           t.tag = tag;
           t.open = false;
@@ -3709,17 +3713,19 @@
             }
           }
         }
-        if (intent?.topic) tagName(intent.topic.name, { kind: "topic", topic: intent.topic });
-        for (const entity of entitySuggestions) {
-          const kind = entity.kind_path ? kindName(entity.kind_path) : entity.kind.replace("_", " ");
-          tagName(entity.name, { kind, suggested: true, entity });
-        }
-        for (const topic of topicMatches) {
-          tagName(topic.name, { kind: "topic", suggested: true, topic });
-        }
-        for (const kind of kindIndex) {
-          const tag = { kind: parentKindName(kind.path), suggested: true, kindPath: kind.path, kindLabel: kind.label };
-          kind.names.some((name) => tagName(name, tag));
+        for (const prefix of [false, true]) {
+          if (intent?.topic) tagName(intent.topic.name, { kind: "topic", topic: intent.topic }, prefix);
+          for (const entity of entitySuggestions) {
+            const kind = entity.kind_path ? kindName(entity.kind_path) : entity.kind.replace("_", " ");
+            tagName(entity.name, { kind, suggested: true, entity }, prefix);
+          }
+          for (const topic of topicMatches) {
+            tagName(topic.name, { kind: "topic", suggested: true, topic }, prefix);
+          }
+          for (const kind of kindIndex) {
+            const tag = { kind: parentKindName(kind.path), suggested: true, kindPath: kind.path, kindLabel: kind.label };
+            kind.names.some((name) => tagName(name, tag, prefix));
+          }
         }
       }
 

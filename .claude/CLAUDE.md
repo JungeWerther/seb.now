@@ -402,7 +402,9 @@ text invisible and good matches wrapped in `<mark data-kind>` (a small kind labe
 above the word, drawn by CSS) — the reading's sort words and topic filled, an entity
 or topic suggestion whose whole name is typed dashed, then (last, so they never take a
 word from a longer name) the names of entity kinds; neighbouring words of one name
-share one tag. Kinds and entities are labelled with the level above them in the kind
+share one tag. Whole-word matches (exact or singular/plural) are all placed before the
+word still being typed may match as a prefix, so a typed "event" is the kind, not the
+product "Éventail" that `match_entities` suggests for it by prefix. Kinds and entities are labelled with the level above them in the kind
 tree (`public.kinds`, an `ltree` under `entity`, loaded once with the topics), not
 the full ancestry: "company" reads `org`, an entity "Uber" `company` (its
 `entities.kind_path`, fetched by id with the `match_entities` results). A label runs
