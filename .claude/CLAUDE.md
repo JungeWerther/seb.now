@@ -257,11 +257,17 @@ kept current by a trigger on `link_content` and read through
 ("Dès", "Pour", "After", "The") is dropped from a run's front, a word
 capitalised wherever it stands ("Apple", "Paris") counts even opening a
 sentence; month and weekday names come from `Intl.DateTimeFormat` for the page's
-language. `_shared/hints.ts` loads both for a text. At most 60 phrases a page.
-`POST {"eval": true}` scores the page pass's candidates (and with `"decide":
-true` its mentions) against `public.entity_gold`, a hand-labelled set of the
-names each sampled page's article contains (service_role only), with timings
-per step and no writes. Its mentions have
+language. Numbers carry a name on ("Li 6", offered with and without),
+initials join one ("C. Thi Nguyen"), camel-case words count as capitalised
+("xAI"), and a known name inside a longer run ("Levin" in "Mylo Levin") isn't
+offered alone. `_shared/hints.ts` loads both for a text. At most 80 phrases a
+page. `POST {"eval": true}` scores the page pass's candidates (and with
+`"decide": true` its mentions) against `public.entity_gold`, a hand-labelled set
+of the names each sampled page's article contains (556 names on 41 pages,
+service_role only), with timings per step and no writes. Against the regex
+reader it replaced: mentions found 68% of labelled names exactly (was 60%), and
+79% of mentions are labelled names or part of one (was 57%), from 20% fewer
+phrases asked. Its mentions have
 `link_entities.found_in = 'page'` (title ones `'title'`), and `related_links`
 only counts title mentions. Jev's mentions land in
 `link_entities` with `surface` (the text as written, which doubles as an
