@@ -399,7 +399,7 @@ candidate ids; service_role only), shared by every reader, so a query anyone
 has had read is free for everyone after (plus a per-isolate and per-page copy). ~1,000–1,400
 input tokens and ~1.2s per read. Jev's reading replaces the chips (filled: the
 sort, `topic …`, `search "…"`), and the feed becomes
-`public.feed_query(sort, topic, search, as_of, page_offset, page_size, entities)`
+`public.feed_query(sort, topic, search, as_of, page_offset, page_size, entities, required)`
 (security invoker; `for_you` is `ranked_feed`'s rank, `latest` newest, `top`
 net votes, `discussed` reply count; `topic` filters to it and its children;
 every search word must be in `search_text`, ignoring case and accents: both
@@ -415,12 +415,18 @@ word matches a typed word exactly, as its singular/plural, or by prefix for the
 partial one, accents ignored via `unaccent`; at least half the name's words must
 match, not counting little words like "of"/"the"/"de", so "juggalos" suggests
 "Gathering of the Juggalos"; ranked by that share, then post count), and the
-latest matches stay up until the next arrive. They also reorder the results:
-`runQuery` waits for them (the same cached `match_entities` call) and passes
-their ids as `feed_query`'s `entities`, which puts every matching link that
-mentions one of them (`link_entities`) before the rest, each group in the
-sort's own order, with those entities' chips tinted `.shared` — a reorder
-only, never extra links. Suggestion chips are links
+latest matches stay up until the next arrive. `runQuery` waits for them (the
+same cached `match_entities` call) and `withEntities` splits them. An entity
+whose whole name is typed (tagged in the box by `tagTokens`, longest names
+first, whole words only) is **required**: it goes to `feed_query`'s `required`
+(jsonb, one `{ids, words}` group per name, every same-named sense in `ids`),
+its words leave the title search, and it shows as a filled `about …` chip.
+Several required names are an AND: a link must satisfy every group, by
+mentioning one of its ids (`link_entities`) or, for links not yet read by
+`entity-extract`, by having all the name's words in `search_text`. The other
+suggestions go to `entities`, which only reorders: matching links that mention
+one of them come first, each group in the sort's own order. All of them have
+their chips tinted `.shared`. Suggestion chips are links
 (`/t/<path>`, `/e/<id>`, the kind drawn by CSS from `data-kind` so
 `textContent` stays the name), so tapping one opens that topic's or entity's
 page through the chip-link click handler rather than changing the search. If
