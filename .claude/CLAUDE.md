@@ -400,9 +400,19 @@ place in the box (`renderSearchMarks`, run by `showQueryChips`): `#search-marks`
 copy of the typed text laid out identically behind the transparent input, with the
 text invisible and good matches wrapped in `<mark data-kind>` (a small kind label
 above the word, drawn by CSS) — the reading's sort words and topic filled, an entity
-or topic suggestion whose whole name is typed dashed; neighbouring words of one name
-share one tag. It's scrolled with the input (`syncSearchMarks`) and never takes
-pointer events. Order names live in `SORTS` (the function) and
+or topic suggestion whose whole name is typed dashed, then (last, so they never take a
+word from a longer name) the names of entity kinds; neighbouring words of one name
+share one tag. Kinds and entities are labelled with the level above them in the kind
+tree (`public.kinds`, an `ltree` under `entity`, loaded once with the topics), not
+the full ancestry: "company" reads `org`, an entity "Uber" `company` (its
+`entities.kind_path`, fetched by id with the `match_entities` results). A label runs
+past its word up to the next tag (`--label-room`), clipped with an ellipsis. It's scrolled with the input (`syncSearchMarks`) and never takes
+pointer events. A tagged topic or entity is also tappable: `#search-links`, the same
+copy again but above the input and see-through, holds just those words as `/t/<path>`
+or `/e/<id>` links (with `data-name`, which the chip-link click handler prefers over
+the typed text), so tapping one opens its page in place while a tap anywhere else
+reaches the input; a kind links to its page (`/k/<path>`) too, and only sort words
+stay plain tags. Order names live in `SORTS` (the function) and
 `SORT_LABELS` (the page) and must match `feed_query`'s check.
 
 **Query credits.** Every account (anonymous ones included) starts with
@@ -581,6 +591,21 @@ channels, Mastodon accounts and feeds covering it, in the shapes a
 `public.sources` row takes, checking the feed first through this site's MCP
 server when the reader has it connected (`get_links_by_topic` for a topic,
 `search_links` on the name for an entity).
+
+**A kind's own page.** Every entity kind has a page at `seb.now/k/<path>` (its
+path in `public.kinds`, `entity.agent.org.company`), on the same focused view
+(`focusKind`): the band shows `#focus-kind` (its label; "a kind of" the kind one
+level up, a link to that page; how many entities and posts; its `description`),
+then its direct subkinds as chips (`#focus-kinds`) and its `KIND_PAGE_ENTITIES`
+most-covered entities with their post counts (`public.kind_entities`); the list
+is every link mentioning an entity of the kind or any subkind, newest first, from
+`public.kind_links(kind, max_results, page_offset)` (security invoker, `kind` as
+text cast to `ltree`), which also returns the matching `entity_ids` per link so
+their chips are highlighted; counts come from `public.kind_counts(kind)`. Kind
+links are `/k/<path>` (`setKindHref`, which only accepts a path under `entity`),
+opened in place by the chip-link click handler; an entity's page links its kind.
+The `kinds` table and `entities.kind_path` themselves are
+`20261015172038_entity_kind_hierarchy.sql`.
 
 Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the
 vote tints (`.swipe-bg`) and the `.post` that slides over them, so the

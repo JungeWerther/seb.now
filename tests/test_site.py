@@ -637,8 +637,8 @@ def test_entity_page_lists_every_link_mentioning_it_and_chips_open_it() -> None:
     assert 'rpc("entity_links"' in script
     assert "`/e/${id}`" in script
     # Chips are links, but a plain click opens the page in place.
-    assert "closest(\"a[href^='/e/'], a[href^='/t/']\")" in script
-    assert "focusEntity(id, { name: chip.textContent })" in script
+    assert "closest(\"a[href^='/e/'], a[href^='/t/'], a[href^='/k/']\")" in script
+    assert "focusEntity(id, { name: chip.dataset.name ?? chip.textContent })" in script
     assert "else if (entityId) focusEntity(entityId, { push: false });" in script
     # Entity ids become hrefs only when they look like one.
     assert "function setEntityHref(anchor, id)" in script
@@ -656,11 +656,27 @@ def test_topic_page_lists_its_links_with_a_find_sources_button_and_chips_open_it
     script = _page_script(html)
     assert 'rpc("topic_links"' in script and 'rpc("topic_link_count"' in script
     assert "`/t/${id}`" in script
-    assert "focusTopic(path, { name: chip.textContent })" in script
+    assert "focusTopic(path, { name: chip.dataset.name ?? chip.textContent })" in script
     assert "link_topics(p, topics(id, name))" in script
     # The prompt and Claude's address come from constants.py, filled per topic.
     assert f'"{FIND_SOURCES_URL_TEMPLATE}"' in script
     assert "encodeURIComponent(prompt)" in script
+
+
+def test_kind_page_lists_links_its_subkinds_and_top_entities_and_kinds_link_there() -> None:
+    html = render([])
+
+    focus = html[html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))]
+    assert '<div id="focus-kind" hidden>' in focus
+    assert 'id="focus-kinds-title"' in focus and 'id="focus-kinds"' in focus
+    script = _page_script(html)
+    assert 'rpc("kind_links"' in script and 'rpc("kind_counts"' in script and 'rpc("kind_entities"' in script
+    assert "`/k/${path}`" in script
+    assert "focusKind(kindPath, { name: chip.dataset.name ?? chip.textContent })" in script
+    assert "else if (kindPathFromPath()) focusKind(kindPathFromPath(), { push: false });" in script
+    # An entity's page links its kind, and the search box links a typed kind.
+    assert "if (entity.kind_path) setKindHref(kind, entity.kind_path);" in script
+    assert "else setKindHref(link, target.id);" in script
 
 
 def test_entity_page_offers_find_sources_with_its_own_prompt() -> None:

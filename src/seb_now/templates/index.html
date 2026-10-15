@@ -138,7 +138,7 @@
       #dock-actions, #dock-actions.visible { transition: none; }
     }
     #search-bar { position: relative; width: 100%; max-width: 480px; pointer-events: auto; }
-    #search-input, #search-marks {
+    #search-input, #search-marks, #search-links {
       width: 100%;
       box-sizing: border-box;
       font: inherit;
@@ -170,6 +170,26 @@
       overflow: hidden;
       pointer-events: none;
     }
+    /* The same copy again, above the input and see-through, holding only the
+       tagged words that have a page, as links; everywhere else taps reach the
+       input. */
+    #search-links {
+      position: absolute;
+      inset: 0;
+      border-color: transparent;
+      color: transparent;
+      white-space: pre;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    #search-links a {
+      color: transparent;
+      text-decoration: none;
+      pointer-events: auto;
+      cursor: pointer;
+      /* Reaches up over the kind label too, without moving the text. */
+      padding-top: 0.9em;
+    }
     #search-marks mark {
       position: relative;
       color: transparent;
@@ -189,6 +209,12 @@
       padding-bottom: 0.15rem;
       color: var(--positive);
       white-space: nowrap;
+      /* A label runs past its word, up to the next tag. */
+      max-width: var(--label-room, none);
+      box-sizing: border-box;
+      padding-right: 0.4em;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     #search-input:focus {
       outline: none;
@@ -836,8 +862,8 @@
     .tag .tag-detail { margin-left: 0.35rem; font-size: 0.65rem; color: gray; }
     .tag a { color: inherit; text-decoration: none; }
     .tag a:hover { text-decoration: underline; }
-    #focus-entity[hidden], #focus-topic[hidden], #find-sources[hidden] { display: none; }
-    #focus-entity-name, #focus-topic-name {
+    #focus-entity[hidden], #focus-topic[hidden], #focus-kind[hidden], #find-sources[hidden] { display: none; }
+    #focus-entity-name, #focus-topic-name, #focus-kind-name {
       margin: 0.6rem 0 0.2rem;
       font-family: var(--brand-font);
       font-size: 1.9rem;
@@ -845,9 +871,11 @@
       letter-spacing: -0.02em;
       overflow-wrap: anywhere;
     }
-    #focus-entity-meta, #focus-topic-meta { margin: 0; font-size: 0.8rem; color: gray; }
-    #focus-topic-description { margin: 0.5rem 0 0; font-size: 0.85rem; color: #b8b8b8; max-width: 40rem; }
-    #focus-topic-description:empty { display: none; }
+    #focus-entity-meta, #focus-topic-meta, #focus-kind-meta { margin: 0; font-size: 0.8rem; color: gray; }
+    #focus-entity-meta a, #focus-kind-meta a { color: inherit; }
+    #focus-entity-meta a:hover, #focus-kind-meta a:hover { color: var(--fg); }
+    #focus-topic-description, #focus-kind-description { margin: 0.5rem 0 0; font-size: 0.85rem; color: #b8b8b8; max-width: 40rem; }
+    #focus-topic-description:empty, #focus-kind-description:empty { display: none; }
     /* On a topic's or an entity's page, top right opposite ← Feed and
        styled like it. */
     #find-sources {
@@ -1061,7 +1089,14 @@
       <h1 id="focus-entity-name"></h1>
       <p id="focus-entity-meta"></p>
     </div>
+    <div id="focus-kind" hidden>
+      <h1 id="focus-kind-name"></h1>
+      <p id="focus-kind-meta"></p>
+      <p id="focus-kind-description"></p>
+    </div>
     <ul class="link-list" id="focus-main"></ul>
+    <p class="link-section-title" id="focus-kinds-title" hidden>Kinds</p>
+    <ul class="tag-list" id="focus-kinds"></ul>
     <p class="link-section-title" id="focus-entities-title" hidden>Entities</p>
     <ul class="tag-list" id="focus-entities"></ul>
     <p class="link-section-title" id="focus-topics-title" hidden>Topics</p>
@@ -1083,6 +1118,7 @@
     <div id="search-bar">
       <div id="search-marks" aria-hidden="true"></div>
       <input id="search-input" type="search" placeholder="Search, or ask: latest on AI…" aria-label="Search articles, or ask for an order and topic" autocomplete="off">
+      <div id="search-links"></div>
       <button type="button" id="search-clear" aria-label="Clear search">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M18 6 6 18"/>
@@ -1760,6 +1796,8 @@
     const FEED_PAGE_SIZE = __FEED_PAGE_SIZE__;
     const ARTICLE_TOPIC_CHIPS = __ARTICLE_TOPIC_CHIPS__;
     const ARTICLE_ENTITY_CHIPS = __ARTICLE_ENTITY_CHIPS__;
+    // A kind's page lists this many of its most-covered entities.
+    const KIND_PAGE_ENTITIES = 12;
     const FAVICON_URL_TEMPLATE = __FAVICON_URL_TEMPLATE__;
     const FIND_SOURCES_URL_TEMPLATE = __FIND_SOURCES_URL_TEMPLATE__;
     const FIND_SOURCES_PROMPT = __FIND_SOURCES_PROMPT__;
@@ -1853,6 +1891,15 @@
 
     function setTopicHref(anchor, id) {
       if (new RegExp(`^${TOPIC_ID_PATTERN}$`).test(id)) anchor.href = `/t/${id}`;
+      else anchor.removeAttribute("href");
+    }
+
+    // A kind's id is its path in the kind tree (entity.agent.org), under entity.
+    const KIND_ID_PATTERN = "entity(?:\\.[a-z_]+)*";
+    const KIND_PATH_PATTERN = new RegExp(`^/k/(${KIND_ID_PATTERN})/?$`);
+
+    function setKindHref(anchor, path) {
+      if (new RegExp(`^${KIND_ID_PATTERN}$`).test(path)) anchor.href = `/k/${path}`;
       else anchor.removeAttribute("href");
     }
 
@@ -2102,7 +2149,45 @@
       };
     }
 
+    // One page of kind_links (entities of the kind or its subkinds), then those
+    // links by id in its order, each with the chips of the matched entities
+    // highlighted.
+    async function fetchKindLinks(path, offset) {
+      const client = await supabaseReady;
+      const { data: ids, error } = await client.rpc("kind_links", {
+        kind: path,
+        max_results: FEED_PAGE_SIZE,
+        page_offset: offset,
+      });
+      if (error) {
+        console.error("failed to load the kind's links", error);
+        return null;
+      }
+      if (ids.length === 0) return { rows: [], count: 0 };
+      const order = ids.map((r) => r.link_id);
+      const { data: rows, error: linksError } = await client.from("links").select(FEED_SELECT).in("id", order);
+      if (linksError) {
+        console.error("failed to load the kind's links", linksError);
+        return null;
+      }
+      const matched = new Map(ids.map((r) => [r.link_id, new Set(r.entity_ids)]));
+      const position = new Map(order.map((id, i) => [id, i]));
+      rows.sort((a, b) => position.get(a.id) - position.get(b.id));
+      return {
+        rows: rows.map((row) => {
+          const entities = (row.link_entities || []).filter((le) => le.entities && matched.get(row.id).has(le.entities.id));
+          return { row, shared: { entities: new Set(entities.map((le) => le.entities.name)), topics: new Set() } };
+        }),
+        count: ids.length,
+      };
+    }
+
     async function fetchPage() {
+      if (feed.kind) {
+        const page = await fetchKindLinks(feed.kind, feed.offset);
+        if (page) feed.offset += page.count;
+        return page;
+      }
       if (feed.topic) {
         const page = await fetchTopicLinks(feed.topic, feed.offset);
         if (page) feed.offset += page.count;
@@ -2152,7 +2237,7 @@
     function updateSearchEmpty() {
       const nothing = feed.done && !articleList.querySelector("li.article");
       searchEmpty.classList.toggle("visible", feed.query.length > 0 && nothing);
-      document.getElementById("focus-related-title").textContent = feed.entity || feed.topic
+      document.getElementById("focus-related-title").textContent = feed.entity || feed.topic || feed.kind
         ? nothing ? "No posts yet" : "Posts"
         : feed.related && nothing ? "Nothing related yet" : "Related";
     }
@@ -2199,6 +2284,7 @@
       feed.related = null;
       feed.entity = null;
       feed.topic = null;
+      feed.kind = null;
       feed.chronological = false;
       // Ranks are computed as of this moment for every page of this feed.
       feed.asOf = new Date().toISOString();
@@ -2244,7 +2330,7 @@
 
       // A post's or an entity's own address opens on it (setupLinkPage), not
       // the feed.
-      if (linkIdFromPath() || entityIdFromPath() || topicPathFromPath()) {
+      if (linkIdFromPath() || entityIdFromPath() || topicPathFromPath() || kindPathFromPath()) {
         articleList.replaceChildren();
         return;
       }
@@ -2283,6 +2369,7 @@
     const focusStatus = document.getElementById("focus-status");
     const focusEntityHead = document.getElementById("focus-entity");
     const focusTopicHead = document.getElementById("focus-topic");
+    const focusKindHead = document.getElementById("focus-kind");
     const findSources = document.getElementById("find-sources");
     let focusGeneration = 0;
     let focusDepth = 0;
@@ -2295,6 +2382,10 @@
 
     function topicPathFromPath() {
       return location.pathname.match(TOPIC_PATH_PATTERN)?.[1] ?? null;
+    }
+
+    function kindPathFromPath() {
+      return location.pathname.match(KIND_PATH_PATTERN)?.[1] ?? null;
     }
 
     function entityIdFromPath() {
@@ -2310,7 +2401,7 @@
       item.className = `tag ${kind}`;
       const label = document.createElement(id ? "a" : "span");
       label.textContent = name;
-      if (id) (kind === "topic" ? setTopicHref : setEntityHref)(label, id);
+      if (id) ({ topic: setTopicHref, kind: setKindHref }[kind] ?? setEntityHref)(label, id);
       item.append(label);
       if (detail) {
         const extra = document.createElement("span");
@@ -2365,6 +2456,7 @@
       enterFocus(`/p/${id}`, { push, saveFeed });
       focusEntityHead.hidden = true;
       focusTopicHead.hidden = true;
+      focusKindHead.hidden = true;
       findSources.hidden = true;
       // Shared with the post focused before, which no longer applies.
       for (const chip of from?.querySelectorAll(".shared") ?? []) chip.classList.remove("shared");
@@ -2374,6 +2466,7 @@
       if (li && !from) hydrateArticles([li]);
       showFocusSection("focus-entities", []);
       showFocusSection("focus-topics", []);
+      showFocusSection("focus-kinds", []);
       showRelated(id);
       window.scrollTo({ top: 0, behavior: "instant" });
       updateFocusBand();
@@ -2427,15 +2520,17 @@
       focusMain.replaceChildren();
       showFocusSection("focus-entities", []);
       showFocusSection("focus-topics", []);
+      showFocusSection("focus-kinds", []);
       document.getElementById("focus-entity-name").textContent = name;
       document.getElementById("focus-entity-meta").textContent = "";
       focusEntityHead.hidden = false;
       focusTopicHead.hidden = true;
+      focusKindHead.hidden = true;
       findSources.hidden = true;
 
       const details = supabaseReady.then((client) =>
         Promise.all([
-          client.from("entities").select("name, kind").eq("id", id).maybeSingle(),
+          client.from("entities").select("name, kind, kind_path").eq("id", id).maybeSingle(),
           client.from("link_entities").select("link_id", { count: "exact", head: true }).eq("entity_id", id),
         ]),
       );
@@ -2455,7 +2550,10 @@
       } else {
         document.getElementById("focus-entity-name").textContent = entity.name;
         const posts = count == null ? "" : ` · ${count} ${count === 1 ? "post" : "posts"}`;
-        document.getElementById("focus-entity-meta").textContent = `${entity.kind.replace("_", " ")}${posts}`;
+        const kind = document.createElement(entity.kind_path ? "a" : "span");
+        kind.textContent = entity.kind.replace("_", " ");
+        if (entity.kind_path) setKindHref(kind, entity.kind_path);
+        document.getElementById("focus-entity-meta").replaceChildren(kind, posts);
         findSources.href = findSourcesUrl(FIND_ENTITY_SOURCES_PROMPT, {
           name: entity.name,
           kind: entity.kind.replace("_", " "),
@@ -2475,6 +2573,7 @@
       focusMain.replaceChildren();
       showFocusSection("focus-entities", []);
       showFocusSection("focus-topics", []);
+      showFocusSection("focus-kinds", []);
       focusEntityHead.hidden = true;
       document.getElementById("focus-topic-name").textContent = name;
       document.getElementById("focus-topic-meta").textContent = path;
@@ -2498,6 +2597,7 @@
       if (generation !== focusGeneration) return;
       if (error || !topic) {
         focusTopicHead.hidden = true;
+      focusKindHead.hidden = true;
         focusStatus.textContent = error ? "Couldn't load this topic." : "This topic doesn't exist.";
       } else {
         document.getElementById("focus-topic-name").textContent = topic.name;
@@ -2514,6 +2614,80 @@
       updateFocusBand();
     }
 
+    // A kind's own page, seb.now/k/<path> (entity.agent.org.company): its name,
+    // the kind one level up (a link to its page), counts and definition on the
+    // band; its subkinds and its most-covered entities as chips; and below it
+    // every link mentioning an entity of the kind or a subkind, newest first
+    // (kind_links), a page at a time as you scroll.
+    async function focusKind(path, { name = "", push = true, saveFeed = true } = {}) {
+      const generation = ++focusGeneration;
+      enterFocus(`/k/${path}`, { push, saveFeed });
+      focusMain.replaceChildren();
+      showFocusSection("focus-entities", []);
+      showFocusSection("focus-topics", []);
+      showFocusSection("focus-kinds", []);
+      focusEntityHead.hidden = true;
+      focusTopicHead.hidden = true;
+      document.getElementById("focus-kind-name").textContent = name;
+      document.getElementById("focus-kind-meta").replaceChildren();
+      document.getElementById("focus-kind-description").textContent = "";
+      findSources.hidden = true;
+      focusKindHead.hidden = false;
+
+      resetFeed("");
+      feed.kind = path;
+      articleList.replaceChildren();
+      updateSearchEmpty();
+      window.scrollTo({ top: 0, behavior: "instant" });
+      updateFocusBand();
+      loadMore();
+
+      const client = await supabaseReady;
+      const [{ data: kinds, error }, { data: counts }, { data: entities }] = await Promise.all([
+        client.from("kinds").select("path, label, description"),
+        client.rpc("kind_counts", { kind: path }),
+        client.rpc("kind_entities", { kind: path, max_results: KIND_PAGE_ENTITIES }),
+      ]);
+      if (generation !== focusGeneration) return;
+      const kind = kinds?.find((k) => k.path === path);
+      if (error || !kind) {
+        focusKindHead.hidden = true;
+        focusStatus.textContent = error ? "Couldn't load this kind." : "This kind doesn't exist.";
+        updateFocusBand();
+        return;
+      }
+      document.getElementById("focus-kind-name").textContent = kind.label;
+      const meta = [];
+      const parent = kinds.find((k) => path.startsWith(`${k.path}.`) && k.path.split(".").length === path.split(".").length - 1);
+      if (parent) {
+        const link = document.createElement("a");
+        link.textContent = parent.label;
+        link.dataset.name = parent.label;
+        setKindHref(link, parent.path);
+        meta.push("a kind of ", link);
+      } else {
+        meta.push("every kind");
+      }
+      const [count] = counts ?? [];
+      if (count) {
+        const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+        meta.push(` · ${plural(count.entities, "entity", "entities")} · ${plural(count.posts, "post", "posts")}`);
+      }
+      document.getElementById("focus-kind-meta").replaceChildren(...meta);
+      document.getElementById("focus-kind-description").textContent = kind.description ?? "";
+      showFocusSection(
+        "focus-kinds",
+        kinds
+          .filter((k) => k.path.startsWith(`${path}.`) && k.path.split(".").length === path.split(".").length + 1)
+          .map((k) => tagItem(k.label, "", "kind", k.path)),
+      );
+      showFocusSection(
+        "focus-entities",
+        (entities ?? []).map((e) => tagItem(e.name, `${e.posts}`, "entity", e.id)),
+      );
+      updateFocusBand();
+    }
+
     // Back to the feed: the one saved on the way in, where it was scrolled to,
     // with the focused post flying back into its place; `restore: false`
     // leaves the list to the caller (a search replacing it anyway).
@@ -2527,6 +2701,7 @@
       focusMain.replaceChildren();
       focusEntityHead.hidden = true;
       focusTopicHead.hidden = true;
+      focusKindHead.hidden = true;
       findSources.hidden = true;
       setTimeout(() => {
         if (!isFocused()) root.classList.remove("focus-bg");
@@ -2576,13 +2751,20 @@
       // Topic and entity chips open their page in place; a modified click
       // (new tab) follows the link as usual.
       document.addEventListener("click", (event) => {
-        const chip = event.target.closest("a[href^='/e/'], a[href^='/t/']");
+        const chip = event.target.closest("a[href^='/e/'], a[href^='/t/'], a[href^='/k/']");
         if (!chip || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        const kindPath = chip.pathname.match(KIND_PATH_PATTERN)?.[1];
+        if (kindPath) {
+          event.preventDefault();
+          if (feed.kind === kindPath) window.scrollTo({ top: 0, behavior: "smooth" });
+          else focusKind(kindPath, { name: chip.dataset.name ?? chip.textContent });
+          return;
+        }
         const path = chip.pathname.match(TOPIC_PATH_PATTERN)?.[1];
         if (path) {
           event.preventDefault();
           if (feed.topic === path) window.scrollTo({ top: 0, behavior: "smooth" });
-          else focusTopic(path, { name: chip.textContent });
+          else focusTopic(path, { name: chip.dataset.name ?? chip.textContent });
           return;
         }
         const id = chip.pathname.match(ENTITY_PATH_PATTERN)?.[1];
@@ -2592,7 +2774,7 @@
           window.scrollTo({ top: 0, behavior: "smooth" });
           return;
         }
-        focusEntity(id, { name: chip.textContent });
+        focusEntity(id, { name: chip.dataset.name ?? chip.textContent });
       });
       window.addEventListener("popstate", () => {
         const id = linkIdFromPath();
@@ -2601,6 +2783,7 @@
         if (id) focusLink(id, { push: false });
         else if (entityId) focusEntity(entityId, { push: false });
         else if (topicPathFromPath()) focusTopic(topicPathFromPath(), { push: false });
+        else if (kindPathFromPath()) focusKind(kindPathFromPath(), { push: false });
         else if (isFocused()) leaveFocus();
       });
       const id = linkIdFromPath();
@@ -2608,6 +2791,7 @@
       if (id) focusLink(id, { push: false, saveFeed: false });
       else if (entityId) focusEntity(entityId, { push: false, saveFeed: false });
       else if (topicPathFromPath()) focusTopic(topicPathFromPath(), { push: false, saveFeed: false });
+      else if (kindPathFromPath()) focusKind(kindPathFromPath(), { push: false, saveFeed: false });
     }
 
     function setupMenu() {
@@ -3178,6 +3362,9 @@
     // The whole topic list, loaded once, for matching on every keystroke.
     let topicIndexReady = null;
     let topicIndex = [];
+    // The entity kind tree (public.kinds), loaded with the topics: each kind's
+    // path and the names it's typed as (its label, its path's last segment).
+    let kindIndex = [];
 
     function queryWords(text) {
       return text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
@@ -3187,6 +3374,7 @@
     function loadTopicIndex() {
       topicIndexReady ??= (async () => {
         const client = await supabaseReady;
+        const kindsLoaded = client.from("kinds").select("path, label");
         const topics = [];
         for (let from = 0; ; from += TOPICS_PAGE_SIZE) {
           const { data, error } = await client.from("topics").select("id, name")
@@ -3196,6 +3384,9 @@
           if (data.length < TOPICS_PAGE_SIZE) break;
         }
         topicIndex = topics.map((t) => ({ ...t, words: queryWords(t.name) })).filter((t) => t.words.length);
+        const { data: kinds, error } = await kindsLoaded;
+        if (error) console.error("failed to load kinds", error);
+        else indexKinds(kinds);
       })().catch((error) => {
         console.error("failed to load topics", error);
         topicIndexReady = null;
@@ -3203,12 +3394,32 @@
       return topicIndexReady;
     }
 
+    // A kind's short name, its path's last segment: "public body".
+    function kindName(path) {
+      return path.split(".").at(-1).replace(/_/g, " ");
+    }
+
+    function indexKinds(kinds) {
+      kindIndex = kinds.map((k) => ({
+        path: k.path,
+        label: k.label,
+        names: [...new Set([k.label, kindName(k.path)])].filter((n) => queryWords(n).length),
+      }));
+    }
+
+    // The kind one level up from `path`, "kind" for the root.
+    function parentKindName(path) {
+      return path.includes(".") ? kindName(path.slice(0, path.lastIndexOf("."))) : "kind";
+    }
+
     function wordMatches(typed, nameWord, partial) {
       if (typed === nameWord) return true;
       if (typed.length < QUERY_PREFIX_MIN_LENGTH) return false;
       if (partial && nameWord.startsWith(typed)) return true;
       const [shorter, longer] = typed.length < nameWord.length ? [typed, nameWord] : [nameWord, typed];
-      return shorter.length >= QUERY_PREFIX_MIN_LENGTH && (longer === `${shorter}s` || longer === `${shorter}es`);
+      if (shorter.length < QUERY_PREFIX_MIN_LENGTH) return false;
+      return longer === `${shorter}s` || longer === `${shorter}es`
+        || (shorter.endsWith("y") && longer === `${shorter.slice(0, -1)}ies`);
     }
 
     // Topics whose names the typed words cover, best covered first (the share
@@ -3297,7 +3508,7 @@
             max_results: QUERY_ENTITY_SUGGESTIONS,
           });
           if (error) throw error;
-          return data;
+          return withKindPaths(data);
         })().catch((error) => {
           console.error("failed to match entities", error);
           entityMatches.delete(key);
@@ -3305,6 +3516,20 @@
         }));
       }
       return entityMatches.get(key);
+    }
+
+    // `entities` with each one's place in the kind tree, for its search-box tag.
+    // A failed lookup leaves them tagged with their flat kind.
+    async function withKindPaths(entities) {
+      if (!entities.length) return entities;
+      const { data, error } = await (await supabaseReady).from("entities").select("id, kind_path")
+        .in("id", entities.map((e) => e.id));
+      if (error) {
+        console.error("failed to load entity kinds", error);
+        return entities;
+      }
+      const paths = new Map(data.map((e) => [e.id, e.kind_path]));
+      return entities.map((e) => ({ ...e, kind_path: paths.get(e.id) ?? null }));
     }
 
     async function suggestEntities(text) {
@@ -3407,7 +3632,8 @@
       }
       // Suggestions are links to the topic's or entity's page, opened in place
       // by the chip-link click handler.
-      const suggestions = text ? matchTopics(text).filter((t) => t.id !== intent?.topic?.id).slice(0, QUERY_TOPIC_SUGGESTIONS) : [];
+      const topicMatches = text ? matchTopics(text) : [];
+      const suggestions = topicMatches.filter((t) => t.id !== intent?.topic?.id).slice(0, QUERY_TOPIC_SUGGESTIONS);
       for (const topic of suggestions) {
         const chip = document.createElement("a");
         chip.className = "query-chip";
@@ -3426,14 +3652,16 @@
       }
       queryChips.replaceChildren(...chips);
       queryChips.hidden = chips.length === 0;
-      renderSearchMarks(intent);
+      renderSearchMarks(intent, topicMatches);
     }
 
     // Tags the typed words that make a good match, in place in the search box:
-    // the reading's sort words and topic (filled), then an entity or a topic
-    // suggestion whose whole name is typed (dashed). A word is tagged once,
-    // first match wins. Spans are text nodes, never innerHTML.
-    function renderSearchMarks(intent) {
+    // the reading's sort words and topic (filled), then, dashed, an entity or a
+    // topic suggestion whose whole name is typed, then a kind of entity. Each is
+    // labelled with the level above it in the kind tree: "company" reads org,
+    // "uber" company. A word is tagged once, first match wins. Spans are text nodes, never
+    // innerHTML. `topicMatches`: matchTopics of the text, already computed.
+    function renderSearchMarks(intent, topicMatches = []) {
       const input = document.getElementById("search-input");
       const value = input.value;
       const tokens = [...value.matchAll(/[\p{L}\p{N}]+/gu)].map((m) => ({
@@ -3443,31 +3671,44 @@
         tag: null,
       })).filter((t) => t.word);
       const partialAt = /[\p{L}\p{N}]$/u.test(value) ? tokens.length - 1 : -1;
-      const open = (t) => !t.tag && !QUERY_STOPWORDS.has(t.word);
+      tokens.forEach((t, i) => {
+        t.partial = i === partialAt;
+        t.open = !QUERY_STOPWORDS.has(t.word);
+      });
 
-      // Tags the tokens covering every word of `name`, if all are typed.
+      // Tags the open tokens covering every word of `name`, if all are typed.
       function tagName(name, tag) {
         const nameWords = queryWords(name);
         if (!nameWords.length) return false;
-        const hits = tokens.filter((t, i) => open(t) && nameWords.some((n) => wordMatches(t.word, n, i === partialAt)));
-        const covered = nameWords.every((n) => hits.some((t) => wordMatches(t.word, n, tokens.indexOf(t) === partialAt)));
-        if (!covered) return false;
-        for (const t of hits) t.tag = tag;
+        const hits = tokens.filter((t) => t.open && nameWords.some((n) => wordMatches(t.word, n, t.partial)));
+        if (!nameWords.every((n) => hits.some((t) => wordMatches(t.word, n, t.partial)))) return false;
+        for (const t of hits) {
+          t.tag = tag;
+          t.open = false;
+        }
         return true;
       }
 
       if (value.trim()) {
         if (intent?.sort && SORT_LABELS[intent.sort]) {
-          tokens.forEach((t, i) => {
-            if (open(t) && i !== partialAt && QUERY_SORT_WORDS[t.word] === intent.sort) t.tag = { kind: "order" };
-          });
+          for (const t of tokens) {
+            if (t.open && !t.partial && QUERY_SORT_WORDS[t.word] === intent.sort) {
+              t.tag = { kind: "order" };
+              t.open = false;
+            }
+          }
         }
-        if (intent?.topic) tagName(intent.topic.name, { kind: "topic" });
+        if (intent?.topic) tagName(intent.topic.name, { kind: "topic", topic: intent.topic });
         for (const entity of entitySuggestions) {
-          tagName(entity.name, { kind: entity.kind.replace("_", " "), suggested: true });
+          const kind = entity.kind_path ? kindName(entity.kind_path) : entity.kind.replace("_", " ");
+          tagName(entity.name, { kind, suggested: true, entity });
         }
-        for (const topic of matchTopics(value.trim())) {
-          tagName(topic.name, { kind: "topic", suggested: true });
+        for (const topic of topicMatches) {
+          tagName(topic.name, { kind: "topic", suggested: true, topic });
+        }
+        for (const kind of kindIndex) {
+          const tag = { kind: parentKindName(kind.path), suggested: true, kindPath: kind.path, kindLabel: kind.label };
+          kind.names.some((name) => tagName(name, tag));
         }
       }
 
@@ -3480,24 +3721,54 @@
         else spans.push({ ...t });
       }
       const nodes = [];
+      const links = [];
       let at = 0;
       for (const t of spans) {
-        if (t.start > at) nodes.push(document.createTextNode(value.slice(at, t.start)));
+        if (t.start > at) {
+          nodes.push(document.createTextNode(value.slice(at, t.start)));
+          links.push(document.createTextNode(value.slice(at, t.start)));
+        }
+        const text = value.slice(t.start, t.end);
         const mark = document.createElement("mark");
-        mark.textContent = value.slice(t.start, t.end);
+        mark.textContent = text;
         mark.dataset.kind = t.tag.kind;
         if (t.tag.suggested) mark.classList.add("suggested");
         nodes.push(mark);
+        // A topic, an entity or a kind opens its page through the chip-link
+        // click handler; a sort word has none.
+        const target = t.tag.entity ?? t.tag.topic ?? (t.tag.kindPath && { id: t.tag.kindPath, name: t.tag.kindLabel });
+        if (target) {
+          const link = document.createElement("a");
+          link.textContent = text;
+          link.dataset.name = target.name;
+          if (t.tag.entity) setEntityHref(link, target.id);
+          else if (t.tag.topic) setTopicHref(link, target.id);
+          else setKindHref(link, target.id);
+          link.title = target.name;
+          links.push(link);
+        } else {
+          links.push(document.createTextNode(text));
+        }
         at = t.end;
       }
-      if (at < value.length) nodes.push(document.createTextNode(value.slice(at)));
+      if (at < value.length) {
+        nodes.push(document.createTextNode(value.slice(at)));
+        links.push(document.createTextNode(value.slice(at)));
+      }
       document.getElementById("search-marks").replaceChildren(...nodes);
+      document.getElementById("search-links").replaceChildren(...links);
+      const marks = nodes.filter((n) => n.nodeName === "MARK");
+      marks.forEach((mark, i) => {
+        if (marks[i + 1]) mark.style.setProperty("--label-room", `${marks[i + 1].offsetLeft - mark.offsetLeft}px`);
+      });
       syncSearchMarks();
     }
 
     // Keeps the tags under their words when the input scrolls sideways.
     function syncSearchMarks() {
-      document.getElementById("search-marks").scrollLeft = document.getElementById("search-input").scrollLeft;
+      const { scrollLeft } = document.getElementById("search-input");
+      document.getElementById("search-marks").scrollLeft = scrollLeft;
+      document.getElementById("search-links").scrollLeft = scrollLeft;
     }
 
     // Shows the feed for `intent` unless it's the one already showing. The
