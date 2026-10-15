@@ -138,16 +138,57 @@
       #dock-actions, #dock-actions.visible { transition: none; }
     }
     #search-bar { position: relative; width: 100%; max-width: 480px; pointer-events: auto; }
-    #search-input {
+    #search-input, #search-marks {
       width: 100%;
       box-sizing: border-box;
       font: inherit;
+      letter-spacing: normal;
       padding: 0.8rem 2.7rem 0.8rem 1.2rem;
       border: 1px solid var(--positive);
       border-radius: 999px;
-      background: var(--bg);
+    }
+    #search-input {
+      position: relative;
+      -webkit-appearance: none;
+      appearance: none;
+      /* Transparent so #search-marks, which draws the bar's background,
+         shows its word tags through it. */
+      background: transparent;
       color: inherit;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+    }
+    /* A copy of the typed text behind the input, laid out identically, whose
+       matched words are tagged in place: the text itself is invisible (the
+       input draws it), only the tags show. Scrolled with the input. */
+    #search-marks {
+      position: absolute;
+      inset: 0;
+      border-color: transparent;
+      background: var(--bg);
+      color: transparent;
+      white-space: pre;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    #search-marks mark {
+      position: relative;
+      color: transparent;
+      background: var(--positive-soft);
+      border-radius: 0.3em;
+      /* A ring rather than padding, so the tag never shifts the text. */
+      box-shadow: 0 0 0 0.15em var(--positive-soft);
+    }
+    #search-marks mark.suggested { background: transparent; box-shadow: none; border-bottom: 2px dashed var(--positive); }
+    #search-marks mark::before {
+      content: attr(data-kind);
+      position: absolute;
+      left: 0;
+      bottom: 100%;
+      font-size: 0.55rem;
+      line-height: 1;
+      padding-bottom: 0.15rem;
+      color: var(--positive);
+      white-space: nowrap;
     }
     #search-input:focus {
       outline: none;
@@ -1040,6 +1081,7 @@
     </div>
     <div id="query-chips" aria-live="polite" hidden></div>
     <div id="search-bar">
+      <div id="search-marks" aria-hidden="true"></div>
       <input id="search-input" type="search" placeholder="Search, or ask: latest on AI…" aria-label="Search articles, or ask for an order and topic" autocomplete="off">
       <button type="button" id="search-clear" aria-label="Clear search">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -3370,6 +3412,78 @@
       }
       queryChips.replaceChildren(...chips);
       queryChips.hidden = chips.length === 0;
+      renderSearchMarks(intent);
+    }
+
+    // Tags the typed words that make a good match, in place in the search box:
+    // the reading's sort words and topic (filled), then an entity or a topic
+    // suggestion whose whole name is typed (dashed). A word is tagged once,
+    // first match wins. Spans are text nodes, never innerHTML.
+    function renderSearchMarks(intent) {
+      const input = document.getElementById("search-input");
+      const value = input.value;
+      const tokens = [...value.matchAll(/[\p{L}\p{N}]+/gu)].map((m) => ({
+        start: m.index,
+        end: m.index + m[0].length,
+        word: m[0].toLowerCase().normalize("NFKD").replace(/[^a-z0-9]/g, ""),
+        tag: null,
+      })).filter((t) => t.word);
+      const partialAt = /[\p{L}\p{N}]$/u.test(value) ? tokens.length - 1 : -1;
+      const open = (t) => !t.tag && !QUERY_STOPWORDS.has(t.word);
+
+      // Tags the tokens covering every word of `name`, if all are typed.
+      function tagName(name, tag) {
+        const nameWords = queryWords(name);
+        if (!nameWords.length) return false;
+        const hits = tokens.filter((t, i) => open(t) && nameWords.some((n) => wordMatches(t.word, n, i === partialAt)));
+        const covered = nameWords.every((n) => hits.some((t) => wordMatches(t.word, n, tokens.indexOf(t) === partialAt)));
+        if (!covered) return false;
+        for (const t of hits) t.tag = tag;
+        return true;
+      }
+
+      if (value.trim()) {
+        if (intent?.sort && SORT_LABELS[intent.sort]) {
+          tokens.forEach((t, i) => {
+            if (open(t) && i !== partialAt && QUERY_SORT_WORDS[t.word] === intent.sort) t.tag = { kind: "order" };
+          });
+        }
+        if (intent?.topic) tagName(intent.topic.name, { kind: "topic" });
+        for (const entity of entitySuggestions) {
+          tagName(entity.name, { kind: entity.kind.replace("_", " "), suggested: true });
+        }
+        for (const topic of matchTopics(value.trim())) {
+          tagName(topic.name, { kind: "topic", suggested: true });
+        }
+      }
+
+      // A name typed as neighbouring words ("ai agents") gets one tag.
+      const spans = [];
+      for (const t of tokens) {
+        if (!t.tag) continue;
+        const last = spans.at(-1);
+        if (last?.tag === t.tag && !/\S/.test(value.slice(last.end, t.start))) last.end = t.end;
+        else spans.push({ ...t });
+      }
+      const nodes = [];
+      let at = 0;
+      for (const t of spans) {
+        if (t.start > at) nodes.push(document.createTextNode(value.slice(at, t.start)));
+        const mark = document.createElement("mark");
+        mark.textContent = value.slice(t.start, t.end);
+        mark.dataset.kind = t.tag.kind;
+        if (t.tag.suggested) mark.classList.add("suggested");
+        nodes.push(mark);
+        at = t.end;
+      }
+      if (at < value.length) nodes.push(document.createTextNode(value.slice(at)));
+      document.getElementById("search-marks").replaceChildren(...nodes);
+      syncSearchMarks();
+    }
+
+    // Keeps the tags under their words when the input scrolls sideways.
+    function syncSearchMarks() {
+      document.getElementById("search-marks").scrollLeft = document.getElementById("search-input").scrollLeft;
     }
 
     // Shows the feed for `intent` unless it's the one already showing. The
@@ -3463,6 +3577,10 @@
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") search({ finished: true });
       });
+      for (const type of ["scroll", "keyup", "select", "pointerup"]) input.addEventListener(type, syncSearchMarks);
+      document.addEventListener("selectionchange", () => {
+        if (document.activeElement === input) requestAnimationFrame(syncSearchMarks);
+      });
 
       clearBtn.addEventListener("click", () => {
         input.value = "";
@@ -3478,6 +3596,7 @@
 
       input.value = savedSearchQuery();
       clearBtn.classList.toggle("visible", input.value.length > 0);
+      renderSearchMarks(null);
       loadQueryBalance();
     }
 
