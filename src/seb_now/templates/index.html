@@ -189,7 +189,7 @@
       padding-bottom: 0.15rem;
       color: var(--positive);
       white-space: nowrap;
-      /* A lineage label runs past its word, up to the next tag. */
+      /* A label runs past its word, up to the next tag. */
       max-width: var(--label-room, none);
       box-sizing: border-box;
       padding-right: 0.4em;
@@ -3185,10 +3185,8 @@
     let topicIndexReady = null;
     let topicIndex = [];
     // The entity kind tree (public.kinds), loaded with the topics: each kind's
-    // path, the names it's typed as (its label, its path's last segment) and its
-    // lineage, the kind and every kind above it.
+    // path and the names it's typed as (its label, its path's last segment).
     let kindIndex = [];
-    const kindLineages = new Map();
 
     function queryWords(text) {
       return text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
@@ -3218,24 +3216,21 @@
       return topicIndexReady;
     }
 
+    // A kind's short name, its path's last segment: "public body".
+    function kindName(path) {
+      return path.split(".").at(-1).replace(/_/g, " ");
+    }
+
     function indexKinds(kinds) {
-      const segment = (path) => path.split(".").at(-1).replace(/_/g, " ");
-      kindLineages.clear();
-      for (const { path } of kinds) {
-        const parts = path.split(".");
-        kindLineages.set(path, parts.map((_, i) => segment(parts.slice(0, i + 1).join("."))).reverse());
-      }
       kindIndex = kinds.map((k) => ({
         path: k.path,
-        names: [...new Set([k.label, segment(k.path)])].filter((n) => queryWords(n).length),
+        names: [...new Set([k.label, kindName(k.path)])].filter((n) => queryWords(n).length),
       }));
     }
 
-    // "company › org › agent › entity": `path` and every kind above it.
-    function kindLineage(path, { self = true } = {}) {
-      const lineage = kindLineages.get(path);
-      if (!lineage) return null;
-      return (self ? lineage : lineage.slice(1)).join(" › ") || "kind";
+    // The kind one level up from `path`, "kind" for the root.
+    function parentKindName(path) {
+      return path.includes(".") ? kindName(path.slice(0, path.lastIndexOf("."))) : "kind";
     }
 
     function wordMatches(typed, nameWord, partial) {
@@ -3483,10 +3478,9 @@
 
     // Tags the typed words that make a good match, in place in the search box:
     // the reading's sort words and topic (filled), then, dashed, an entity or a
-    // topic suggestion whose whole name is typed, then a kind of entity. A kind
-    // or an entity is labelled with its lineage up the kind tree, so "company"
-    // reads org › agent › entity and "uber" company › org › agent › entity. A
-    // word is tagged once, first match wins. Spans are text nodes, never
+    // topic suggestion whose whole name is typed, then a kind of entity. Each is
+    // labelled with the level above it in the kind tree: "company" reads org,
+    // "uber" company. A word is tagged once, first match wins. Spans are text nodes, never
     // innerHTML. `topicMatches`: matchTopics of the text, already computed.
     function renderSearchMarks(intent, topicMatches = []) {
       const input = document.getElementById("search-input");
@@ -3527,14 +3521,14 @@
         }
         if (intent?.topic) tagName(intent.topic.name, { kind: "topic" });
         for (const entity of entitySuggestions) {
-          const kind = kindLineage(entity.kind_path) ?? entity.kind.replace("_", " ");
+          const kind = entity.kind_path ? kindName(entity.kind_path) : entity.kind.replace("_", " ");
           tagName(entity.name, { kind, suggested: true });
         }
         for (const topic of topicMatches) {
           tagName(topic.name, { kind: "topic", suggested: true });
         }
         for (const kind of kindIndex) {
-          const tag = { kind: kindLineage(kind.path, { self: false }), suggested: true };
+          const tag = { kind: parentKindName(kind.path), suggested: true };
           kind.names.some((name) => tagName(name, tag));
         }
       }

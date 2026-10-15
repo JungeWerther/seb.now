@@ -390,9 +390,9 @@ text invisible and good matches wrapped in `<mark data-kind>` (a small kind labe
 above the word, drawn by CSS) — the reading's sort words and topic filled, an entity
 or topic suggestion whose whole name is typed dashed, then (last, so they never take a
 word from a longer name) the names of entity kinds; neighbouring words of one name
-share one tag. Kinds and entities are labelled with their lineage up the kind tree
-(`public.kinds`, an `ltree` under `entity`, loaded once with the topics): "company"
-reads `org › agent › entity`, an entity "Uber" `company › org › agent › entity` (its
+share one tag. Kinds and entities are labelled with the level above them in the kind
+tree (`public.kinds`, an `ltree` under `entity`, loaded once with the topics), not
+the full ancestry: "company" reads `org`, an entity "Uber" `company` (its
 `entities.kind_path`, fetched by id with the `match_entities` results). A label runs
 past its word up to the next tag (`--label-room`), clipped with an ellipsis. It's scrolled with the input (`syncSearchMarks`) and never takes
 pointer events. Order names live in `SORTS` (the function) and
