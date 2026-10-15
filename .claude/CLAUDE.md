@@ -229,8 +229,18 @@ per link asks of each whether it's a name, a concept or neither, and its kind;
 names with p ≥ 0.8 are matched against existing entities by
 `public.entity_candidates(phrase)` (trigram similarity on names and past
 mention texts) — an exact name is taken, otherwise Jev picks one of the
-candidates or "none", and none creates the entity. Links run one at a time so
-a new entity is matchable by the next link. Jev's mentions land in
+candidates or "none", and none creates the entity. A name that a longer name
+in the same pass contains or respells ("Pusateri" in "Drew Pusateri", "Sean
+O'Kane"/"Sean O’Kane") is always asked, never taken on an exact match, with
+those longer names as extra options; picking one gives it that name's entity,
+so a page's short forms don't become entities of their own (a bare "Sarah"
+would otherwise exact-match one global "Sarah" for every Sarah). Links run one at a time so
+a new entity is matchable by the next link. After the title, a second pass
+reads the page the link points to (`_shared/names.ts` proposes its capitalised
+runs, each with its sentence; one question per phrase asks name-and-kind at
+once), marked by `link_enrichment.page_entities_at`; its mentions have
+`link_entities.found_in = 'page'` (title ones `'title'`), and `related_links`
+only counts title mentions. Jev's mentions land in
 `link_entities` with `surface` (the text as written, which doubles as an
 alias), `p` and `labeled_by = 'jev'`; hand rows default to `manual`, p 1.
 `public.link_enrichment (link_id, topics_at, entities_at)` records when each
@@ -244,11 +254,13 @@ whole table; execute revoked from clients). Both functions share
 page, with no per-site code; on its own `pg_cron` job (`4-59/10 * * * *`, up
 to 10 links a run, only links `entity-extract` has done, since the venue is
 picked among their place entities). Same split as the other steps: code
-proposes, Jev only chooses. `content.ts` fetches the page and cleans it without
+proposes, Jev only chooses. `_shared/page.ts` fetches the page and cleans it without
 a DOM parser (cut at the `<h1>`, scripts/menus/headers/footers/forms removed,
 text split into sections at `<h2>`/`<h3>` headings or at paragraphs that open
 with a bold title, which is how guides list their events); the cleaned text
-lands in `public.link_content` (service_role only) for later steps to reuse.
+lands in `public.link_content` (service_role only), written by
+`entity-extract`'s page pass, which event-extract reads back
+(`parseSections`) rather than fetching the page again.
 schema.org `Event` JSON-LD is taken as is (`labeled_by = 'json_ld'`).
 Otherwise `dates.ts` reads every date and range in the title, the feed
 description (`web-feed-ingest` stores each item's summary in

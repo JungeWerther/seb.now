@@ -18,6 +18,10 @@ import { candidates } from "./candidates.ts";
 //  3. for each name, `entity_candidates` finds close existing entities; an exact
 //     name match is taken as is, otherwise one more Jev request per link asks
 //     which of them each name is, or none (then a new entity is created).
+//     A name that a longer name in the same pass contains ("Pusateri" in "Drew
+//     Pusateri") is always asked, with those longer names as options too: a
+//     page's short forms are mostly the person or thing it named in full, and
+//     taking an exact match would join every bare "Sarah" into one entity.
 // Mentions land in `link_entities` with `found_in` 'title' or 'page'; an
 // entity the title already names keeps its title row. Links are processed one
 // at a time so an entity created for one link can be matched by the next.
@@ -38,6 +42,8 @@ const FETCH_CONCURRENCY = 4;
 const RUN_BUDGET_MS = 100_000;
 const MAX_LINK_IDS = 50;
 const NEW_ENTITY = "new";
+const SAME_AS_PREFIX = "same_as_";
+const SAME_PASS_OPTIONS = 4;
 
 const MENTION_OPTIONS = {
   name:
@@ -108,9 +114,12 @@ interface Mention {
   kind: Kind;
   entity_id: string | null;
   entity_name: string;
-  decision: "exact" | "matched" | "new";
+  decision: "exact" | "matched" | "new" | "same_as";
   match_p?: number;
+  same_as?: string;
 }
+
+type Name = Omit<Mention, "entity_id" | "entity_name" | "decision" | "match_p" | "same_as">;
 
 function hostOf(url: string): string {
   try {
@@ -126,6 +135,47 @@ function describe(c: Candidate): string {
     c.description ? `: ${c.description}` : "",
     c.example_title ? `. Mentioned before in: "${c.example_title}"` : "",
   ].join("");
+}
+
+// A name's words, for finding the same name inside a longer one: case, curly
+// apostrophes and a possessive 's don't count.
+function nameWords(surface: string): string[] {
+  return surface.toLowerCase().replace(/’/g, "'").replace(/'s\b/g, "").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+function containsName(longer: string[], shorter: string[]): boolean {
+  if (shorter.length >= longer.length) return false;
+  for (let i = 0; i + shorter.length <= longer.length; i++) {
+    if (shorter.every((word, j) => longer[i + j] === word)) return true;
+  }
+  return false;
+}
+
+// Whether `a` resolves before `b`: more words first, and of two spellings of
+// the same words ("Sean O'Kane", "Sean O’Kane") the greater one, so a name only
+// ever points to one that comes before it.
+function before(a: Name, b: Name): boolean {
+  const [x, y] = [nameWords(a.surface).length, nameWords(b.surface).length];
+  return x !== y ? x > y : a.surface > b.surface;
+}
+
+// The other names in the same pass that contain `name` or spell it differently,
+// closest in length first.
+function longerNames(name: Name, names: Name[]): Name[] {
+  const words = nameWords(name.surface);
+  return names
+    .map((other) => ({ other, words: nameWords(other.surface) }))
+    .filter(({ other, words: longer }) =>
+      containsName(longer, words) || (longer.join(" ") === words.join(" ") && before(other, name)))
+    .sort((a, b) => a.words.length - b.words.length)
+    .slice(0, SAME_PASS_OPTIONS)
+    .map(({ other }) => other);
+}
+
+function describeSamePass(other: Name): string {
+  return other.sentence
+    ? `The same thing as "${other.surface}", which the page also names: "${other.sentence}"`
+    : `The same thing as "${other.surface}", which the title also names.`;
 }
 
 // Where a phrase was found, for the questions about it.
@@ -182,29 +232,33 @@ async function mentionsOf(db: SupabaseClient, jev: JevClient, link: Link, phrase
   const found = await findNames(jev, state, phrases);
   let inputTokens = found.inputTokens;
 
-  const pending: { name: typeof found.names[number]; options: Candidate[] }[] = [];
+  const pending: { name: Name; options: Candidate[]; longer: Name[] }[] = [];
   const mentions: Mention[] = [];
   for (const name of found.names) {
     const { data, error } = await db.rpc("entity_candidates", { phrase: name.surface, max_results: CANDIDATE_ENTITIES });
     if (error) throw new Error(error.message);
     const options = data as Candidate[];
+    const longer = longerNames(name, found.names);
     const exact = options.find((c) => c.name.toLowerCase() === name.surface.toLowerCase());
-    if (exact) {
+    if (longer.length) {
+      pending.push({ name, options, longer });
+    } else if (exact) {
       mentions.push({ ...name, entity_id: exact.id, entity_name: exact.name, decision: "exact" });
     } else if (options.length) {
-      pending.push({ name, options });
+      pending.push({ name, options, longer });
     } else {
       mentions.push({ ...name, entity_id: null, entity_name: name.surface, decision: "new" });
     }
   }
 
   if (pending.length) {
-    const questions = Object.fromEntries(pending.map(({ name, options }, i) => [
+    const questions = Object.fromEntries(pending.map(({ name, options, longer }, i) => [
       `e${i}`,
       {
         type: "choice",
         instructions: phraseInstructions(name, "which of these is `phrase` the name of? If it is none of them, say so."),
         criteria: {
+          ...Object.fromEntries(longer.map((other, j) => [`${SAME_AS_PREFIX}${j}`, describeSamePass(other)])),
           ...Object.fromEntries(options.map((c) => [c.id, describe(c)])),
           [NEW_ENTITY]: "None of these: something else that isn't listed.",
         },
@@ -212,23 +266,45 @@ async function mentionsOf(db: SupabaseClient, jev: JevClient, link: Link, phrase
     ]));
     const result = await jev.ask(state, questions);
     inputTokens += result.usage.input_tokens;
-    pending.forEach(({ name, options }, i) => {
+    pending.forEach(({ name, options, longer }, i) => {
       const answer = result.answers[`e${i}`];
-      const match = options.find((c) => c.id === answer.choice);
       const p = answer.probabilities[answer.choice];
+      const same = answer.choice.startsWith(SAME_AS_PREFIX) ? longer[Number(answer.choice.slice(SAME_AS_PREFIX.length))] : null;
+      const match = options.find((c) => c.id === answer.choice);
       mentions.push(
-        match && p >= MATCH_MIN_P
+        same && p >= MATCH_MIN_P
+          ? { ...name, entity_id: null, entity_name: same.surface, decision: "same_as", match_p: p, same_as: same.surface }
+          : match && p >= MATCH_MIN_P
           ? { ...name, entity_id: match.id, entity_name: match.name, decision: "matched", match_p: p }
           : { ...name, entity_id: null, entity_name: name.surface, decision: "new", match_p: p },
       );
     });
   }
 
-  return { mentions, inputTokens };
+  return { mentions: followSameAs(mentions), inputTokens };
+}
+
+// A name resolved to a longer one in the same pass takes that name's entity,
+// following chains ("Trump" → "Donald Trump" → "President Donald Trump"); a
+// name only points to one `before` it, so there are no cycles, and sorting by
+// `before` lets `saveMentions` create an entity before its short forms need it.
+function followSameAs(mentions: Mention[]): Mention[] {
+  const bySurface = new Map(mentions.map((m) => [m.surface, m]));
+  const target = (m: Mention): Mention => (m.same_as && bySurface.has(m.same_as) ? target(bySurface.get(m.same_as)!) : m);
+  for (const m of mentions) {
+    if (m.decision !== "same_as") continue;
+    const t = target(m);
+    m.entity_id = t.entity_id;
+    m.entity_name = t.entity_name;
+  }
+  return mentions.sort((a, b) => (before(a, b) ? -1 : before(b, a) ? 1 : 0));
 }
 
 async function saveMentions(db: SupabaseClient, linkId: string, mentions: Mention[], foundIn: FoundIn) {
+  const bySurface = new Map(mentions.map((m) => [m.surface, m]));
   for (const mention of mentions) {
+    const target = mention.same_as ? bySurface.get(mention.same_as) : undefined;
+    if (!mention.entity_id && target) mention.entity_id = target.entity_id;
     if (!mention.entity_id) mention.entity_id = await createEntity(db, mention.surface, mention.kind);
     const { error } = await db.from("link_entities").upsert(
       { link_id: linkId, entity_id: mention.entity_id, surface: mention.surface, p: Math.round(mention.p * 1000) / 1000, labeled_by: "jev", found_in: foundIn },
