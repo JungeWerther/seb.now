@@ -240,8 +240,6 @@ export function readPage(html: string): Omit<PageContent, "status"> {
   const { events, declared } = readJsonLd(jsonLd);
   for (const el of document.querySelectorAll(DEAD_TAGS)) el.remove();
 
-  // Readability takes the document apart, so the fallback reads a copy.
-  const fallback = parseHTML(document.toString()).document;
   let article: { content?: string | null; textContent?: string | null } | null = null;
   try {
     article = new Readability(document, { charThreshold: MIN_ARTICLE_CHARS }).parse();
@@ -251,8 +249,10 @@ export function readPage(html: string): Omit<PageContent, "status"> {
   let root: Element | null = null;
   if (article?.content && (article.textContent ?? "").trim().length >= MIN_ARTICLE_CHARS) {
     root = parseHTML(`<!doctype html><html><body>${article.content}</body></html>`).document.body;
-  } else if (fallback.body) {
-    for (const el of fallback.querySelectorAll(CHROME_TAGS)) el.remove();
+  } else {
+    // Readability has taken the document apart, so the fallback parses it again.
+    const fallback = parseHTML(html).document;
+    for (const el of fallback.querySelectorAll(`${DEAD_TAGS}, ${CHROME_TAGS}`)) el.remove();
     root = fallback.querySelector("main") ?? fallback.querySelector("article") ?? fallback.body;
   }
   return { lang, sections: root ? sectionsOf(root) : [], jsonLdEvents: events, declared };

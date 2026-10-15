@@ -33,7 +33,7 @@ import { candidates } from "./candidates.ts";
 // "dry_run": true reports without writing.
 //
 // POST {"eval": true} scores the page pass's candidates against the
-// hand-labelled names in `entity_gold` (or only `link_ids` among them), with
+// hand-labelled names in `entity_gold` (on its links, or on `link_ids`), with
 // no Jev call and no writes: per link, which labelled names are among the
 // candidates exactly or overlapping one, and how long each step took.
 // "decide": true also runs the dry run's decisions and scores the mentions;
@@ -404,13 +404,13 @@ async function evaluate(db: SupabaseClient, jev: JevClient, ids: string[] | null
   if (error) throw new Error(error.message);
   const gold = new Map<string, string[]>();
   for (const r of goldRows as { link_id: string; name: string }[]) gold.set(r.link_id, [...(gold.get(r.link_id) ?? []), r.name]);
-  const { data: links, error: linksError } = await db.from("links").select("id, title, url").in("id", [...gold.keys()].slice(0, MAX_LINK_IDS));
+  const { data: links, error: linksError } = await db.from("links").select("id, title, url").in("id", (ids ?? [...gold.keys()]).slice(0, MAX_LINK_IDS));
   if (linksError) throw new Error(linksError.message);
 
   const htmls = prefetch(links as Link[], fetchHtml);
   const results: Record<string, unknown>[] = [];
   for (const [i, link] of (links as Link[]).entries()) {
-    const names = gold.get(link.id)!;
+    const names = gold.get(link.id) ?? [];
     const { status, html } = await htmls[i];
     const t0 = performance.now();
     const page: PageContent = html === null
