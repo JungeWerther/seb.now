@@ -3407,6 +3407,17 @@
       }));
     }
 
+    // The kind the whole of `text` names ("event", "events", "public bodies"),
+    // if any: a query that is only a kind opens that kind's page.
+    function typedKind(text) {
+      const typed = queryWords(text);
+      if (!typed.length) return null;
+      return kindIndex.find((kind) => kind.names.some((name) => {
+        const words = queryWords(name);
+        return words.length === typed.length && words.every((w, i) => wordMatches(typed[i], w, false));
+      })) ?? null;
+    }
+
     // The kind one level up from `path`, "kind" for the root.
     function parentKindName(path) {
       return path.includes(".") ? kindName(path.slice(0, path.lastIndexOf("."))) : "kind";
@@ -3862,7 +3873,17 @@
         timer = setTimeout(search, /\s$/.test(input.value) ? 0 : QUERY_PARSE_PAUSE_MS);
       });
       input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") search({ finished: true });
+        if (e.key !== "Enter") return;
+        const kind = typedKind(input.value);
+        if (!kind) {
+          search({ finished: true });
+          return;
+        }
+        // A query still being read must not land in the list the kind page shows.
+        clearTimeout(timer);
+        queryGeneration++;
+        input.blur();
+        focusKind(kind.path, { name: kind.label });
       });
       for (const type of ["scroll", "keyup", "select", "pointerup"]) input.addEventListener(type, syncSearchMarks);
       document.addEventListener("selectionchange", () => {

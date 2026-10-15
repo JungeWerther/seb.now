@@ -412,7 +412,10 @@ copy again but above the input and see-through, holds just those words as `/t/<p
 or `/e/<id>` links (with `data-name`, which the chip-link click handler prefers over
 the typed text), so tapping one opens its page in place while a tap anywhere else
 reaches the input; a kind links to its page (`/k/<path>`) too, and only sort words
-stay plain tags. Order names live in `SORTS` (the function) and
+stay plain tags. A query that is nothing but a kind's name ("event", "events",
+"public bodies": `typedKind`, a kind's label or path segment, singular or plural)
+opens that kind's page on Enter instead of searching for the word, since the page
+is that filter; while typing it stays a search, so the view never jumps mid-word. Order names live in `SORTS` (the function) and
 `SORT_LABELS` (the page) and must match `feed_query`'s check.
 
 **Query credits.** Every account (anonymous ones included) starts with
