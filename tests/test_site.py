@@ -638,7 +638,7 @@ def test_entity_page_lists_every_link_mentioning_it_and_chips_open_it() -> None:
     assert "`/e/${id}`" in script
     # Chips are links, but a plain click opens the page in place.
     assert "closest(\"a[href^='/e/'], a[href^='/t/']\")" in script
-    assert "focusEntity(id, { name: chip.textContent })" in script
+    assert "focusEntity(id, { name: chip.dataset.name ?? chip.textContent })" in script
     assert "else if (entityId) focusEntity(entityId, { push: false });" in script
     # Entity ids become hrefs only when they look like one.
     assert "function setEntityHref(anchor, id)" in script
@@ -656,7 +656,7 @@ def test_topic_page_lists_its_links_with_a_find_sources_button_and_chips_open_it
     script = _page_script(html)
     assert 'rpc("topic_links"' in script and 'rpc("topic_link_count"' in script
     assert "`/t/${id}`" in script
-    assert "focusTopic(path, { name: chip.textContent })" in script
+    assert "focusTopic(path, { name: chip.dataset.name ?? chip.textContent })" in script
     assert "link_topics(p, topics(id, name))" in script
     # The prompt and Claude's address come from constants.py, filled per topic.
     assert f'"{FIND_SOURCES_URL_TEMPLATE}"' in script

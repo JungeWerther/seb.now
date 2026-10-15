@@ -138,7 +138,7 @@
       #dock-actions, #dock-actions.visible { transition: none; }
     }
     #search-bar { position: relative; width: 100%; max-width: 480px; pointer-events: auto; }
-    #search-input, #search-marks {
+    #search-input, #search-marks, #search-links {
       width: 100%;
       box-sizing: border-box;
       font: inherit;
@@ -169,6 +169,26 @@
       white-space: pre;
       overflow: hidden;
       pointer-events: none;
+    }
+    /* The same copy again, above the input and see-through, holding only the
+       tagged words that have a page, as links; everywhere else taps reach the
+       input. */
+    #search-links {
+      position: absolute;
+      inset: 0;
+      border-color: transparent;
+      color: transparent;
+      white-space: pre;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    #search-links a {
+      color: transparent;
+      text-decoration: none;
+      pointer-events: auto;
+      cursor: pointer;
+      /* Reaches up over the kind label too, without moving the text. */
+      padding-top: 0.9em;
     }
     #search-marks mark {
       position: relative;
@@ -1089,6 +1109,7 @@
     <div id="search-bar">
       <div id="search-marks" aria-hidden="true"></div>
       <input id="search-input" type="search" placeholder="Search, or ask: latest on AI…" aria-label="Search articles, or ask for an order and topic" autocomplete="off">
+      <div id="search-links"></div>
       <button type="button" id="search-clear" aria-label="Clear search">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M18 6 6 18"/>
@@ -2588,7 +2609,7 @@
         if (path) {
           event.preventDefault();
           if (feed.topic === path) window.scrollTo({ top: 0, behavior: "smooth" });
-          else focusTopic(path, { name: chip.textContent });
+          else focusTopic(path, { name: chip.dataset.name ?? chip.textContent });
           return;
         }
         const id = chip.pathname.match(ENTITY_PATH_PATTERN)?.[1];
@@ -2598,7 +2619,7 @@
           window.scrollTo({ top: 0, behavior: "smooth" });
           return;
         }
-        focusEntity(id, { name: chip.textContent });
+        focusEntity(id, { name: chip.dataset.name ?? chip.textContent });
       });
       window.addEventListener("popstate", () => {
         const id = linkIdFromPath();
@@ -3519,13 +3540,13 @@
             }
           }
         }
-        if (intent?.topic) tagName(intent.topic.name, { kind: "topic" });
+        if (intent?.topic) tagName(intent.topic.name, { kind: "topic", topic: intent.topic });
         for (const entity of entitySuggestions) {
           const kind = entity.kind_path ? kindName(entity.kind_path) : entity.kind.replace("_", " ");
-          tagName(entity.name, { kind, suggested: true });
+          tagName(entity.name, { kind, suggested: true, entity });
         }
         for (const topic of topicMatches) {
-          tagName(topic.name, { kind: "topic", suggested: true });
+          tagName(topic.name, { kind: "topic", suggested: true, topic });
         }
         for (const kind of kindIndex) {
           const tag = { kind: parentKindName(kind.path), suggested: true };
@@ -3542,18 +3563,41 @@
         else spans.push({ ...t });
       }
       const nodes = [];
+      const links = [];
       let at = 0;
       for (const t of spans) {
-        if (t.start > at) nodes.push(document.createTextNode(value.slice(at, t.start)));
+        if (t.start > at) {
+          nodes.push(document.createTextNode(value.slice(at, t.start)));
+          links.push(document.createTextNode(value.slice(at, t.start)));
+        }
+        const text = value.slice(t.start, t.end);
         const mark = document.createElement("mark");
-        mark.textContent = value.slice(t.start, t.end);
+        mark.textContent = text;
         mark.dataset.kind = t.tag.kind;
         if (t.tag.suggested) mark.classList.add("suggested");
         nodes.push(mark);
+        // A topic or an entity opens its page through the chip-link click
+        // handler; a kind or a sort word has none.
+        const target = t.tag.entity ?? t.tag.topic;
+        if (target) {
+          const link = document.createElement("a");
+          link.textContent = text;
+          link.dataset.name = target.name;
+          if (t.tag.entity) setEntityHref(link, target.id);
+          else setTopicHref(link, target.id);
+          link.title = target.name;
+          links.push(link);
+        } else {
+          links.push(document.createTextNode(text));
+        }
         at = t.end;
       }
-      if (at < value.length) nodes.push(document.createTextNode(value.slice(at)));
+      if (at < value.length) {
+        nodes.push(document.createTextNode(value.slice(at)));
+        links.push(document.createTextNode(value.slice(at)));
+      }
       document.getElementById("search-marks").replaceChildren(...nodes);
+      document.getElementById("search-links").replaceChildren(...links);
       const marks = nodes.filter((n) => n.nodeName === "MARK");
       marks.forEach((mark, i) => {
         if (marks[i + 1]) mark.style.setProperty("--label-room", `${marks[i + 1].offsetLeft - mark.offsetLeft}px`);
@@ -3563,7 +3607,9 @@
 
     // Keeps the tags under their words when the input scrolls sideways.
     function syncSearchMarks() {
-      document.getElementById("search-marks").scrollLeft = document.getElementById("search-input").scrollLeft;
+      const { scrollLeft } = document.getElementById("search-input");
+      document.getElementById("search-marks").scrollLeft = scrollLeft;
+      document.getElementById("search-links").scrollLeft = scrollLeft;
     }
 
     // Shows the feed for `intent` unless it's the one already showing. The
