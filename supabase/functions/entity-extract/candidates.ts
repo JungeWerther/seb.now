@@ -1,4 +1,5 @@
 import nlp from "npm:compromise@14.14.4";
+import { EDGE_PUNCTUATION, MAX_LENGTH, ONLY_NUMBERS, POSSESSIVE_END, PRONOUN } from "../_shared/names.ts";
 
 // Candidate phrases that might name an entity. Recall matters more than
 // precision here: Jev decides which candidates are names, and it can only
@@ -14,16 +15,11 @@ import nlp from "npm:compromise@14.14.4";
 
 const MAX_CANDIDATES = 20;
 const MIN_LENGTH = 2;
-const MAX_LENGTH = 60;
 const LEADING_WORDS =
   /^(?:(?:a|an|the|my|your|our|their|its|his|her|some|this|that|these|those|all|every|no|new|how|why|what|one|two|three|four|five|six|seven|eight|nine|ten)\s+)+/i;
-const PRONOUN = /^(?:i|me|you|he|him|she|her|it|its|we|us|they|them|this|that|these|those|who|what|someone|something|everyone|everything)$/i;
-const EDGE_PUNCTUATION = /^[\s"'“”‘’(\[–—:,;.!?…-]+|[\s"'“”‘’)\]–—:,;.!?…-]+$/g;
-const POSSESSIVE_END = /['’]s?$/;
 const SPLIT_AT =
   /\s+(?:and|&|or|vs\.?|versus|of|in|on|at|for|from|with|by|to|about|as|into|over|after)\s+|['’]s?\s+|\s*[–—:;,()|]\s*|\s+-\s+/i;
 const CAPITALISED_RUN = /(?:[A-Z0-9][\w.+’'-]*|[a-z]+[A-Z][\w.+-]*)(?:\s+(?:[A-Z0-9][\w.+’'-]*|[a-z]+[A-Z][\w.+-]*))*/g;
-const ONLY_NUMBERS = /^[\d\s.,$€£%+-]+$/;
 const LEADING_NUMBER = /^(?:[\d$€£][\w.,$€£%]*\s+)+/;
 const CAMEL_CASE_WORD = /\b[A-Za-z]*[a-z][A-Z][\w]*\b/g;
 const INNER_POSSESSIVE = /['’]s?\s/;

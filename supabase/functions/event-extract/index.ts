@@ -1,13 +1,15 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
-import { fetchPage, JsonLdEvent, pageText, Section } from "./content.ts";
+import { pageCandidates } from "../_shared/names.ts";
+import { fetchPage, JsonLdEvent, PageContent, pageText, parseSections, Section } from "../_shared/page.ts";
 import { DateCandidate, dateCandidates, Source } from "./dates.ts";
 
 // Finds the events a link announces and when they happen, from its own page.
 // Per link:
-//  1. the page is fetched and cleaned into text sections (content.ts) and kept
-//     in `link_content`;
+//  1. the page's text sections are read from `link_content`, which
+//     entity-extract's page pass wrote (the page is fetched and kept there
+//     only if it hasn't run on the link);
 //  2. if it declares schema.org Events, those are taken as they are;
 //  3. otherwise code finds every date in the title, feed description and page
 //     (dates.ts). If none is later than the day before the link was published,
@@ -16,9 +18,12 @@ import { DateCandidate, dateCandidates, Source } from "./dates.ts";
 //     or neither; what each date is (the event's run, its start, its end, a
 //     day it happens on, or something else); what kind of event it is (per
 //     section, for a listing, whose headings name the events); and which of
-//     the link's place entities is the venue. Dates in the title or feed
-//     description say what the link is about, so for a page about one event
-//     they win over dates found further down (often other events').
+//     the link's place and organisation entities is the venue (for a listing,
+//     per section, among those that section names and the names code finds in
+//     it, since a long guide's venues don't all become entities; a venue that
+//     isn't one is kept as `venue_name`). Dates in the title or
+//     feed description say what the link is about, so for a page about one
+//     event they win over dates found further down (often other events').
 // Events over before the link was published are dropped. Rows land in
 // `link_events`; every processed link gets `link_enrichment.events_at`,
 // whether it announced anything or not.
@@ -35,11 +40,15 @@ const MIN_PAGE_P = 0.5;
 const MAX_NOT_AN_EVENT_P = 0.5;
 const MIN_ROLE_P = 0.5;
 const MIN_VENUE_P = 0.5;
+const SECTION_VENUE_PHRASES = 6;
 const LEAD_CHARS = 600;
 const EXCERPT_CHARS = 300;
 const DESCRIPTION_CHARS = 500;
 const RECENT_MS = 24 * 60 * 60 * 1000;
 const NONE = "none";
+const PHRASE_PREFIX = "phrase_";
+// Kinds of entity an event can be held at: a museum or a shop is an organisation as well as a place.
+const VENUE_KINDS = ["place", "company", "nonprofit", "public_body", "cooperative"];
 const NOT_AN_EVENT = "not_an_event";
 
 const PAGE_OPTIONS = {
@@ -112,6 +121,7 @@ interface Link {
 interface Place {
   id: string;
   name: string;
+  surface: string | null;
 }
 
 interface EventRow {
@@ -125,6 +135,11 @@ interface EventRow {
   evidence: string | null;
   p: number;
   labeled_by: "jev" | "json_ld";
+}
+
+interface Venue {
+  entityId: string | null;
+  name: string | null;
 }
 
 interface Judged extends DateCandidate {
@@ -168,12 +183,12 @@ function jsonLdRows(events: JsonLdEvent[]): EventRow[] {
 // The dates of one event (the page, or one section of a listing) become rows:
 // its run (a range, else a start and/or an end) if it has one, else one row
 // per day it happens on.
-function unitRows(dates: Judged[], name: string | null, kind: Kind, baseP: number, venue: string | null): EventRow[] {
+function unitRows(dates: Judged[], name: string | null, kind: Kind, baseP: number, venue: Venue): EventRow[] {
   const best = (role: Role) =>
     dates.filter((d) => d.role === role).sort((a, b) => b.roleP - a.roleP)[0];
   const row = (starts: string | null, ends: string | null, startTime: string | null, evidence: Judged, p: number): EventRow => ({
     name, kind, starts_on: starts, ends_on: ends, start_time: startTime,
-    venue_entity_id: venue, venue_name: null, evidence: evidence.context.slice(0, 500),
+    venue_entity_id: venue.entityId, venue_name: venue.name, evidence: evidence.context.slice(0, 500),
     p: round(Math.min(baseP, p)), labeled_by: "jev",
   });
 
@@ -195,15 +210,28 @@ function unitRows(dates: Judged[], name: string | null, kind: Kind, baseP: numbe
 async function loadPlaces(db: SupabaseClient, linkId: string): Promise<Place[]> {
   const { data, error } = await db
     .from("link_entities")
-    .select("entities!inner(id, name, kind)")
+    .select("surface, entities!inner(id, name, kind)")
     .eq("link_id", linkId)
-    .eq("entities.kind", "place");
+    .in("entities.kind", VENUE_KINDS);
   if (error) throw new Error(error.message);
-  return (data as unknown as { entities: Place }[]).map((r) => r.entities);
+  return (data as unknown as { surface: string | null; entities: { id: string; name: string } }[])
+    .map((r) => ({ id: r.entities.id, name: r.entities.name, surface: r.surface }));
+}
+
+// The page as entity-extract stored it, or fetched now if it hasn't (`fresh`:
+// to be stored by this run).
+async function loadPage(db: SupabaseClient, link: Link): Promise<{ page: PageContent; fresh: boolean }> {
+  const { data, error } = await db.from("link_content").select("status, lang, text, json_ld_events").eq("link_id", link.id).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return { page: await fetchPage(link.url), fresh: true };
+  return {
+    page: { status: data.status, lang: data.lang, sections: parseSections(data.text), jsonLdEvents: data.json_ld_events ?? [] },
+    fresh: false,
+  };
 }
 
 async function processLink(db: SupabaseClient, jev: JevClient, link: Link, dryRun: boolean) {
-  const page = await fetchPage(link.url);
+  const { page, fresh } = await loadPage(db, link);
   const reference = new Date(link.created_at);
   const report = { link_id: link.id, title: link.title, status: page.status, page: null as string | null, dates: [] as unknown[], events: [] as EventRow[], inputTokens: 0 };
 
@@ -225,7 +253,7 @@ async function processLink(db: SupabaseClient, jev: JevClient, link: Link, dryRu
   }
   report.events = rows;
 
-  if (!dryRun) {
+  if (!dryRun && fresh) {
     const { error: contentError } = await db.from("link_content").upsert({
       link_id: link.id,
       fetched_at: new Date().toISOString(),
@@ -235,6 +263,8 @@ async function processLink(db: SupabaseClient, jev: JevClient, link: Link, dryRu
       json_ld_events: page.jsonLdEvents.length ? page.jsonLdEvents : null,
     });
     if (contentError) throw new Error(contentError.message);
+  }
+  if (!dryRun) {
     const { error: deleteError } = await db.from("link_events").delete().eq("link_id", link.id).in("labeled_by", ["jev", "json_ld"]);
     if (deleteError) throw new Error(deleteError.message);
     if (rows.length) {
@@ -307,8 +337,27 @@ async function judge(
   if (places.length) {
     questions.venue = {
       type: "choice",
-      instructions: { question: "If `link` is about one event, which of these places is it held at?" },
+      instructions: {
+        question: "If `link` is about one event, where is it held? Pick the most specific: the venue, building or site, not the city around it, unless only the city is said.",
+      },
       criteria: { ...Object.fromEntries(places.map((p) => [p.id, p.name])), [NONE]: "None of these, or not said." },
+    };
+  }
+  const sectionVenues = new Map(headed.map((s) => [s, venueOptions(places, sections[s])]));
+  for (const [s, { named, phrases }] of sectionVenues) {
+    if (!named.length && !phrases.length) continue;
+    questions[`v${s}`] = {
+      type: "choice",
+      instructions: {
+        heading: sections[s].heading,
+        excerpt: sections[s].text.slice(0, EXCERPT_CHARS),
+        question: "If `link` lists several events, where is the one under `heading` held? Pick the most specific: the venue, building or site, not the city around it, unless only the city is said.",
+      },
+      criteria: {
+        ...Object.fromEntries(named.map((p) => [p.id, p.name])),
+        ...Object.fromEntries(phrases.map((phrase, j) => [`${PHRASE_PREFIX}${j}`, phrase])),
+        [NONE]: "None of these, or not said.",
+      },
     };
   }
 
@@ -330,6 +379,16 @@ async function judge(
     return { kind: kind as Kind, p: 1 - notP };
   };
 
+  // A listing entry's venue: one of the link's entities, or a name found in its text.
+  const sectionVenue = (s: number): Venue => {
+    const key = `v${s}`;
+    if (!result.answers[key]) return { entityId: null, name: null };
+    const { choice, p } = answer(key);
+    if (choice === NONE || p < MIN_VENUE_P) return { entityId: null, name: null };
+    if (!choice.startsWith(PHRASE_PREFIX)) return { entityId: choice, name: null };
+    return { entityId: null, name: sectionVenues.get(s)!.phrases[Number(choice.slice(PHRASE_PREFIX.length))] ?? null };
+  };
+
   const page = answer("page");
   report.page = `${page.choice} (${round(page.p)})`;
   const judged: Judged[] = candidates.flatMap((c, i) => {
@@ -345,14 +404,32 @@ async function judge(
     const venue = places.length ? answer("venue") : null;
     const venueId = venue && venue.choice !== NONE && venue.p >= MIN_VENUE_P ? venue.choice : null;
     const fromLink = judged.filter((d) => d.origin !== "page");
-    return unitRows(fromLink.length ? fromLink : judged, null, kind.kind, Math.min(page.p, kind.p), venueId);
+    return unitRows(fromLink.length ? fromLink : judged, null, kind.kind, Math.min(page.p, kind.p), { entityId: venueId, name: null });
   }
   return headed.flatMap((s) => {
     const kind = kindOf(`s${s}`);
     if (!kind) return [];
     const name = sections[s].heading!.slice(0, 300);
-    return unitRows(judged.filter((d) => d.section === s), name, kind.kind, Math.min(page.p, kind.p), null);
+    return unitRows(judged.filter((d) => d.section === s), name, kind.kind, Math.min(page.p, kind.p), sectionVenue(s));
   });
+}
+
+// A section's venue options: the link's venue entities it names (by the text
+// they were found as or their name), and the other names code finds in it.
+function venueOptions(places: Place[], section: Section): { named: Place[]; phrases: string[] } {
+  const text = `${section.heading ?? ""}\n${section.text}`.toLowerCase();
+  const seen = new Set<string>();
+  const named = places.filter((p) => {
+    const found = [p.surface, p.name].some((n) => n && text.includes(n.toLowerCase()));
+    if (!found || seen.has(p.id)) return false;
+    seen.add(p.id);
+    return true;
+  });
+  const known = new Set(named.flatMap((p) => [p.surface, p.name]).filter((n): n is string => !!n).map((n) => n.toLowerCase()));
+  const phrases = pageCandidates([section], "", SECTION_VENUE_PHRASES)
+    .map((c) => c.surface)
+    .filter((phrase) => !known.has(phrase.toLowerCase()));
+  return { named, phrases };
 }
 
 async function unprocessedLinkIds(db: SupabaseClient): Promise<string[]> {

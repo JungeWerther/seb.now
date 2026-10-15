@@ -1,4 +1,5 @@
 import * as chrono from "npm:chrono-node@2.10.2";
+import { sentenceAround } from "../_shared/page.ts";
 
 // Date mentions found by code, no model: every date or date range chrono can
 // read in the link's title, its feed description and each section of its page,
@@ -15,8 +16,6 @@ import * as chrono from "npm:chrono-node@2.10.2";
 // before description before page.
 
 const MAX_CANDIDATES = 20;
-const CONTEXT_CHARS = 240;
-const SENTENCE_END = /[.!?\n]/;
 
 export type Origin = "title" | "description" | "page";
 
@@ -66,14 +65,6 @@ function resolve(r: chrono.ParsedResult, reference: Date): [number, number | nul
   const year = reference.getUTCFullYear();
   // Ties go forward: a date as far ahead as behind is more likely announced than reported.
   return [at(year), at(year + 1), at(year - 1)].reduce((best, x) => (distance(x) < distance(best) ? x : best));
-}
-
-function sentenceAround(text: string, from: number, to: number): string {
-  let start = from;
-  while (start > 0 && !SENTENCE_END.test(text[start - 1]) && from - start < CONTEXT_CHARS / 2) start--;
-  let end = to;
-  while (end < text.length && !SENTENCE_END.test(text[end]) && end - to < CONTEXT_CHARS / 2) end++;
-  return text.slice(start, Math.min(text.length, end + 1)).replace(/\s+/g, " ").trim();
 }
 
 // French pages are read with chrono's French parser first; the English one
