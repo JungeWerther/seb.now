@@ -224,7 +224,8 @@ job (`*/5 * * * *`, up to 30 links a run, which takes a minute or two, so runs
 don't overlap and links stay one at a time): `candidates.ts` proposes phrases (compromise's noun chunks,
 whole and split at connecting words and possessives, plus capitalised runs, their
 two-word windows and camel-case words; pronouns, leading number words and
-phrases with a possessive inside dropped); one Jev request
+phrases with a possessive inside dropped; known entity names the title contains
+first, see below); one Jev request
 per link asks of each whether it's a name, a concept or neither, and its kind;
 names with p ≥ 0.8 are matched against existing entities by
 `public.entity_candidates(phrase)` (trigram similarity on names and past
@@ -236,9 +237,31 @@ those longer names as extra options; picking one gives it that name's entity,
 so a page's short forms don't become entities of their own (a bare "Sarah"
 would otherwise exact-match one global "Sarah" for every Sarah). Links run one at a time so
 a new entity is matchable by the next link. After the title, a second pass
-reads the page the link points to (`_shared/names.ts` proposes its capitalised
-runs, each with its sentence; one question per phrase asks name-and-kind at
-once), marked by `link_enrichment.page_entities_at`; its mentions have
+reads the page the link points to (one question per phrase asks name-and-kind
+at once), marked by `link_enrichment.page_entities_at`. `_shared/names.ts`
+proposes the page's phrases, each with its sentence (ICU sentence breaks via
+`Intl.Segmenter`), from four sources, most certain first: names the page
+declares in its JSON-LD (`page.declared`: a Person, Organization, Place,
+Event, Product or work it is about, not its author or publisher); known
+entity names the text contains (`public.known_names(first_words)`, entities
+whose first folded word is one of the page's capitalised words, matched word
+by word, so a known name is found even opening a sentence or with a lowercase
+word inside); runs of capitalised words joined across particles and split at
+conjunctions; and such a run with a lowercase word in front that often opens
+a name ("musée d'Orsay", "galerie Perrotin"). Instead of word lists, whether a
+capital means anything is read from the corpus: `public.word_case_stats`
+(per language and folded word, how often pages write it capitalised when it
+isn't a sentence's first word; only prose lines of 8+ words, not headings) is
+kept current by a trigger on `link_content` and read through
+`public.word_case_rates(page_lang, words)`. A word lowercase mid-sentence
+("Dès", "Pour", "After", "The") is dropped from a run's front, a word
+capitalised wherever it stands ("Apple", "Paris") counts even opening a
+sentence; month and weekday names come from `Intl.DateTimeFormat` for the page's
+language. `_shared/hints.ts` loads both for a text. At most 60 phrases a page.
+`POST {"eval": true}` scores the page pass's candidates (and with `"decide":
+true` its mentions) against `public.entity_gold`, a hand-labelled set of the
+names each sampled page's article contains (service_role only), with timings
+per step and no writes. Its mentions have
 `link_entities.found_in = 'page'` (title ones `'title'`), and `related_links`
 only counts title mentions. Jev's mentions land in
 `link_entities` with `surface` (the text as written, which doubles as an
@@ -254,10 +277,11 @@ whole table; execute revoked from clients). Both functions share
 page, with no per-site code; on its own `pg_cron` job (`4-59/10 * * * *`, up
 to 10 links a run, only links `entity-extract` has done, since the venue is
 picked among their place entities). Same split as the other steps: code
-proposes, Jev only chooses. `_shared/page.ts` fetches the page and cleans it without
-a DOM parser (cut at the `<h1>`, scripts/menus/headers/footers/forms removed,
-text split into sections at `<h2>`/`<h3>` headings or at paragraphs that open
-with a bold title, which is how guides list their events); the cleaned text
+proposes, Jev only chooses. `_shared/page.ts` fetches the page, parses it into
+a DOM (linkedom) and takes the article with Mozilla's Readability (Firefox's
+reader view; when it finds none, the body without menus, headers, footers and
+forms), split into sections at `<h1>`–`<h3>` headings or at paragraphs that
+open with a bold title, which is how guides list their events; the cleaned text
 lands in `public.link_content` (service_role only), written by
 `entity-extract`'s page pass, which event-extract reads back
 (`parseSections`) rather than fetching the page again.

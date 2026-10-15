@@ -1,8 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient, JsonValue } from "../_shared/jev.ts";
-import { pageCandidates } from "../_shared/names.ts";
-import { fetchPage, PageContent, pageText } from "../_shared/page.ts";
+import { nameHints } from "../_shared/hints.ts";
+import { fold, pageCandidates, WORD } from "../_shared/names.ts";
+import { fetchHtml, fetchPage, PageContent, pageText, readPage } from "../_shared/page.ts";
 import { candidates } from "./candidates.ts";
 
 // Finds the named entities a link mentions and links each to a row in
@@ -30,6 +31,13 @@ import { candidates } from "./candidates.ts";
 // on up to PAGE_LINKS_PER_RUN, newest first, starting no page after
 // RUN_BUDGET_MS. POST {"link_ids": [...]} runs both passes on those links.
 // "dry_run": true reports without writing.
+//
+// POST {"eval": true} scores the page pass's candidates against the
+// hand-labelled names in `entity_gold` (or only `link_ids` among them), with
+// no Jev call and no writes: per link, which labelled names are among the
+// candidates exactly or overlapping one, and how long each step took.
+// "decide": true also runs the dry run's decisions and scores the mentions;
+// "text": true adds the page text as read.
 
 const MODEL = "jev-1.13.0";
 const TYPESAFE_KEY_SECRET = "typesafe-ai-token";
@@ -317,7 +325,8 @@ async function saveMentions(db: SupabaseClient, linkId: string, mentions: Mentio
 }
 
 async function processTitle(db: SupabaseClient, jev: JevClient, link: Link, dryRun: boolean) {
-  const phrases = candidates(link.title).map((surface) => ({ surface, sentence: null }));
+  const hints = await nameHints(db, [link.title], null);
+  const phrases = candidates(link.title, hints).map((surface) => ({ surface, sentence: null }));
   const { mentions, inputTokens } = await mentionsOf(db, jev, link, phrases);
   if (!dryRun) {
     await saveMentions(db, link.id, mentions, "title");
@@ -327,8 +336,13 @@ async function processTitle(db: SupabaseClient, jev: JevClient, link: Link, dryR
   return { link_id: link.id, title: link.title, found_in: "title", candidates: phrases.map((p) => p.surface), mentions, inputTokens };
 }
 
+function sectionTexts(page: PageContent): string[] {
+  return page.sections.map((s) => [s.heading, s.text].filter(Boolean).join("\n"));
+}
+
 async function processPage(db: SupabaseClient, jev: JevClient, link: Link, page: PageContent, dryRun: boolean) {
-  const phrases = pageCandidates(page.sections, link.title);
+  const hints = await nameHints(db, sectionTexts(page), page.lang, page.declared);
+  const phrases = pageCandidates(page.sections, link.title, hints);
   const { mentions, inputTokens } = await mentionsOf(db, jev, link, phrases);
   if (!dryRun) {
     const { error: contentError } = await db.from("link_content").upsert({
@@ -348,13 +362,106 @@ async function processPage(db: SupabaseClient, jev: JevClient, link: Link, page:
 }
 
 // Pages are fetched FETCH_CONCURRENCY at a time, ahead of the one-at-a-time Jev work.
-function prefetch(links: Link[]): Promise<PageContent>[] {
+function prefetch<T>(links: Link[], fetchOne: (url: string) => Promise<T>): Promise<T>[] {
   const lanes: Promise<unknown>[] = Array.from({ length: FETCH_CONCURRENCY }, () => Promise.resolve());
   return links.map((link, i) => {
-    const page = lanes[i % FETCH_CONCURRENCY].then(() => fetchPage(link.url));
+    const page = lanes[i % FETCH_CONCURRENCY].then(() => fetchOne(link.url));
     lanes[i % FETCH_CONCURRENCY] = page;
     return page;
   });
+}
+
+function nameKey(name: string): string[] {
+  return [...name.matchAll(WORD)].map((m) => fold(m[0]));
+}
+
+// Whether one name's words run, in order, inside the other's.
+function overlaps(a: string[], b: string[]): boolean {
+  const [inner, outer] = a.length <= b.length ? [a, b] : [b, a];
+  if (!inner.length) return false;
+  for (let i = 0; i + inner.length <= outer.length; i++) {
+    if (inner.every((w, j) => outer[i + j] === w)) return true;
+  }
+  return false;
+}
+
+// How well `found` covers the labelled names: exactly (same words), or
+// overlapping (one inside the other: "Monet" for "Claude Monet"); and how
+// many of `found` overlap a labelled name at all.
+function score(gold: string[], found: string[]) {
+  const g = gold.map(nameKey);
+  const f = found.map(nameKey);
+  const exact = g.filter((x) => f.some((y) => y.join(" ") === x.join(" "))).length;
+  const missed = gold.filter((_, i) => !f.some((y) => overlaps(y, g[i])));
+  const relevant = f.filter((y) => g.some((x) => overlaps(x, y))).length;
+  return { exact, overlapping: gold.length - missed.length, relevant, missed };
+}
+
+async function evaluate(db: SupabaseClient, jev: JevClient, ids: string[] | null, decide: boolean, withText: boolean) {
+  let query = db.from("entity_gold").select("link_id, name");
+  if (ids) query = query.in("link_id", ids);
+  const { data: goldRows, error } = await query;
+  if (error) throw new Error(error.message);
+  const gold = new Map<string, string[]>();
+  for (const r of goldRows as { link_id: string; name: string }[]) gold.set(r.link_id, [...(gold.get(r.link_id) ?? []), r.name]);
+  const { data: links, error: linksError } = await db.from("links").select("id, title, url").in("id", [...gold.keys()].slice(0, MAX_LINK_IDS));
+  if (linksError) throw new Error(linksError.message);
+
+  const htmls = prefetch(links as Link[], fetchHtml);
+  const results: Record<string, unknown>[] = [];
+  for (const [i, link] of (links as Link[]).entries()) {
+    const names = gold.get(link.id)!;
+    const { status, html } = await htmls[i];
+    const t0 = performance.now();
+    const page: PageContent = html === null
+      ? { status, lang: null, sections: [], jsonLdEvents: [], declared: [] }
+      : { status, ...readPage(html) };
+    const t1 = performance.now();
+    const hints = await nameHints(db, sectionTexts(page), page.lang, page.declared);
+    const t2 = performance.now();
+    const phrases = pageCandidates(page.sections, link.title, hints);
+    const t3 = performance.now();
+    const surfaces = phrases.map((p) => p.surface);
+    const text = pageText(page.sections);
+    const result: Record<string, unknown> = {
+      link_id: link.id,
+      title: link.title,
+      status,
+      html_chars: html?.length ?? 0,
+      text_chars: text.length,
+      ms: { read: Math.round(t1 - t0), hints: Math.round(t2 - t1), candidates: Math.round(t3 - t2) },
+      gold: names.length,
+      candidates: surfaces.length,
+      ...score(names, surfaces),
+      declared: page.declared.map((d) => d.name),
+      candidate_list: surfaces,
+    };
+    if (decide) {
+      const { mentions } = await mentionsOf(db, jev, link, phrases);
+      const m = score(names, mentions.map((x) => x.surface));
+      result.mentions = { count: mentions.length, exact: m.exact, overlapping: m.overlapping, relevant: m.relevant, list: mentions.map((x) => x.surface) };
+    }
+    if (withText) result.text = text;
+    results.push(result);
+  }
+  const sum = (f: (r: Record<string, unknown>) => number) => results.reduce((s, r) => s + f(r), 0);
+  const goldTotal = sum((r) => r.gold as number);
+  const mention = (k: string) => sum((r) => ((r.mentions as Record<string, number> | undefined)?.[k] ?? 0));
+  return {
+    links: results.length,
+    gold: goldTotal,
+    candidate_recall_exact: sum((r) => r.exact as number) / goldTotal,
+    candidate_recall_overlapping: sum((r) => r.overlapping as number) / goldTotal,
+    candidate_precision: sum((r) => r.relevant as number) / sum((r) => r.candidates as number),
+    ...(decide
+      ? {
+        mention_recall_exact: mention("exact") / goldTotal,
+        mention_recall_overlapping: mention("overlapping") / goldTotal,
+        mention_precision: mention("relevant") / mention("count"),
+      }
+      : {}),
+    results,
+  };
 }
 
 // `entities.name` is unique: a name Jev called new that already exists (it only
@@ -393,6 +500,11 @@ Deno.serve(async (req: Request) => {
   }
   const jev = new JevClient(apiKey, MODEL);
 
+  if (body?.eval === true) {
+    const report = await evaluate(db, jev, (ids as string[] | undefined) ?? null, body?.decide === true, body?.text === true);
+    return new Response(JSON.stringify(report, null, 2), { headers: { "Content-Type": "application/json" } });
+  }
+
   let titleLinks: Link[];
   if (ids) {
     const { data, error } = await db.from("links").select("id, title, url").in("id", ids as string[]);
@@ -413,7 +525,7 @@ Deno.serve(async (req: Request) => {
   }
 
   const pageLinks = ids ? titleLinks : await unprocessedLinks(db, "page_entities", PAGE_LINKS_PER_RUN);
-  const pages = prefetch(pageLinks);
+  const pages = prefetch(pageLinks, fetchPage);
   for (const [i, link] of pageLinks.entries()) {
     if (!ids && Date.now() - started > RUN_BUDGET_MS) break;
     try {

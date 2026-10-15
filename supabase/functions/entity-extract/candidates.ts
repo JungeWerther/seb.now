@@ -1,5 +1,5 @@
 import nlp from "npm:compromise@14.14.4";
-import { EDGE_PUNCTUATION, MAX_LENGTH, ONLY_NUMBERS, POSSESSIVE_END, PRONOUN } from "../_shared/names.ts";
+import { EDGE_PUNCTUATION, knownNamesIn, MAX_LENGTH, NameHints, ONLY_NUMBERS, POSSESSIVE_END, PRONOUN } from "../_shared/names.ts";
 
 // Candidate phrases that might name an entity. Recall matters more than
 // precision here: Jev decides which candidates are names, and it can only
@@ -11,7 +11,8 @@ import { EDGE_PUNCTUATION, MAX_LENGTH, ONLY_NUMBERS, POSSESSIVE_END, PRONOUN } f
 // capitalised run in a title-case headline swallows names ("Interview Craig
 // Federighi Regarding"), so each two-word window of it is offered as well.
 // A phrase with a possessive inside ("Google’s Project Suncatcher") is dropped:
-// its halves are already offered on their own.
+// its halves are already offered on their own. Names already in `entities`
+// that the title contains come first, with their exact extent.
 
 const MAX_CANDIDATES = 20;
 const MIN_LENGTH = 2;
@@ -41,7 +42,7 @@ function pairs(run: string): string[] {
   return words.slice(1).map((word, i) => `${words[i]} ${word}`);
 }
 
-export function candidates(title: string): string[] {
+export function candidates(title: string, hints: Partial<NameHints> = {}): string[] {
   const chunks: string[] = nlp(title).nouns().out("array");
   const runs = title.match(CAPITALISED_RUN) ?? [];
   const raw = [
@@ -52,7 +53,8 @@ export function candidates(title: string): string[] {
   ].filter((phrase) => !INNER_POSSESSIVE.test(phrase.trim()));
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const phrase of raw.map(clean)) {
+  // Not `clean`: a known name keeps its leading words ("The Verge", "New York").
+  for (const phrase of [...knownNamesIn(title, hints), ...raw.map(clean)]) {
     const key = phrase.toLowerCase();
     const unbalanced = (phrase.match(/\(/g)?.length ?? 0) !== (phrase.match(/\)/g)?.length ?? 0);
     if (phrase.length < MIN_LENGTH || phrase.length > MAX_LENGTH || ONLY_NUMBERS.test(phrase) || PRONOUN.test(phrase) || unbalanced || seen.has(key)) {
