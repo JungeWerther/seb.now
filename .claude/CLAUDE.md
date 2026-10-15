@@ -395,7 +395,11 @@ tree (`public.kinds`, an `ltree` under `entity`, loaded once with the topics), n
 the full ancestry: "company" reads `org`, an entity "Uber" `company` (its
 `entities.kind_path`, fetched by id with the `match_entities` results). A label runs
 past its word up to the next tag (`--label-room`), clipped with an ellipsis. It's scrolled with the input (`syncSearchMarks`) and never takes
-pointer events. Order names live in `SORTS` (the function) and
+pointer events. A tagged topic or entity is also tappable: `#search-links`, the same
+copy again but above the input and see-through, holds just those words as `/t/<path>`
+or `/e/<id>` links (with `data-name`, which the chip-link click handler prefers over
+the typed text), so tapping one opens its page in place while a tap anywhere else
+reaches the input; kinds and sort words have no page and stay plain tags. Order names live in `SORTS` (the function) and
 `SORT_LABELS` (the page) and must match `feed_query`'s check.
 
 **Query credits.** Every account (anonymous ones included) starts with
