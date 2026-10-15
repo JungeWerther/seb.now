@@ -388,8 +388,13 @@ place in the box (`renderSearchMarks`, run by `showQueryChips`): `#search-marks`
 copy of the typed text laid out identically behind the transparent input, with the
 text invisible and good matches wrapped in `<mark data-kind>` (a small kind label
 above the word, drawn by CSS) — the reading's sort words and topic filled, an entity
-or topic suggestion whose whole name is typed dashed; neighbouring words of one name
-share one tag. It's scrolled with the input (`syncSearchMarks`) and never takes
+or topic suggestion whose whole name is typed dashed, then (last, so they never take a
+word from a longer name) the names of entity kinds; neighbouring words of one name
+share one tag. Kinds and entities are labelled with their lineage up the kind tree
+(`public.kinds`, an `ltree` under `entity`, loaded once with the topics): "company"
+reads `org › agent › entity`, an entity "Uber" `company › org › agent › entity` (its
+`entities.kind_path`, fetched by id with the `match_entities` results). A label runs
+past its word up to the next tag (`--label-room`), clipped with an ellipsis. It's scrolled with the input (`syncSearchMarks`) and never takes
 pointer events. Order names live in `SORTS` (the function) and
 `SORT_LABELS` (the page) and must match `feed_query`'s check.
 
