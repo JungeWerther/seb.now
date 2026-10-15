@@ -2,7 +2,7 @@
 -- rank first in a query's results: a link mentioning any of them comes before
 -- every link that doesn't, each group in the query's own order. They only
 -- reorder what the query already matches, never add links to it.
-drop function public.feed_query(text, text, text, timestamptz, integer, integer);
+alter function public.feed_query(text, text, text, timestamptz, integer, integer) rename to feed_query_old;
 
 create function public.feed_query(
   sort text,
