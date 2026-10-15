@@ -103,20 +103,21 @@ function tokenize(text: string): Token[][] {
   });
 }
 
-// The distinct words of these texts, for looking up their case rates; with
-// `capitalisedOnly`, only words that are capitalised or come just before one,
-// where a known name can start.
-export function textWords(texts: string[], capitalisedOnly = false): string[] {
-  const words = new Set<string>();
+// The distinct words of these texts, for looking up their case rates, and
+// those that are capitalised or come just before one, where a known name can
+// start.
+export function textWords(texts: string[]): { all: string[]; nameStarts: string[] } {
+  const all = new Set<string>();
+  const nameStarts = new Set<string>();
   for (const text of texts) {
     for (const tokens of tokenize(text)) {
       tokens.forEach((t, i) => {
-        if (!capitalisedOnly) words.add(t.key);
-        else if (t.cap || tokens[i + 1]?.cap) words.add(t.key.replace(FOLDED_ELIDED, ""));
+        all.add(t.key);
+        if (t.cap || tokens[i + 1]?.cap) nameStarts.add(t.key.replace(FOLDED_ELIDED, ""));
       });
     }
   }
-  return [...words];
+  return { all: [...all], nameStarts: [...nameStarts] };
 }
 
 const calendarCache = new Map<string, Set<string>>();

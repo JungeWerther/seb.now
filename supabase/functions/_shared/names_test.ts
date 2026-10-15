@@ -51,5 +51,5 @@ Deno.test("knownNamesIn finds known names in a title-case headline", () => {
 
 Deno.test("fold and textWords match the SQL folding", () => {
   assertEquals(fold("Dès L’Œuvre"), "des l'oeuvre");
-  assertEquals(textWords(["le musée d'Orsay ouvre"], true).sort(), ["musee", "orsay"]);
+  assertEquals(textWords(["le musée d'Orsay ouvre"]).nameStarts.sort(), ["musee", "orsay"]);
 });

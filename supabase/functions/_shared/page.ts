@@ -25,6 +25,11 @@ const MAX_HTML_CHARS = 2_000_000;
 const MAX_TEXT_CHARS = 20000;
 const MIN_ARTICLE_CHARS = 500;
 const USER_AGENT = "Mozilla/5.0 (compatible; seb.now reader; +https://seb.now)";
+// Script and style bodies, which some pages carry megabytes of before their
+// article; only JSON-LD is read. Their content can't hold their closing tag,
+// so this cut is exact even without a parser.
+const SCRIPT_OR_STYLE = /<(script|style)\b([^>]*)>[\s\S]*?<\/\1\s*>/gi;
+const JSON_LD_TYPE = /application\/ld\+json/i;
 
 const DEAD_TAGS = "script, style, noscript, svg, template, iframe, canvas, object";
 const CHROME_TAGS = "nav, header, footer, aside, form, button, select, dialog";
@@ -268,7 +273,8 @@ export async function fetchHtml(url: string): Promise<{ status: number | null; h
       await res.body?.cancel();
       return { status: res.status, html: null };
     }
-    return { status: res.status, html: (await res.text()).slice(0, MAX_HTML_CHARS) };
+    const html = (await res.text()).replace(SCRIPT_OR_STYLE, (whole, _tag, attrs) => (JSON_LD_TYPE.test(attrs) ? whole : ""));
+    return { status: res.status, html: html.slice(0, MAX_HTML_CHARS) };
   } catch {
     return { status: null, html: null };
   }

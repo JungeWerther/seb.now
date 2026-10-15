@@ -16,8 +16,9 @@ export async function nameHints(
   lang: string | null,
   declared: DeclaredName[] = [],
 ): Promise<NameHints> {
-  const words = textWords(texts).slice(0, MAX_LOOKUP_WORDS);
-  const firstWords = textWords(texts, true).slice(0, MAX_LOOKUP_WORDS);
+  const { all, nameStarts } = textWords(texts);
+  const words = all.slice(0, MAX_LOOKUP_WORDS);
+  const firstWords = nameStarts.slice(0, MAX_LOOKUP_WORDS);
   const [rates, known] = await Promise.all([
     words.length ? db.rpc("word_case_rates", { page_lang: lang, words }) : { data: {}, error: null },
     firstWords.length ? db.rpc("known_names", { first_words: firstWords }) : { data: [], error: null },
