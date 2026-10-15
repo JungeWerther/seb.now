@@ -1979,10 +1979,12 @@
     }
 
     // One page of feed_query for a typed query's intent; only its for_you
-    // order reads the caller's own votes.
+    // order reads the caller's own votes. Links mentioning the entities
+    // suggested for the query come first, with those entities highlighted.
     async function fetchQueried(intent, asOf, offset) {
       const client = await supabaseReady;
       if (intent.sort === "for_you") await pendingSession;
+      const entities = intent.entities ?? [];
       const { data: ranks, error } = await client.rpc("feed_query", {
         sort: intent.sort,
         topic: intent.topic?.id ?? null,
@@ -1990,12 +1992,16 @@
         as_of: asOf,
         page_offset: offset,
         page_size: FEED_PAGE_SIZE,
+        entities: entities.length ? entities.map((e) => e.id) : null,
       });
       if (error) {
         console.error("failed to query feed", error);
         return null;
       }
-      return linksInOrder(client, ranks);
+      const page = await linksInOrder(client, ranks);
+      if (!page || !entities.length) return page;
+      const shared = { entities: new Set(entities.map((e) => e.name)), topics: new Set() };
+      return { rows: page.rows.map((row) => ({ row, shared })), count: page.count };
     }
 
     async function linksInOrder(client, ranks) {
@@ -3358,7 +3364,15 @@
     }
 
     function sameIntent(a, b) {
-      return Boolean(a && b) && a.sort === b.sort && a.topic?.id === b.topic?.id && a.search === b.search;
+      const entityIds = (intent) => (intent.entities ?? []).map((e) => e.id).join();
+      return Boolean(a && b) && a.sort === b.sort && a.topic?.id === b.topic?.id && a.search === b.search
+        && entityIds(a) === entityIds(b);
+    }
+
+    // `intent` with the entities suggested for its text, which feed_query
+    // ranks first.
+    function withEntities(intent, entities) {
+      return { ...intent, entities: entities.map(({ id, name }) => ({ id, name })) };
     }
 
     const queryChips = document.getElementById("query-chips");
@@ -3502,7 +3516,8 @@
       }
     }
 
-    // Reads the typed text and shows the feed it asks for. The page reads it
+    // Reads the typed text and shows the feed it asks for, with links
+    // mentioning the entities suggested for it first. The page reads it
     // first and shows that at once; only when some word could be part of a
     // topic does Jev read it too, and its answer replaces the page's. If Jev
     // can't be asked (no credits) or fails, the page's reading stays, with the
@@ -3518,11 +3533,12 @@
         if (force || feed.query || feed.intent) showFeed("");
         return;
       }
-      await loadTopicIndex();
+      const [, entities] = await Promise.all([loadTopicIndex(), matchEntities(text)]);
       if (generation !== queryGeneration) return;
+      entitySuggestions = entities;
       const local = localRead(text, { partial });
       const asked = !local.sure && queryCreditsLeft !== 0;
-      const first = asked ? local.intent : local.fallback;
+      const first = withEntities(asked ? local.intent : local.fallback, entities);
       showQueryChips(text, first);
       queryChips.classList.toggle("pending", asked);
       applyIntent(text, first, { force });
@@ -3531,7 +3547,7 @@
       const intent = await readQuery(text.slice(0, QUERY_MAX_LENGTH), candidates.map((t) => t.id));
       if (generation !== queryGeneration) return;
       queryChips.classList.remove("pending");
-      const final = intent ?? local.fallback;
+      const final = withEntities(intent ?? local.fallback, entities);
       showQueryChips(text, final);
       applyIntent(text, final, { replace: true });
     }
