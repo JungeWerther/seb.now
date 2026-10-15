@@ -344,7 +344,82 @@ Search is server-side and newest-first: a debounced `ilike` on
 `links.search_text`, a stored generated column (lowercased title + host
 without `www.`) with a `pg_trgm` GIN index, keyset-paged on
 `(created_at desc, id desc)` — `id` breaks ties because one ingest upsert
-stamps all its rows with the same `now()`. Client-fetched articles are built by
+stamps all its rows with the same `now()`.
+
+**The search box is also a query: `query-parse` + `feed_query`.** What's typed
+is read for a sort order, a topic and search words, e.g. "latest on ai agents"
+→ newest first, `ai.agents`, no words; "top openai news" → most upvoted,
+search "openai". On every keystroke the page matches the text against the whole
+topic list (loaded once on first focus, `matchTopics`: a finished word matches
+a topic-name word exactly or as its singular/plural, the word still being typed
+also by prefix, stopwords skipped) and shows the best matches as dashed chips
+in `#query-chips` above the search bar. When a word is finished (a space), on
+Enter, or after `QUERY_PARSE_PAUSE_MS` mid-word, the page first reads the query
+itself (`localRead`): order words (`QUERY_SORT_WORDS`), filler
+(`QUERY_FILLER_WORDS`), the most specific topic whose whole name is typed, and
+words no topic name contains as search words. That reading is applied at once.
+If every finished word is placed that way it's final and Jev isn't asked (most
+queries: "latest on ai agents", "top openai news", "football"); a word still
+being typed that could become a topic word just waits. Only when a finished
+word could be part of some topic ("climate change") does the page also POST
+the text and up to 8 matched topic ids to the **`query-parse`** Edge Function (`verify_jwt` on,
+anon/session bearer via `functions.invoke`). Code proposes, Jev only chooses:
+one Jev request asks for the sort (`for_you`/`latest`/`top`/`discussed`), which
+candidate topic is meant (or none), and each word's role (sort, topic, search,
+filler); the search words are what's left. Topics are looked up by id, so the
+page's input never becomes an option's text; text is capped at 120 chars and
+12 words. Answers are stored in `public.query_readings` (key: lowercased text +
+candidate ids; service_role only), shared by every reader, so a query anyone
+has had read is free for everyone after (plus a per-isolate and per-page copy). ~1,000–1,400
+input tokens and ~1.2s per read. Jev's reading replaces the chips (filled: the
+sort, `topic …`, `search "…"`), and the feed becomes
+`public.feed_query(sort, topic, search, as_of, page_offset, page_size)`
+(security invoker; `for_you` is `ranked_feed`'s rank, `latest` newest, `top`
+net votes, `discussed` reply count; `topic` filters to it and its children;
+every search word must be in `search_text`, ignoring case and accents: both
+sides go through `public.fold_text`, `lower(unaccent(…))`, so "cinema" finds
+"Cinéma"; `search_text` itself is only lowercased, so its trigram index doesn't
+serve this), unless the reading is the same as
+the feed already showing; a correction swaps the list only once its first page
+has arrived. Entities are suggested alongside topics: after
+`QUERY_ENTITY_PAUSE_MS` without typing, the page sends its `queryWords` (the
+last one as `partial` while still being typed) to
+`public.match_entities(words, partial, max_results)` (security invoker; a name
+word matches a typed word exactly, as its singular/plural, or by prefix for the
+partial one, accents ignored via `unaccent`; at least half the name's words must
+match, not counting little words like "of"/"the"/"de", so "juggalos" suggests
+"Gathering of the Juggalos"; ranked by that share, then post count), and the
+latest matches stay up until the next arrive. Suggestion chips are links
+(`/t/<path>`, `/e/<id>`, the kind drawn by CSS from `data-kind` so
+`textContent` stays the name), so tapping one opens that topic's or entity's
+page through the chip-link click handler rather than changing the search. If
+`query-parse` fails or there are no credits, the page's own reading stays, with
+the words it couldn't place searched for too. The matched words are also tagged in
+place in the box (`renderSearchMarks`, run by `showQueryChips`): `#search-marks` is a
+copy of the typed text laid out identically behind the transparent input, with the
+text invisible and good matches wrapped in `<mark data-kind>` (a small kind label
+above the word, drawn by CSS) — the reading's sort words and topic filled, an entity
+or topic suggestion whose whole name is typed dashed; neighbouring words of one name
+share one tag. It's scrolled with the input (`syncSearchMarks`) and never takes
+pointer events. Order names live in `SORTS` (the function) and
+`SORT_LABELS` (the page) and must match `feed_query`'s check.
+
+**Query credits.** Every account (anonymous ones included) starts with
+`query_credit_limit()` = 1,000 credits, one per Jev read, in all, no reset. `public.query_credits
+(user_id, used)` counts them (readers see only their own row; no client
+writes). `query-parse` calls `spend_query_credit()` as the caller (security
+definer, takes one only while `used` is under the limit, returns what's left or
+null) before each Jev request, and gives the credit back if Jev fails; a stored
+answer costs nothing and reports `query_credits_left()`. No session → 401, none left → 429. Every
+reply carries `credits_left`, which the page shows as "N credits" in
+`#query-balance`, the first (non-tappable) bubble of the header menu, so it
+appears when the user icon is tapped (refreshed with `query_credits_left` on
+start and each time the menu opens; `setupMenu` only wires `.bubble[data-overlay]`
+to overlays); at 0 it greys out and the page stops calling `query-parse`, so
+only its own reading is used. A new anonymous session starts at 1,000 again, so this
+caps one session's spend, not a determined caller's.
+
+Client-fetched articles are built by
 cloning `<template id="article-template">`, which `site.py` renders with the
 same `_render_article` as the pre-rendered ones, so there's one copy of the
 markup (filled via `textContent`/attributes, never `innerHTML`). Per-article
@@ -420,6 +495,22 @@ bar for a reply composer in the same dock; replies are loaded
 client-side and listed under the post. No moderation or rate limiting
 yet — anyone with an anonymous session can post.
 
+**Visits and how readers come back.** `public.link_visits` is one row per
+click on a row's title or cover (private to the visitor by RLS; the page also
+greys visited links from it). The click is sent as a `keepalive` POST with a
+client-made id, so it survives a click that unloads the page. Article links open
+in a new tab, which keeps the page: when it becomes visible again the row gets
+`away_ms` (from when the page was hidden) and `return_kind = 'tab'`. A click that
+does leave the page waits in `sessionStorage`, and its return is `pageshow` from
+the back/forward cache or the next load in that tab (`back`/`reload`/`other` by
+navigation type); a page hidden without unloading is `app`. Over
+`VISIT_AWAY_MAX_MS` (one day, matching the `away_ms` check) no return is
+recorded, so a visit without `away_ms` never came back. The first thing done
+after returning is `next_action` (`visit`, `open`, `upvote`, `downvote`, `reply`,
+or `left` when the page is hidden first) with `next_link_id`. These are raw
+facts: the thresholds that make a visit a bounce or a read aren't in the page,
+they're meant to be fitted against votes.
+
 **A link's own page.** Every link has a page at `seb.now/p/<id>` (the same
 address a federated post links to, served by the catch-all document). Tapping a
 feed row (`li.article`: the card or the area around it) anywhere but its links,
@@ -435,7 +526,10 @@ list itself is swapped for the related links (`feed.related`, the same
 repliable, and look exactly like feed rows), from
 `public.related_links(link, max_results, page_offset)` (security invoker):
 shared entities count double, shared leaf topics once, each weighted p × p,
-newest first on ties, then id, so pages never skip or repeat; what each shares
+newest first on ties, then id, so pages never skip or repeat. The page calls it
+through `public.related_feed` (same arguments), which adds each link's row in
+`FEED_SELECT`'s shape as `link_row`, so a page is one round trip rather than an
+rpc followed by a fetch by id; keep the two shapes in sync. What each shares
 with the focused post is shown by its chips (shared ones sorted first and
 tinted `.shared`, green), and tapping one goes a level deeper. Every rendered
 row is kept in `linkRows` by id, so focusing a link the page has already shown
