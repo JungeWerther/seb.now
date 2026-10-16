@@ -637,7 +637,7 @@ def test_entity_page_lists_every_link_mentioning_it_and_chips_open_it() -> None:
     assert 'rpc("entity_links"' in script
     assert "`/e/${id}`" in script
     # Chips are links, but a plain click opens the page in place.
-    assert "closest(\"a[href^='/e/'], a[href^='/t/'], a[href^='/k/'], a[href^='/i/']\")" in script
+    assert "closest(\"a[href^='/e/'], a[href^='/t/'], a[href^='/k/'], a[href^='/i/'], a[href^='/o/']\")" in script
     assert "focusEntity(id, { name: chip.dataset.name ?? chip.textContent })" in script
     assert "else if (entityId) focusEntity(entityId, { push: false });" in script
     # Entity ids become hrefs only when they look like one.
@@ -676,7 +676,7 @@ def test_kind_page_lists_links_its_subkinds_and_top_entities_and_kinds_link_ther
     assert "else if (kindPathFromPath()) focusKind(kindPathFromPath(), { push: false });" in script
     # An entity's page links its kind, and the search box links a typed kind.
     assert "if (entity.kind_path) setKindHref(kind, entity.kind_path);" in script
-    assert "else setKindHref(link, target.id);" in script
+    assert "page: markPage(kind.label, setKindHref, kind.path)" in script
 
 
 def test_entity_page_offers_find_sources_with_its_own_prompt() -> None:
@@ -737,3 +737,15 @@ def test_typed_terms_are_superpositions_of_senses_and_indexicals_have_pages() ->
     assert "else if (indexicalFromPath()) focusIndexical(indexicalFromPath(), { push: false });" in script
     # On the page's own index too: a term's senses are a disjunction there.
     assert "const entitySeqs = (term.any ?? [term]).flatMap((sense) => sense.kind" in script
+
+
+def test_order_pages_open_from_the_search_box() -> None:
+    script = _page_script(render([]))
+    # A typed sort word ("top") is a tag with a page of its own, routed like a
+    # kind's; an indexical ("tonight") opens its /i/ page.
+    assert "`/o/${sort}`" in script
+    assert "page: markPage(SORT_LABELS[intent.sort], setOrderHref, intent.sort)" in script
+    assert "page: markPage(indexical.term, setIndexicalHref, indexical.term)" in script
+    assert "else if (orderFromPath()) focusOrder(orderFromPath(), { push: false });" in script
+    # An order's page is feed_query with just that sort.
+    assert 'resetFeed("", SORT_LABELS[sort] ? { sort } : null);' in script
