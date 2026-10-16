@@ -316,7 +316,7 @@ clean names, so merging them into `entities` (kind `event`) is a later step.
 **The entity index — `index-snapshot` + `index_diff`.** So the page can match
 entity names and run filter queries itself (no request per keystroke or query),
 it keeps a copy of the entity index: every mentioned entity's name and kind, and
-which links mention it (`20261016200000_entity_index.sql`). Rows are counted by a
+which links mention it (`20261016210000_entity_index.sql`). Rows are counted by a
 `seq` identity column on `links`, `entities` and `link_entities`. The
 **`index-snapshot`** Edge Function (`9-59/10 * * * *`, does nothing when nothing
 changed since the last snapshot) calls `public.index_snapshot()` (service_role

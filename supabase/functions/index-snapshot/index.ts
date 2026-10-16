@@ -3,7 +3,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { encodeSnapshot, type RawSnapshot } from "../_shared/index_snapshot.ts";
 
 // Builds the snapshot of the entity index the page keeps for itself (see
-// 20261016200000_entity_index.sql) and uploads it, gzipped, to the public
+// 20261016210000_entity_index.sql) and uploads it, gzipped, to the public
 // `index` bucket under a name of its own, so the CDN can keep it forever. Then
 // records it in index_state, where index_diff points pages at it, and removes
 // all but the newest KEEP_SNAPSHOTS (a page may still be fetching the one
