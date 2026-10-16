@@ -4297,6 +4297,8 @@
       const input = document.getElementById("search-input");
       if (input.value.trim() !== text) return;
       entitySuggestions = entities;
+      // A filter's chips stay up.
+      if (feed.filter && feed.query === text) return;
       showQueryChips(text, feed.intent);
     }
 
@@ -4619,6 +4621,11 @@
       const [, entities] = await Promise.all([loadTopicIndex(), matchEntities(text)]);
       if (generation !== queryGeneration) return;
       entitySuggestions = entities;
+      const filter = queryFilter(text, entities);
+      if (filter) {
+        applyFilter(text, filter);
+        return;
+      }
       const local = localRead(text, { partial });
       const asked = !local.sure && queryCreditsLeft !== 0;
       const first = withEntities(asked ? local.intent : local.fallback, entities, text);
@@ -4642,25 +4649,39 @@
       queryChips.hidden = false;
     }
 
-    // On Enter, a query naming two or more filters (typedFilter: "event
-    // paris") lists the links passing all of them, newest first, instead of
-    // its search results, which stay up until the filtered page arrives.
-    // Names are matched as typed, every word finished. An indexical is a
-    // filter on its own ("tonight", "this"), since no search reads it.
+    // A query naming two or more filters (typedFilter: "event paris",
+    // "tomorrow in belfast") lists the links passing all of them, newest
+    // first, instead of its search results. An indexical is a filter on its
+    // own ("tonight", "this"), since no search reads it. Names are matched
+    // whole, so a word still being typed only counts once it is a name.
+    function queryFilter(text, entities) {
+      if (queryWords(text).length < 2 && !typedIndexical(text)) return null;
+      const filter = typedFilter(text, entities);
+      const indexical = (t) => t.indexical || t.any?.some((x) => x.indexical);
+      if (!filter || (filter.terms.length < 2 && !filter.terms.some(indexical))) return null;
+      return filter;
+    }
+
+    function applyFilter(text, filter) {
+      // The search's own reading, still in flight, must not replace the list.
+      queryGeneration++;
+      showFilterChips(filter);
+      feed.query = text;
+      if (feed.filter && filterKey(feed.filter) === filterKey(filter)) return;
+      resetFeed(text);
+      feed.filter = filter;
+      loadMore({ replace: true });
+    }
+
+    // On Enter, with every word finished, in case the reading while typing
+    // didn't settle on the filter.
     async function showTypedFilter(text) {
       if (queryWords(text).length < 2 && !typedIndexical(text)) return;
       const generation = queryGeneration;
       const [, entities] = await Promise.all([loadTopicIndex(), matchEntities(`${text} `)]);
       if (generation !== queryGeneration || document.getElementById("search-input").value.trim() !== text) return;
-      const filter = typedFilter(text, entities);
-      const indexical = (t) => t.indexical || t.any?.some((x) => x.indexical);
-      if (!filter || (filter.terms.length < 2 && !filter.terms.some(indexical))) return;
-      // The search's own reading, still in flight, must not replace the list.
-      queryGeneration++;
-      showFilterChips(filter);
-      resetFeed(text);
-      feed.filter = filter;
-      loadMore({ replace: true });
+      const filter = queryFilter(text, entities);
+      if (filter) applyFilter(text, filter);
     }
 
     function setupSearch() {
