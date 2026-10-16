@@ -143,7 +143,7 @@ Deno.serve(async (_req: Request) => {
   const errors: unknown[] = [];
   const { data: sources, error: sourcesError } = await supabase
     .from("sources")
-    .select("identifier")
+    .select("id, identifier")
     .eq("kind", "web_feed")
     .eq("enabled", true);
   if (sourcesError) errors.push({ sources: sourcesError.message });
@@ -152,7 +152,7 @@ Deno.serve(async (_req: Request) => {
   let upserted = 0;
   let withImage = 0;
 
-  await Promise.all((sources ?? []).map(async ({ identifier: feedUrl }) => {
+  await Promise.all((sources ?? []).map(async ({ id: sourceId, identifier: feedUrl }) => {
     let items: Item[];
     try {
       const res = await fetch(feedUrl, {
@@ -178,6 +178,8 @@ Deno.serve(async (_req: Request) => {
         title,
         origin: "feed",
         submitted_by: null,
+        // Which followed feed it came from; the database tags the link with it.
+        source_id: sourceId,
         ...(published ? { created_at: published } : {}),
         ...(images[i] ? { image_url: images[i] } : {}),
         ...(description ? { description } : {}),

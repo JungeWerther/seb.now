@@ -34,6 +34,7 @@ from seb_now.constants import (
     FIND_SOURCES_URL_TEMPLATE,
     FEED_PAGE_SIZE,
     FEED_SKELETON_ROWS,
+    SOURCE_FOUND_IN,
     SUPABASE_JS_MODULE_URL,
     TEMPLATE_ARTICLE_BLANK,
     SourceType,
@@ -85,6 +86,9 @@ class Article:
     entities: tuple[Chip, ...] = ()
     image_url: str | None = None
     created_at: str = ""
+    # The source entity it came from (a channel, account or feed), whose page
+    # the domain line links to.
+    source: Chip | None = None
 
 
 class FeedItem(TypedDict):
@@ -95,6 +99,7 @@ class FeedItem(TypedDict):
     author: NotRequired[str]
     topics: NotRequired[list[Chip]]
     entities: NotRequired[list[Chip]]
+    source: NotRequired[Chip | None]
     created_at: NotRequired[str]
 
 
@@ -109,6 +114,7 @@ TEMPLATE_ARTICLE = Article(
     topics=(Chip(TEMPLATE_ARTICLE_BLANK, TEMPLATE_ARTICLE_BLANK),),
     entities=(Chip(TEMPLATE_ARTICLE_BLANK, TEMPLATE_ARTICLE_BLANK),),
     image_url=TEMPLATE_ARTICLE_BLANK,
+    source=Chip(TEMPLATE_ARTICLE_BLANK, TEMPLATE_ARTICLE_BLANK),
 )
 
 
@@ -124,10 +130,21 @@ def _top_topics(link_topics: Sequence[dict]) -> list[Chip]:
 
 
 def _top_entities(link_entities: Sequence[dict]) -> list[Chip]:
+    """The highest-p entities the link mentions; its source isn't a mention."""
+    mentions = [label for label in link_entities if label.get("found_in") != SOURCE_FOUND_IN]
     return [
         Chip(entity["id"], entity["name"])
-        for entity in _top_labels(link_entities, Entity.__tablename__, ARTICLE_ENTITY_CHIPS)
+        for entity in _top_labels(mentions, Entity.__tablename__, ARTICLE_ENTITY_CHIPS)
     ]
+
+
+def _source(link_entities: Sequence[dict]) -> Chip | None:
+    """The source entity the link is tagged with (found_in 'source'), if any."""
+    for label in link_entities:
+        entity = label.get(Entity.__tablename__)
+        if label.get("found_in") == SOURCE_FOUND_IN and entity:
+            return Chip(entity["id"], entity["name"])
+    return None
 
 
 def load_feed() -> list[FeedItem]:
@@ -136,7 +153,7 @@ def load_feed() -> list[FeedItem]:
         client.table(Link.__tablename__)
         .select(
             f"{FEED_COLUMNS}, {LinkTopic.__tablename__}(p, {Topic.__tablename__}(id, name)), "
-            f"{LinkEntity.__tablename__}(p, {Entity.__tablename__}(id, name))"
+            f"{LinkEntity.__tablename__}(p, found_in, {Entity.__tablename__}(id, name))"
         )
         .order("created_at", desc=True)
         .order("id", desc=True)
@@ -157,6 +174,7 @@ def load_feed() -> list[FeedItem]:
                 "author": row.get("author") or "",
                 "topics": _top_topics(row[LinkTopic.__tablename__]),
                 "entities": _top_entities(row.get(LinkEntity.__tablename__) or []),
+                "source": _source(row.get(LinkEntity.__tablename__) or []),
                 # Kept as PostgREST's own string so the page's pagination
                 # cursor round-trips it exactly (microseconds included).
                 "created_at": row["created_at"],
@@ -204,6 +222,7 @@ def build_articles(
             topics=tuple(item.get("topics", ())),
             entities=tuple(item.get("entities", ())),
             image_url=item.get("image_url") or None,
+            source=item.get("source"),
             created_at=item.get("created_at", ""),
         )
         for item in feed
@@ -240,13 +259,20 @@ def _render_article(article: Article) -> str:
         if article.entities
         else ""
     )
+    # The domain line links to the source's page when the link has one; the
+    # template's is an anchor too, whose href the page script sets or drops.
+    domain = (
+        f'<a class="domain" href="/e/{escape(article.source.id)}">{escape(article.domain)}</a>'
+        if article.source is not None
+        else f'<span class="domain">{escape(article.domain)}</span>'
+    )
     return (
         f'      <li class="article" data-link-id="{link_id}" data-created-at="{escape(article.created_at)}">'
         f'<div class="swipe-content">'
         f"{favicon}"
         f'<div class="card-body">'
         f'<div class="meta">'
-        f'<span class="domain">{escape(article.domain)}</span>'
+        f"{domain}"
         f'<time class="posted" datetime="{escape(article.created_at)}">'
         f"{escape(posted_label(article.created_at, datetime.now(UTC).date()))}</time>"
         f"{topics}"

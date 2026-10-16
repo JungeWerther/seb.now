@@ -922,6 +922,7 @@
       margin-top: calc((var(--favicon-size) - var(--domain-line-height)) / 2);
     }
     .swipe-content .domain {
+      text-decoration: none;
       flex: 0 1 auto;
       min-width: 0;
       overflow: hidden;
@@ -934,6 +935,8 @@
       color: gray;
       text-align: left;
     }
+    /* A domain line with a source links to the source's page. */
+    .swipe-content a.domain[href]:hover { text-decoration: underline; }
     /* Stays in the flow when empty: it's what pushes the topic chips right. */
     .swipe-content .posted {
       flex: 1 0 auto;
@@ -1807,7 +1810,11 @@
     const FIND_SOURCES_PROMPT = __FIND_SOURCES_PROMPT__;
     const FIND_ENTITY_SOURCES_PROMPT = __FIND_ENTITY_SOURCES_PROMPT__;
     const FEED_SELECT =
-      "id, title, url, image_url, author, created_at, link_topics(p, topics(id, name)), link_entities(p, entities(id, name, kind))";
+      "id, title, url, image_url, author, created_at, link_topics(p, topics(id, name)), link_entities(p, found_in, entities(id, name, kind))";
+    // link_entities.found_in of a link's source tag (site.py's SOURCE_FOUND_IN):
+    // the channel, account or feed it came from, linked from the domain line
+    // rather than shown as an entity chip.
+    const SOURCE_FOUND_IN = "source";
     // Fetch the next page once the end of the list is this close to view.
     const FEED_PREFETCH_MARGIN_PX = 1200;
 
@@ -1985,10 +1992,14 @@
       const favicon = li.querySelector(".favicon");
       favicon.dataset.letter = host.slice(0, 1).toUpperCase();
       favicon.querySelector("img").src = FAVICON_URL_TEMPLATE.replace("{host}", host);
-      li.querySelector(".domain").textContent = domainWithAuthor(
+      const domain = li.querySelector(".domain");
+      domain.textContent = domainWithAuthor(
         host.includes(".") ? host.slice(0, host.lastIndexOf(".")) : host,
         row.author,
       );
+      const source = (row.link_entities || []).find((le) => le.found_in === SOURCE_FOUND_IN && le.entities);
+      if (source) setEntityHref(domain, source.entities.id);
+      else domain.removeAttribute("href");
       const posted = li.querySelector(".posted");
       posted.dateTime = row.created_at;
       posted.textContent = postedLabel(row.created_at);
@@ -1999,7 +2010,12 @@
       );
       fillChips(
         li.querySelector(".entities"),
-        topLabels(row.link_entities || [], "entities", ARTICLE_ENTITY_CHIPS, shared.entities),
+        topLabels(
+          (row.link_entities || []).filter((le) => le.found_in !== SOURCE_FOUND_IN),
+          "entities",
+          ARTICLE_ENTITY_CHIPS,
+          shared.entities,
+        ),
         shared.entities,
       );
       const link = li.querySelector(".article-row a");
@@ -2980,7 +2996,9 @@
         if (isFocused()) updateFocusBand();
       }).observe(focusSection);
       document.addEventListener("click", (event) => {
-        if (event.target.closest("a, button, input, textarea")) return;
+        // An anchor without an href (a domain line with no source) is plain
+        // text, so it opens the card like the rest of it.
+        if (event.target.closest("a[href], button, input, textarea")) return;
         const li = event.target.closest("li.article");
         if (!li || !articleList.contains(li)) return;
         if (!window.getSelection().isCollapsed) return;
