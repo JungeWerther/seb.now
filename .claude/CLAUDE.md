@@ -547,12 +547,12 @@ opens that kind's page on Enter instead of searching for the word, since the pag
 is that filter; while typing it stays a search, so the view never jumps mid-word. A query
 made only of filters ("event paris", "events in paris") is the same idea for two
 or more: as soon as the reading runs (`queryFilter` in `runQuery`, a word
-still being typed only counting once it is a whole name, and again on Enter with
-every word finished), `typedFilter` places every word as filler, a newest-first word,
-part of a kind's name, or the whole name of a `match_entities` result (matched with
-every word finished; longer names first, a kind before an entity at the same
+still being typed only counting once it is a whole name; Enter reads the text
+again with every word finished, replacing a reading still in flight),
+`typedFilter` places every word as filler, a newest-first word,
+part of a kind's name, or the whole name of a `match_entities` result (longer names first, a kind before an entity at the same
 length; same-named entities are one filter, any of them), and if nothing is left
-over and there are at least two filters, `showTypedFilter` swaps the search results
+over and there are at least two filters, `applyFilter` swaps the search results
 for `public.filter_links(filters jsonb, max_results, page_offset)`
 (`20261016180000_filter_links.sql`, security invoker; `filters` is an array of
 `{"kind": "<ltree path>"}` / `{"entities": [ids]}`, a link must pass all of them,
