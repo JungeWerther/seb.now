@@ -1833,6 +1833,8 @@
       topic: null,
       filter: null,
       indexical: null,
+      // The sort order whose page (/o/…) is open; its feed is `intent`.
+      order: null,
       chronological: false,
       asOf: null,
       offset: 0,
@@ -1915,6 +1917,23 @@
       const id = term.replace(/ /g, "-");
       if (new RegExp(`^${INDEXICAL_ID_PATTERN}$`).test(id)) anchor.href = `/i/${id}`;
       else anchor.removeAttribute("href");
+    }
+
+    // A sort order's address is its key (/o/top), a page of its own like a
+    // kind's.
+    const ORDER_ID_PATTERN = "[a-z_]+";
+    const ORDER_PATH_PATTERN = new RegExp(`^/o/(${ORDER_ID_PATTERN})/?$`);
+
+    function setOrderHref(anchor, sort) {
+      if (new RegExp(`^${ORDER_ID_PATTERN}$`).test(sort)) anchor.href = `/o/${sort}`;
+      else anchor.removeAttribute("href");
+    }
+
+    // The page a tag in the search box opens: every tag has one (CI checks,
+    // tests/test_search_marks_pages.py). `setHref` is one of the set*Href
+    // above, so the address is always one setupLinkPage routes.
+    function markPage(name, setHref, id) {
+      return { name, set: (anchor) => setHref(anchor, id) };
     }
 
     // Claude, opened on `template` (a prompt to find new sources covering a
@@ -2313,7 +2332,7 @@
     function updateSearchEmpty() {
       const nothing = feed.done && !articleList.querySelector("li.article");
       searchEmpty.classList.toggle("visible", feed.query.length > 0 && nothing);
-      document.getElementById("focus-related-title").textContent = feed.entity || feed.topic || feed.kind
+      document.getElementById("focus-related-title").textContent = feed.entity || feed.topic || feed.kind || feed.order
         ? nothing ? "No posts yet" : "Posts"
         : feed.related && nothing ? "Nothing related yet" : "Related";
     }
@@ -2363,6 +2382,7 @@
       feed.kind = null;
       feed.filter = null;
       feed.indexical = null;
+      feed.order = null;
       feed.chronological = false;
       // Ranks are computed as of this moment for every page of this feed.
       feed.asOf = new Date().toISOString();
@@ -2408,7 +2428,7 @@
 
       // A post's or an entity's own address opens on it (setupLinkPage), not
       // the feed.
-      if (linkIdFromPath() || entityIdFromPath() || topicPathFromPath() || kindPathFromPath() || indexicalFromPath()) {
+      if (linkIdFromPath() || entityIdFromPath() || topicPathFromPath() || kindPathFromPath() || indexicalFromPath() || orderFromPath()) {
         articleList.replaceChildren();
         return;
       }
@@ -2468,6 +2488,10 @@
 
     function entityIdFromPath() {
       return location.pathname.match(ENTITY_PATH_PATTERN)?.[1] ?? null;
+    }
+
+    function orderFromPath() {
+      return location.pathname.match(ORDER_PATH_PATTERN)?.[1] ?? null;
     }
 
     function indexicalFromPath() {
@@ -2846,6 +2870,45 @@
     }
 
 
+    // The kind band, filled with a page that isn't a kind (a sort order's): `title`, then `meta` (strings and nodes) and `description`.
+    function showKindHead(title, meta, description) {
+      showFocusSection("focus-entities", []);
+      showFocusSection("focus-topics", []);
+      showFocusSection("focus-kinds", []);
+      focusEntityHead.hidden = true;
+      focusTopicHead.hidden = true;
+      findSources.hidden = true;
+      document.getElementById("focus-kind-name").textContent = title;
+      document.getElementById("focus-kind-meta").replaceChildren(...meta);
+      document.getElementById("focus-kind-description").textContent = description;
+      focusKindHead.hidden = false;
+    }
+
+    // A sort order's own page (/o/top): every post in that order, the feed
+    // a query of just "top" lists.
+    function focusOrder(sort, { push = true, saveFeed = true } = {}) {
+      ++focusGeneration;
+      enterFocus(`/o/${sort}`, { push, saveFeed });
+      focusMain.replaceChildren();
+      resetFeed("", SORT_LABELS[sort] ? { sort } : null);
+      feed.order = sort;
+      articleList.replaceChildren();
+      window.scrollTo({ top: 0, behavior: "instant" });
+      if (!SORT_LABELS[sort]) {
+        showKindHead(sort, [], "");
+        focusKindHead.hidden = true;
+        focusStatus.textContent = "This order doesn't exist.";
+        feed.done = true;
+        updateFocusBand();
+        return;
+      }
+      const words = Object.keys(QUERY_SORT_WORDS).filter((w) => QUERY_SORT_WORDS[w] === sort);
+      showKindHead(SORT_LABELS[sort], ["an order · typed as ", words.join(", ")], ORDER_DESCRIPTIONS[sort] ?? "");
+      updateSearchEmpty();
+      updateFocusBand();
+      loadMore();
+    }
+
     // Back to the feed: the one saved on the way in, where it was scrolled to,
     // with the focused post flying back into its place; `restore: false`
     // leaves the list to the caller (a search replacing it anyway).
@@ -2909,8 +2972,15 @@
       // Topic and entity chips open their page in place; a modified click
       // (new tab) follows the link as usual.
       document.addEventListener("click", (event) => {
-        const chip = event.target.closest("a[href^='/e/'], a[href^='/t/'], a[href^='/k/'], a[href^='/i/']");
+        const chip = event.target.closest("a[href^='/e/'], a[href^='/t/'], a[href^='/k/'], a[href^='/i/'], a[href^='/o/']");
         if (!chip || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        const order = chip.pathname.match(ORDER_PATH_PATTERN)?.[1];
+        if (order) {
+          event.preventDefault();
+          if (feed.order === order) window.scrollTo({ top: 0, behavior: "smooth" });
+          else focusOrder(order);
+          return;
+        }
         const term = chip.pathname.match(INDEXICAL_PATH_PATTERN)?.[1]?.replace(/-/g, " ");
         if (term) {
           event.preventDefault();
@@ -2950,6 +3020,7 @@
         else if (topicPathFromPath()) focusTopic(topicPathFromPath(), { push: false });
         else if (kindPathFromPath()) focusKind(kindPathFromPath(), { push: false });
         else if (indexicalFromPath()) focusIndexical(indexicalFromPath(), { push: false });
+        else if (orderFromPath()) focusOrder(orderFromPath(), { push: false });
         else if (isFocused()) leaveFocus();
       });
       const id = linkIdFromPath();
@@ -2959,6 +3030,7 @@
       else if (topicPathFromPath()) focusTopic(topicPathFromPath(), { push: false, saveFeed: false });
       else if (kindPathFromPath()) focusKind(kindPathFromPath(), { push: false, saveFeed: false });
       else if (indexicalFromPath()) focusIndexical(indexicalFromPath(), { push: false, saveFeed: false });
+      else if (orderFromPath()) focusOrder(orderFromPath(), { push: false, saveFeed: false });
     }
 
     function setupMenu() {
@@ -3509,6 +3581,12 @@
     // Words that never name a topic on their own.
     const QUERY_STOPWORDS = new Set(["a", "an", "and", "the", "of", "on", "in", "for", "to", "about", "with", "me", "show", "news", "other", "general"]);
     const SORT_LABELS = { latest: "Latest", top: "Top", discussed: "Most discussed" };
+    // What a sort order's page (/o/…) says it lists.
+    const ORDER_DESCRIPTIONS = {
+      latest: "Every post, newest first.",
+      top: "Every post, highest net votes first.",
+      discussed: "Every post, most replied to first.",
+    };
     // Words the page reads as a sort order on its own, without asking Jev.
     const QUERY_SORT_WORDS = {
       latest: "latest", newest: "latest", recent: "latest", fresh: "latest", today: "latest",
@@ -4396,7 +4474,7 @@
       if (intent?.sort && SORT_LABELS[intent.sort]) {
         for (const t of tokens) {
           if (t.open && !t.partial && QUERY_SORT_WORDS[t.word] === intent.sort) {
-            t.tag = { kind: "order" };
+            t.tag = { kind: "order", page: markPage(SORT_LABELS[intent.sort], setOrderHref, intent.sort) };
             t.open = false;
           }
         }
@@ -4404,20 +4482,28 @@
       const required = new Set((intent?.required ?? []).flatMap((g) => g.ids));
       const longestFirst = [...entities].sort((a, b) => queryWords(b.name).length - queryWords(a.name).length);
       for (const prefix of prefixes) {
-        if (intent?.topic) tagName(intent.topic.name, { kind: "topic", topic: intent.topic }, prefix);
+        if (intent?.topic) {
+          tagName(intent.topic.name, { kind: "topic", topic: intent.topic, page: markPage(intent.topic.name, setTopicHref, intent.topic.id) }, prefix);
+        }
         for (const entity of longestFirst) {
           const kind = entity.kind_path ? kindName(entity.kind_path) : entity.kind.replace("_", " ");
-          tagName(entity.name, { kind, suggested: !required.has(entity.id), entity }, prefix);
+          tagName(entity.name, { kind, suggested: !required.has(entity.id), entity, page: markPage(entity.name, setEntityHref, entity.id) }, prefix);
         }
         for (const topic of topicMatches) {
-          tagName(topic.name, { kind: "topic", suggested: true, topic }, prefix);
+          tagName(topic.name, { kind: "topic", suggested: true, topic, page: markPage(topic.name, setTopicHref, topic.id) }, prefix);
         }
         for (const kind of kindIndex) {
-          const tag = { kind: parentKindName(kind.path), suggested: true, kindPath: kind.path, kindLabel: kind.label };
+          const tag = { kind: parentKindName(kind.path), suggested: true, page: markPage(kind.label, setKindHref, kind.path) };
           kind.names.some((name) => tagName(name, tag, prefix));
         }
         for (const indexical of indexicalIndex) {
-          tagName(indexical.term, { kind: kindName(indexical.kind_path), suggested: true, indexical: indexical.term }, prefix);
+          const tag = {
+            kind: kindName(indexical.kind_path),
+            suggested: true,
+            indexical: indexical.term,
+            page: markPage(indexical.term, setIndexicalHref, indexical.term),
+          };
+          tagName(indexical.term, tag, prefix);
         }
       }
       return tokens;
@@ -4449,23 +4535,15 @@
         mark.dataset.kind = t.tag.kind;
         if (t.tag.suggested) mark.classList.add("suggested");
         nodes.push(mark);
-        // A topic, an entity or a kind opens its page through the chip-link
-        // click handler; a sort word has none.
-        const target = t.tag.entity ?? t.tag.topic ?? (t.tag.kindPath && { id: t.tag.kindPath, name: t.tag.kindLabel })
-          ?? (t.tag.indexical && { id: t.tag.indexical, name: t.tag.indexical });
-        if (target) {
-          const link = document.createElement("a");
-          link.textContent = text;
-          link.dataset.name = target.name;
-          if (t.tag.entity) setEntityHref(link, target.id);
-          else if (t.tag.topic) setTopicHref(link, target.id);
-          else if (t.tag.indexical) setIndexicalHref(link, target.id);
-          else setKindHref(link, target.id);
-          link.title = target.name;
-          links.push(link);
-        } else {
-          links.push(document.createTextNode(text));
-        }
+        // Every tag opens its page (a topic's, an entity's, a kind's, an
+        // indexical's or a sort order's) through the chip-link click handler.
+        const { page } = t.tag;
+        const link = document.createElement("a");
+        link.textContent = text;
+        link.dataset.name = page.name;
+        page.set(link);
+        link.title = page.name;
+        links.push(link);
         at = t.end;
       }
       if (at < value.length) {

@@ -485,8 +485,14 @@ pointer events. A tagged topic or entity is also tappable: `#search-links`, the 
 copy again but above the input and see-through, holds just those words as `/t/<path>`
 or `/e/<id>` links (with `data-name`, which the chip-link click handler prefers over
 the typed text), so tapping one opens its page in place while a tap anywhere else
-reaches the input; a kind links to its page (`/k/<path>`) too, and only sort words
-stay plain tags. A query that is nothing but a kind's name ("event", "events",
+reaches the input; a kind links to its page (`/k/<path>`), an indexical to its
+(`/i/<term>`) and a sort word to its order's (`/o/<sort>`). **Every tag opens a
+page — CI enforces it** (`tests/test_search_marks_pages.py`): each tag `tagTokens`
+builds carries `page: markPage(name, setXHref, id)`, `renderSearchMarks` never
+leaves a tagged word as plain text, and every `set*Href` a tag names must build an
+address with a `*_PATH_PATTERN` that `setupLinkPage` routes and its chip-link click
+handler opens in place. A new kind of highlight therefore comes with a page of its
+own, never a dead tag. A query that is nothing but a kind's name ("event", "events",
 "public bodies": `typedKind`, a kind's label or path segment, singular or plural)
 opens that kind's page on Enter instead of searching for the word, since the page
 is that filter; while typing it stays a search, so the view never jumps mid-word. A query
@@ -711,6 +717,11 @@ feed rows' footer chips (`<a class="entity" href="/e/<id>">`, pre-rendered by
 in place with `pushState`, so Back and ← Feed work as for posts; a modified
 click opens a new tab, which the catch-all document serves. Ids only become
 hrefs when they match a UUID (`setEntityHref`).
+
+**A sort order's own page.** `seb.now/o/<sort>` (`focusOrder`, a key of
+`SORT_LABELS`: latest, top, discussed) is every post in that order, `feed_query`
+with just the sort (`feed.intent`, `feed.order`; `ORDER_DESCRIPTIONS` gives its
+line), shown in the kind band (`showKindHead`).
 
 **A topic's own page.** Every topic has a page at `seb.now/t/<path>` (its ltree
 id, `ai.agents`), on the same focused view (`focusTopic`): the band shows
