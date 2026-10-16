@@ -192,7 +192,11 @@ link's title, host and (when set) description. `POST {"link_ids": [...],
 hand-labelled links the top Jev label matched a hand label (same topic, or
 one an ancestor of the other) for 46, any Jev label for 49, and the top-level
 area for 52, at ~1,600 input tokens and 2 requests per link.
-`functions/_shared/jev.ts` is a small typed System One client. To undo:
+`functions/_shared/jev.ts` is a small typed System One client; given a
+`JevLog` it records every call, failed ones too, in `public.jev_calls`
+(service_role only: function, link, dry-run flag, state, questions, answers with
+their full probabilities, model, tokens, attempts, duration, error), so
+thresholds can be refitted without paying for the calls again. To undo:
 `delete from link_topics where labeled_by = 'jev'`.
 
 The `economy` branch is not hand-made: it is the full JEL classification
