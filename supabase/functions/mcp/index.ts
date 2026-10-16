@@ -88,7 +88,11 @@ const TOOLS = [
   {
     name: "search_links",
     title: "Search links",
-    description: "Links whose title or domain contains the query (case-insensitive), newest first.",
+    description:
+      "Full-text search over link titles, domains and descriptions (English/French stemming, accents " +
+      "ignored; supports \"quoted phrases\", -exclude and or), plus links tagged with an entity the " +
+      "query names, plus substring matches as a fallback. Best match first, with a mild recency boost; " +
+      "matched_entities says which entities pulled a link in or boosted it.",
     inputSchema: {
       type: "object",
       properties: {
@@ -246,22 +250,31 @@ async function getFeed(args: Row, { db }: Context) {
   };
 }
 
-function escapeLike(text: string): string {
-  return text.replace(/[\\%_]/g, (c) => `\\${c}`);
-}
-
+// Ranked by the search_links SQL function (over link_search_hits, the same
+// matcher as the page's feed_query): full-text (title > domain > description)
+// + entity matches + substring fallback, with a mild recency boost.
 async function searchLinks(args: Row, { db }: Context) {
   const query = stringArg(args, "query");
   const limit = intArg(args, "limit", DEFAULT_LIMIT, 1, MAX_LIMIT);
-  const { data, error } = await db
-    .from("links")
-    .select(LINK_SELECT)
-    .ilike("search_text", `%${escapeLike(query.toLowerCase())}%`)
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(limit);
+  const { data: hits, error } = await db.rpc("search_links", { q: query, max_results: limit });
   if (error) throw new Error(error.message);
-  return { query, links: await withVotes(db, data) };
+  const ids = hits.map((h: Row) => h.link_id);
+  const hitOf = new Map(hits.map((h: Row) => [h.link_id, h]));
+  const { data: links, error: linksError } = ids.length
+    ? await db.from("links").select(LINK_SELECT).in("id", ids)
+    : { data: [], error: null };
+  if (linksError) throw new Error(linksError.message);
+  links.sort((a: Row, b: Row) => ids.indexOf(a.id) - ids.indexOf(b.id));
+  return {
+    query,
+    links: await withVotes(db, links, (l) => {
+      const hit = hitOf.get(l.id) as Row;
+      return {
+        score: Number(Number(hit.score).toPrecision(3)),
+        ...(hit.matched_entities?.length ? { matched_entities: hit.matched_entities } : {}),
+      };
+    }),
+  };
 }
 
 async function listTopics(_args: Row, { db }: Context) {
