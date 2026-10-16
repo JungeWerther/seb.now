@@ -24,7 +24,7 @@ transaction per file together with its history row. The frontend deploys from
 first and is merged into `main` once it has applied; a PR without migrations
 goes straight to `main`. Don't apply a repo migration by hand; if you ever must,
 insert its history row with the file's own version. Two files may not share a
-version (`tests/test_migrate.py`). Needs the `SUPABASE_DB_URL` secret. `profiles` rows are auto-created by an
+version (`tests/test_migrate.py`). Needs the `SUPABASE_CONNECTION_STRING` secret (the Session pooler connection string). `profiles` rows are auto-created by an
 `auth.users` insert trigger. **Anonymous Sign-ins must be enabled in the
 Supabase dashboard** (Authentication → Sign In / Providers) — no MCP tool
 exposes that toggle, and votes/follows depend on it (RLS write access

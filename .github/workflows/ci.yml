@@ -43,4 +43,4 @@ jobs:
       - uses: astral-sh/setup-uv@v4
       - run: uv run --no-project --with "psycopg[binary]" python scripts/migrate.py
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_CONNECTION_STRING }}
