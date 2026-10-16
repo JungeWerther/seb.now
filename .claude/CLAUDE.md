@@ -38,11 +38,13 @@ Functions (see below) — server-side only, never shipped to a client.
 all inside the `seb-now` project itself**:
 
 **Followed sources live in `public.sources`, not in code** — one row per
-followed account/channel (`kind`: `youtube_channel` or `mastodon_account`,
+followed account/channel/feed (`kind`: `youtube_channel`, `mastodon_account`,
+`web_feed` or `ical_feed`,
 `identifier`, `label`, `enabled`), public-read, service_role-write. Following
 or dropping a source is a row insert/update (`enabled = false` to pause), with
 no redeploy. A check constraint validates `identifier` per kind (a
-`UC…` channel id; `handle@instance` for Mastodon), because the ingest
+`UC…` channel id; `handle@instance` for Mastodon; an `https://` URL for
+`web_feed`/`ical_feed`), because the ingest
 functions build fetch URLs from it and a Mastodon instance becomes the request
 host. TechCrunch and Hacker News aren't rows: each is a single fixed API, and
 the function *is* the source.
@@ -77,6 +79,20 @@ the function *is* the source.
   which answers data-centre requests) for up to `AUTHOR_SWEEP_LIMIT` YouTube
   links still without one, whichever ingest added them. Deployed with
   `verify_jwt` on; its cron sends the same anon-key bearer as the others.
+
+- `ical-ingest` (`20 1-23/6 * * *`) — public event calendars (iCalendar
+  `.ics`) for the enabled `ical_feed` rows in `sources`, whose identifier is
+  the calendar URL (Luma: `api.lu.ma/ics/get?entity=discover&id=discplace-…`
+  for a city page, `entity=calendar&id=cal-…` for a community). Parsed by
+  `_shared/ical.ts` (unfolding, TEXT escapes, UTC/TZID/floating/all-day times
+  shown as Europe/Paris wall-clock dates; no RRULE expansion). Events not over
+  and starting within `HORIZON_DAYS` become `origin: 'feed'` links to the
+  event's own page (`URL`, else Luma's "Get up-to-date information at" line),
+  with Luma's address and host lines stripped from the description and the
+  page's `og:image` as cover; an event on several calendars is taken once. Its
+  dates go straight to `link_events` (`labeled_by = 'ical'`, `p` 1, venue from
+  `LOCATION`, replacing any non-manual rows), and `link_enrichment.events_at`
+  is set so `event-extract` doesn't ask Jev about it.
 
 **Blog posts** are how "your own submission" (the `origin: 'local'`
 value that's existed in the schema since the start) actually gets
