@@ -1,10 +1,11 @@
 """Apply pending supabase/migrations/*.sql to the database, oldest first.
 
-Run by CI on every push to main, after the tests and before the frontend
-deploys, so a page never ships ahead of the schema it needs. Each file runs in
+Run by CI on every push to the `migrations` branch, after the tests. The
+frontend deploys from main, so landing a schema change on `migrations` first
+means a page never ships ahead of the schema it needs. Each file runs in
 its own transaction together with its row in supabase_migrations.schema_migrations
 (version = the file's timestamp prefix, name = the rest), so a failing
-migration leaves nothing behind and stops the run, and the deploy with it.
+migration leaves nothing behind and fails the run.
 
     SUPABASE_DB_URL=postgresql://… python scripts/migrate.py [--dry-run]
 
