@@ -475,13 +475,16 @@ part of a kind's name, or the whole name of a `match_entities` result (matched w
 every word finished; longer names first, a kind before an entity at the same
 length; same-named entities are one filter, any of them), and if nothing is left
 over and there are at least two filters, `showTypedFilter` swaps the search results
-for `public.filter_links(filters jsonb, max_results, page_offset)`
-(`20261016180000_filter_links.sql`, security invoker; `filters` is an array of
+for `public.filter_links(filters jsonb, max_results, page_offset, before_created_at, before_id)`
+(`20261016180000_filter_links.sql`, keyset since `20261016200000_filter_links_keyset.sql`;
+security invoker; `filters` is an array of
 `{"kind": "<ltree path>"}` / `{"entities": [ids]}`, a link must pass all of them,
-newest first, with the entities each filter matched as `entity_ids`). The page
-reads these as a Writer monad (`Filter`): `bind` is conjunction and concatenates
-logs, the log being the filled chips (`showFilterChips`) plus, from the server,
-the matched entities whose chips light up. The feed holds it as `feed.filter`;
+newest first, with the entities each filter matched as `entity_ids` and its
+`created_at` for the next page's cursor; the page never sets `page_offset`).
+The page reads these as `Filter` (`frontend/src/filter.ts`, see "Frontend
+TypeScript"), a monoid: `concat` is conjunction and appends logs, the log being
+the filled chips (`showFilterChips`) plus, from the server, the matched entities
+whose chips light up; pages are cached by `fetchFiltered`. The feed holds it as `feed.filter`;
 typing again goes back to the ordinary query. Order names live in `SORTS` (the function) and
 `SORT_LABELS` (the page) and must match `feed_query`'s check.
 
@@ -1060,3 +1063,20 @@ genuinely code (an escape table, a security allowlist) goes in that test's
 The rule is Python-only — `ast` can't read the TypeScript Edge Functions, whose
 module-level arrays today are protocol/schema (MCP `TOOLS`, header lists), not
 data.
+
+## Frontend TypeScript
+
+Pure page logic can be written in TypeScript under `frontend/src/` (scripts,
+no imports/exports, no page globals). `npm run build` in `frontend/` compiles
+to `src/seb_now/templates/*.js`, committed (the DO build has no Node), and
+`site.py` inlines it at `__FILTER_JS__` in the page's module script, so the
+CSP hash covers it. CI's `frontend` job runs ESLint (typescript-eslint
+strict, type-checked), `tsc --noEmit`, checks the committed output is fresh
+and runs `node --test` against the compiled file. `filter.ts` holds typed
+filter queries (`Filter` is a monoid: `unit`, `concat` = conjunction with the
+chip logs appended) and `memoizePages`, the cache in front of `filter_links`
+keyed by `filterPageKey` (terms deduplicated and sorted, plus the keyset
+cursor; entries expire after `FILTER_CACHE_TTL_MS`, at most
+`FILTER_CACHE_MAX_PAGES`). `filter_links` pages by keyset
+(`before_created_at`, `before_id`) and returns `created_at` for the cursor.
+

@@ -1149,6 +1149,10 @@
   </div>
   <script type="module">
 
+    // Compiled from frontend/src/*.ts (tsc, see frontend/README.md); site.py
+    // inlines it here. Filter, filterKey, nextFilterCursor, memoizePages...
+    __FILTER_JS__
+
     // Loaded without blocking the rest of this script, so swiping and the
     // other UI work while supabase-js is still downloading.
     const SUPABASE_URL = __SUPABASE_URL__;
@@ -2173,21 +2177,26 @@
     }
 
     // One page of filter_links: the links passing every one of a typed
-    // query's filters (see Filter), each with what its filters logged, the
-    // entities they matched there, highlighted.
-    async function fetchFiltered(filter, offset) {
+    // query's filters (see Filter) older than `cursor` (all when null), each
+    // with what its filters logged, the entities they matched there,
+    // highlighted, and the cursor the next page starts from. Pages are cached
+    // by filterPageKey (memoizePages): "paris event" reuses "event paris", and
+    // going back to a filter lists it again without asking the server.
+    const fetchFiltered = memoizePages(filterPageKey, async (filter, cursor) => {
       const client = await supabaseReady;
       const { data: ids, error } = await client.rpc("filter_links", {
         filters: filter.terms,
         max_results: FEED_PAGE_SIZE,
-        page_offset: offset,
+        before_created_at: cursor?.createdAt ?? null,
+        before_id: cursor?.id ?? null,
       });
       if (error) {
         console.error("failed to load the filtered links", error);
         return null;
       }
-      return linksWithMatches(client, ids);
-    }
+      const page = await linksWithMatches(client, ids);
+      return page && { ...page, cursor: nextFilterCursor(ids) };
+    });
 
     // `ids` ({link_id, entity_ids} rows) as links in that order, each with the
     // chips of its matched entities highlighted.
@@ -2213,8 +2222,8 @@
 
     async function fetchPage() {
       if (feed.filter) {
-        const page = await fetchFiltered(feed.filter, feed.offset);
-        if (page) feed.offset += page.count;
+        const page = await fetchFiltered(feed.filter, feed.cursor);
+        if (page?.cursor) feed.cursor = page.cursor;
         return page;
       }
       if (feed.kind) {
@@ -3454,29 +3463,24 @@
     }
 
     // A query made only of filters ("event paris": the kind Event and the place
-    // Paris) is read as a Writer monad over links. A filter is the terms
-    // filter_links checks plus a log, the chips it writes; `bind` is
-    // conjunction (a link must pass both) and keeps both logs, in order.
-    // `unit` passes every link and writes nothing, so reading a query is a fold
-    // of bind over its filters from unit. The server adds to the log too: each
-    // filter a link passes reports the entities it matched there
-    // (filter_links' entity_ids), and those chips light up.
-    const Filter = {
-      unit: () => ({ terms: [], log: [] }),
-      kind: (kind) => ({
-        terms: [{ kind: kind.path }],
-        log: [{ kind: "kind", label: kind.label }],
-      }),
-      // Entities typed with the same words: a link mentioning any of them.
-      entities: (entities) => ({
-        terms: [{ entities: entities.map((e) => e.id) }],
-        log: [{
-          kind: entities[0].kind_path ? kindName(entities[0].kind_path) : entities[0].kind.replace("_", " "),
-          label: entities[0].name,
-        }],
-      }),
-      bind: (a, b) => ({ terms: [...a.terms, ...b.terms], log: [...a.log, ...b.log] }),
-    };
+    // Paris) is read as a Filter (frontend/src/filter.ts): the terms
+    // filter_links checks plus the chips they write, combined by
+    // Filter.concat (conjunction, logs appended in order) from Filter.unit.
+    // The server adds to the log too: each filter a link passes reports the
+    // entities it matched there (filter_links' entity_ids), and those chips
+    // light up. These build one filter from a kind or a typed name.
+    function kindFilter(kind) {
+      return Filter.kind(kind.path, { kind: "kind", label: kind.label });
+    }
+
+    // Entities typed with the same words: a link mentioning any of them.
+    function entitiesFilter(entities) {
+      const first = entities[0];
+      return Filter.entities(entities.map((e) => e.id), {
+        kind: first.kind_path ? kindName(first.kind_path) : first.kind.replace("_", " "),
+        label: first.name,
+      });
+    }
 
     // The filters the whole of `text` names, or null: every word is filler, a
     // newest-first word (a filtered list is newest first anyway), or part of a
@@ -3513,7 +3517,7 @@
       if (open.some(Boolean)) return null;
       return placed
         .sort((a, b) => Math.min(...a.at) - Math.min(...b.at))
-        .reduce((filter, p) => Filter.bind(filter, p.kind ? Filter.kind(p.kind) : Filter.entities(p.entities)), Filter.unit());
+        .reduce((filter, p) => Filter.concat(filter, p.kind ? kindFilter(p.kind) : entitiesFilter(p.entities)), Filter.unit());
     }
 
     // The kind one level up from `path`, "kind" for the root.

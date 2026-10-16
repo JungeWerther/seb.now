@@ -1,0 +1,22 @@
+{
+  // Compiles src/ to plain scripts inlined into index.html by site.py.
+  // No imports or exports: each file is a script whose declarations land in
+  // the page's module scope.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM"],
+    "module": "ES2022",
+    "moduleDetection": "legacy",
+    "strict": true,
+    // The page script is a module, strict already; no stray "use strict" mid-script.
+    "alwaysStrict": false,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "removeComments": false,
+    "newLine": "lf",
+    "outDir": "../src/seb_now/templates"
+  },
+  "include": ["src/**/*.ts"]
+}

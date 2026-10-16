@@ -718,3 +718,20 @@ def test_visit_returns_only_send_values_the_link_visits_checks_allow() -> None:
     assert sent_kinds <= return_kinds, sent_kinds - return_kinds
     sent_actions = set(re.findall(r'noteNextAction\("(\w+)"', script)) | set(re.findall(r'value === 1 \? "(\w+)" : "(\w+)"', script)[0])
     assert sent_actions == next_actions, sent_actions ^ next_actions
+
+
+def test_render_inlines_the_compiled_filter_script_into_the_page_script() -> None:
+    html = render([])
+    script = html[html.index('<script type="module">') : html.index("</script>")]
+
+    assert "__FILTER_JS__" not in html
+    assert "function filterKey(" in script
+    assert "const fetchFiltered = memoizePages(filterPageKey" in script
+
+
+def test_compiled_scripts_that_could_close_the_page_script_are_refused(tmp_path: Path) -> None:
+    path = tmp_path / "evil.js"
+    path.write_text('const s = "</SCRIPT><script>alert(1)";')
+
+    with pytest.raises(ValueError):
+        site.compiled_script(path)
