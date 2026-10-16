@@ -364,7 +364,7 @@ async function judge(
     };
   }
 
-  const result = await jev.ask(state, questions);
+  const result = await jev.ask(state, questions, link.id);
   report.inputTokens = result.usage.input_tokens;
   const answer = (key: string) => {
     const a = result.answers[key];
@@ -453,7 +453,7 @@ Deno.serve(async (req: Request) => {
   if (keyError || !apiKey) {
     return new Response(JSON.stringify({ error: `no ${TYPESAFE_KEY_SECRET} in Vault` }), { status: 500 });
   }
-  const jev = new JevClient(apiKey, MODEL);
+  const jev = new JevClient(apiKey, MODEL, { db, fn: "event-extract", dryRun });
 
   const ids = (given as string[] | undefined) ?? await unprocessedLinkIds(db);
   const { data: links, error } = await db.from("links").select("id, title, url, description, created_at").in("id", ids);

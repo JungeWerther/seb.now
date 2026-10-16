@@ -193,7 +193,7 @@ function phraseInstructions({ surface, sentence }: Phrase, question: string): Js
     : { phrase: surface, question: `In the title of \`link\`, ${question}` };
 }
 
-async function findNames(jev: JevClient, state: JsonValue, phrases: Phrase[]) {
+async function findNames(jev: JevClient, linkId: string, state: JsonValue, phrases: Phrase[]) {
   const questions: Record<string, ChoiceQuestion> = {};
   phrases.forEach((phrase, i) => {
     if (phrase.sentence) {
@@ -215,7 +215,7 @@ async function findNames(jev: JevClient, state: JsonValue, phrases: Phrase[]) {
       criteria: KIND_OPTIONS,
     };
   });
-  const result = await jev.ask(state, questions);
+  const result = await jev.ask(state, questions, linkId);
   const names = phrases.flatMap(({ surface, sentence }, i) => {
     const probabilities = result.answers[`m${i}`].probabilities as Record<string, number>;
     let p: number;
@@ -237,7 +237,7 @@ async function mentionsOf(db: SupabaseClient, jev: JevClient, link: Link, phrase
   const state = { link: { title: link.title, site: hostOf(link.url) } };
   if (!phrases.length) return { mentions: [] as Mention[], inputTokens: 0 };
 
-  const found = await findNames(jev, state, phrases);
+  const found = await findNames(jev, link.id, state, phrases);
   let inputTokens = found.inputTokens;
 
   const pending: { name: Name; options: Candidate[]; longer: Name[] }[] = [];
@@ -274,7 +274,7 @@ async function mentionsOf(db: SupabaseClient, jev: JevClient, link: Link, phrase
         },
       } satisfies ChoiceQuestion,
     ]));
-    const result = await jev.ask(state, questions);
+    const result = await jev.ask(state, questions, link.id);
     inputTokens += result.usage.input_tokens;
     pending.forEach(({ name, options, longer }, i) => {
       const answer = result.answers[`e${i}`];
@@ -498,7 +498,7 @@ Deno.serve(async (req: Request) => {
   if (keyError || !apiKey) {
     return new Response(JSON.stringify({ error: `no ${TYPESAFE_KEY_SECRET} in Vault` }), { status: 500 });
   }
-  const jev = new JevClient(apiKey, MODEL);
+  const jev = new JevClient(apiKey, MODEL, { db, fn: "entity-extract", dryRun: dryRun || body?.eval === true });
 
   if (body?.eval === true) {
     const report = await evaluate(db, jev, (ids as string[] | undefined) ?? null, body?.decide === true, body?.text === true);

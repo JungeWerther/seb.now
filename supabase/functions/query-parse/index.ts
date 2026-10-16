@@ -79,7 +79,7 @@ async function client(): Promise<JevClient> {
   if (jev) return jev;
   const { data: apiKey, error } = await admin().rpc("get_vault_secret", { secret_name: TYPESAFE_KEY_SECRET });
   if (error || !apiKey) throw new Error(`no ${TYPESAFE_KEY_SECRET} in Vault`);
-  jev = new JevClient(apiKey, MODEL);
+  jev = new JevClient(apiKey, MODEL, { db: admin(), fn: "query-parse" });
   return jev;
 }
 
