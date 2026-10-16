@@ -4298,8 +4298,8 @@
       if (input.value.trim() !== text) return;
       entitySuggestions = entities;
       // A filter's chips stay up.
-      if (feed.filter && feed.query === text) return;
-      showQueryChips(text, feed.intent);
+      if (feed.filter && feed.query === text) showFilterChips(feed.filter, text);
+      else showQueryChips(text, feed.intent);
     }
 
     const readQueries = new Map();
@@ -4618,7 +4618,9 @@
         if (force || feed.query || feed.intent) showFeed("");
         return;
       }
-      const [, entities] = await Promise.all([loadTopicIndex(), matchEntities(text)]);
+      // With every word finished, names are matched whole, so prefix matches
+      // can't crowd an exact name out of the suggestions a filter needs.
+      const [, entities] = await Promise.all([loadTopicIndex(), matchEntities(partial ? text : `${text} `)]);
       if (generation !== queryGeneration) return;
       entitySuggestions = entities;
       const filter = queryFilter(text, entities);
@@ -4642,11 +4644,13 @@
       applyIntent(text, final, { replace: true });
     }
 
-    // A filter's log as the reading's chips, filled like Jev's.
-    function showFilterChips(filter) {
+    // A filter's log as the reading's chips, filled like Jev's, and the
+    // typed names tagged in the box.
+    function showFilterChips(filter, text) {
       queryChips.classList.remove("pending");
       queryChips.replaceChildren(...filter.log.map((entry) => queryChip(`${entry.kind} `, entry.label)));
       queryChips.hidden = false;
+      renderSearchMarks(null, text ? matchTopics(text) : []);
     }
 
     // A query naming two or more filters (typedFilter: "event paris",
@@ -4665,23 +4669,14 @@
     function applyFilter(text, filter) {
       // The search's own reading, still in flight, must not replace the list.
       queryGeneration++;
-      showFilterChips(filter);
+      showFilterChips(filter, text);
       feed.query = text;
-      if (feed.filter && filterKey(feed.filter) === filterKey(filter)) return;
+      // Loading or loaded already; after a failed load it's asked again.
+      const shown = feed.loading || feed.offset > 0 || feed.done;
+      if (feed.filter && filterKey(feed.filter) === filterKey(filter) && shown) return;
       resetFeed(text);
       feed.filter = filter;
       loadMore({ replace: true });
-    }
-
-    // On Enter, with every word finished, in case the reading while typing
-    // didn't settle on the filter.
-    async function showTypedFilter(text) {
-      if (queryWords(text).length < 2 && !typedIndexical(text)) return;
-      const generation = queryGeneration;
-      const [, entities] = await Promise.all([loadTopicIndex(), matchEntities(`${text} `)]);
-      if (generation !== queryGeneration || document.getElementById("search-input").value.trim() !== text) return;
-      const filter = queryFilter(text, entities);
-      if (filter) applyFilter(text, filter);
     }
 
     function setupSearch() {
@@ -4731,8 +4726,10 @@
         if (e.key !== "Enter") return;
         const kind = typedKind(input.value);
         if (!kind) {
+          // Read again with every word finished: it replaces a reading of the
+          // same text still in flight from typing.
+          lastQueryText = null;
           search({ finished: true });
-          showTypedFilter(input.value.trim());
           return;
         }
         // A query still being read must not land in the list the kind page shows.
