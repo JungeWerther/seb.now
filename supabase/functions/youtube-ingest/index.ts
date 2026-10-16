@@ -64,12 +64,12 @@ Deno.serve(async (_req: Request) => {
 
   const { data: sources, error: sourcesError } = await supabase
     .from("sources")
-    .select("identifier")
+    .select("id, identifier")
     .eq("kind", "youtube_channel")
     .eq("enabled", true);
   if (sourcesError) errors.push({ sources: sourcesError.message });
 
-  for (const { identifier: channel } of sources ?? []) {
+  for (const { id: sourceId, identifier: channel } of sources ?? []) {
     const res = await fetch(FEED_URL + channel);
     if (!res.ok) {
       errors.push({ channel, status: res.status });
@@ -94,6 +94,8 @@ Deno.serve(async (_req: Request) => {
         title,
         origin: "feed",
         submitted_by: null,
+        // Which followed channel posted it; the database tags the link with it.
+        source_id: sourceId,
         image_url: THUMBNAIL_URL(videoId),
         ...(published ? { created_at: published } : {}),
       };

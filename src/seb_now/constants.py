@@ -23,6 +23,10 @@ ARTICLE_TOPIC_CHIPS = 2
 # site.py — entity chips shown per article (bottom left, beside its votes),
 # highest-p first
 ARTICLE_ENTITY_CHIPS = 3
+# site.py — link_entities.found_in of a link's source tag (the channel, account
+# or feed it came from, 20261017140000_source_entities.sql): linked from the
+# domain line, never one of the entity chips. The page script has the same value.
+SOURCE_FOUND_IN = "source"
 # site.py — placeholder rows shown where a page of links is loading
 FEED_SKELETON_ROWS = 3
 # site.py — per-source favicon in each article's left column; {host} is the

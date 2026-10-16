@@ -87,12 +87,12 @@ Deno.serve(async (_req: Request) => {
 
   const { data: sources, error: sourcesError } = await supabase
     .from("sources")
-    .select("identifier")
+    .select("id, identifier")
     .eq("kind", "mastodon_account")
     .eq("enabled", true);
   if (sourcesError) results.push({ sources: sourcesError.message });
 
-  for (const { identifier } of sources ?? []) {
+  for (const { id: sourceId, identifier } of sources ?? []) {
     const [handle, instance] = identifier.split("@");
     try {
       const lookupRes = await fetch(
@@ -127,6 +127,8 @@ Deno.serve(async (_req: Request) => {
             origin: "fediverse",
             fediverse_post_uri: status.uri,
             submitted_by: null,
+            // Which followed account posted it; the database tags the link with it.
+            source_id: sourceId,
           },
           { onConflict: "fediverse_post_uri" },
         );

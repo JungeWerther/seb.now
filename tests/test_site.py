@@ -289,7 +289,7 @@ def test_link_page_focuses_a_tapped_post_above_its_related_links() -> None:
     script = html[html.index('<script type="module">') :]
     assert 'rpc("related_feed"' in script
     assert "page_offset: offset" in script
-    assert "link_entities(p, entities(id, name, kind))" in script
+    assert "link_entities(p, found_in, entities(id, name, kind))" in script
     assert "history.pushState" in script and "`/p/${id}`" in script
     assert "focusLink(li.dataset.linkId, { from: li })" in script
     assert "setupLinkPage();" in script
@@ -589,6 +589,43 @@ def test_render_shows_the_author_on_the_domain_line() -> None:
     html = render(articles)
 
     assert '<span class="domain">@Channel5YouTube</span>' in _article_list(html)
+
+
+def test_domain_line_links_to_its_source_and_the_source_is_not_an_entity_chip() -> None:
+    from seb_now.site import Chip, _source, _top_entities
+
+    source_id = "11111111-1111-1111-1111-111111111111"
+    labels = [
+        {"p": 1.0, "found_in": "source", "entities": {"id": source_id, "name": "Channel 5"}},
+        {"p": 0.9, "found_in": "title", "entities": {"id": "e1", "name": "Iran"}},
+    ]
+    assert _top_entities(labels) == [Chip("e1", "Iran")]
+    assert _source(labels) == Chip(source_id, "Channel 5")
+    assert _source(labels[1:]) is None
+
+    articles = build_articles(
+        [
+            {
+                "id": "a",
+                "title": "Iran",
+                "url": "https://www.youtube.com/watch?v=YSLWEsv-8MM",
+                "author": "@Channel5YouTube",
+                "entities": _top_entities(labels),
+                "source": _source(labels),
+            }
+        ],
+        DOMAIN_SOURCE_TYPES,
+    )
+    listing = _article_list(render(articles))
+    assert f'<a class="domain" href="/e/{source_id}">@Channel5YouTube</a>' in listing
+    assert ">Channel 5<" not in listing
+
+
+def test_page_script_fills_the_domain_link_and_keeps_sources_off_the_chips() -> None:
+    script = render([])[render([]).index('<script type="module">') :]
+    assert 'const SOURCE_FOUND_IN = "source";' in script
+    assert "le.found_in !== SOURCE_FOUND_IN" in script
+    assert "setEntityHref(domain, source.entities.id)" in script
 
 
 def test_posted_label_shows_month_and_day_adding_the_year_only_for_other_years() -> None:

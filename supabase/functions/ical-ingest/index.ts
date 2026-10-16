@@ -126,7 +126,7 @@ Deno.serve(async (_req: Request) => {
   const errors: unknown[] = [];
   const { data: sources, error: sourcesError } = await db
     .from("sources")
-    .select("identifier")
+    .select("id, identifier")
     .eq("kind", "ical_feed")
     .eq("enabled", true);
   if (sourcesError) errors.push({ sources: sourcesError.message });
@@ -137,7 +137,7 @@ Deno.serve(async (_req: Request) => {
   let upserted = 0;
   let withImage = 0;
 
-  for (const { identifier: feedUrl } of sources ?? []) {
+  for (const { id: sourceId, identifier: feedUrl } of sources ?? []) {
     let events: { event: CalendarEvent; url: string }[];
     try {
       const res = await fetch(feedUrl, {
@@ -167,6 +167,8 @@ Deno.serve(async (_req: Request) => {
         title: cut(event.summary, TITLE_MAX_CHARS),
         origin: "feed",
         submitted_by: null,
+        // Which followed calendar listed it; the database tags the link with it.
+        source_id: sourceId,
         ...(images[i] ? { image_url: images[i] } : {}),
         ...(description ? { description } : {}),
       };

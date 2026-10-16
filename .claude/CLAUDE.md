@@ -823,6 +823,37 @@ opened in place by the chip-link click handler; an entity's page links its kind.
 The `kinds` table and `entities.kind_path` themselves are
 `20261015172038_entity_kind_hierarchy.sql`.
 
+**Sources are entities too** (`20261017140000_source_entities.sql`). Every
+followed source (`public.sources` row) and every handle a link names as its
+author is an entity under `entity.source` — one subkind per source kind
+(`entity.source.youtube_channel`, `.mastodon_account`, `.web_feed`,
+`.ical_feed`), legacy `kind` `'source'` — so the kind and entity pages are the
+source pages: `/k/entity.source` lists every source, `/k/entity.source.web_feed`
+every feed, `/e/<id>` one source's posts, and "youtube channel" is a kind the
+search box tags. A source is named by its label's part before ": " (Luma
+calendars, "Luma: Name", by the part after), the rest becoming its
+`description`; feeds whose labels share a name ("TaxiPro: …") share an entity.
+`sources.entity_id` points at it and `sources.handle` holds a channel's or
+account's `@handle` once known. Each link is tagged with its source in
+`link_entities` (`found_in` = `labeled_by` = `'source'`, p 1) by the
+`links_tag_source` trigger (`tag_link_source`), which picks, most certain
+first: `links.source_id` (written by the youtube, web-feed, fediverse and ical
+ingests); the Mastodon account in `fediverse_post_uri`; a source whose `handle`
+is the link's author, on the link's platform (`link_handle_kind`; handles are
+unique per kind only); the web feeds on the link's host (`source_host`, without
+`www.`/`feed(s).`/`rss.`) when they all name one outlet. A YouTube or
+fediverse `@author` no source claims becomes a source of its own, named by
+the handle; when a followed channel's handle is learnt (an ingested video
+with `source_id` and an author, YouTube only, or set by hand), that handle entity folds into
+the channel's (`fold_handle_entity`). Inserting a source, or setting its
+handle, re-tags its links (`sources_sync_entity`). Source tags aren't
+mentions: the feed rows keep them off the entity chips and link the domain line
+to the source's page instead (`FEED_SELECT` and `related_feed`'s `link_row`
+carry `found_in` for this; `SOURCE_FOUND_IN`), `related_links` ignores them
+(title mentions only), and `entity_candidates`/`known_names` skip source
+entities, so a headline's "Belfast Telegraph" never resolves to the channel.
+QA: `tests/qa`, `npm run sources`.
+
 Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the
 vote tints (`.swipe-bg`) and the `.post` that slides over them, so the
 favicon, domain/chips line and replies don't react. Swiping right upvotes
