@@ -2029,12 +2029,14 @@
     }
 
     // One page of feed_query for a typed query's intent; only its for_you
-    // order reads the caller's own votes. Links mentioning the entities
-    // suggested for the query come first, with those entities highlighted.
+    // order reads the caller's own votes. Only links about every required
+    // (tagged) entity are kept; links mentioning the other suggested entities
+    // come first. All of them are highlighted.
     async function fetchQueried(intent, asOf, offset) {
       const client = await supabaseReady;
       if (intent.sort === "for_you") await pendingSession;
       const entities = intent.entities ?? [];
+      const required = intent.required ?? [];
       const { data: ranks, error } = await client.rpc("feed_query", {
         sort: intent.sort,
         topic: intent.topic?.id ?? null,
@@ -2043,14 +2045,15 @@
         page_offset: offset,
         page_size: FEED_PAGE_SIZE,
         entities: entities.length ? entities.map((e) => e.id) : null,
+        required: required.length ? required.map(({ ids, words }) => ({ ids, words })) : null,
       });
       if (error) {
         console.error("failed to query feed", error);
         return null;
       }
       const page = await linksInOrder(client, ranks);
-      if (!page || !entities.length) return page;
-      const shared = { entities: new Set(entities.map((e) => e.name)), topics: new Set() };
+      if (!page || !(entities.length || required.length)) return page;
+      const shared = { entities: new Set([...required, ...entities].map((e) => e.name)), topics: new Set() };
       return { rows: page.rows.map((row) => ({ row, shared })), count: page.count };
     }
 
@@ -3696,14 +3699,42 @@
 
     function sameIntent(a, b) {
       const entityIds = (intent) => (intent.entities ?? []).map((e) => e.id).join();
+      const requiredIds = (intent) => (intent.required ?? []).map((g) => g.ids.join("|")).join();
       return Boolean(a && b) && a.sort === b.sort && a.topic?.id === b.topic?.id && a.search === b.search
-        && entityIds(a) === entityIds(b);
+        && entityIds(a) === entityIds(b) && requiredIds(a) === requiredIds(b);
     }
 
-    // `intent` with the entities suggested for its text, which feed_query
-    // ranks first.
-    function withEntities(intent, entities) {
-      return { ...intent, entities: entities.map(({ id, name }) => ({ id, name })) };
+    // `intent` with the entities suggested for `text`. Every entity whose whole
+    // name is typed (tagged in the box) is required: feed_query keeps only links
+    // about all of them, and their words leave the title search. A name with
+    // several senses (an org and its building) is one requirement met by any of
+    // them. The other suggestions only rank their links first.
+    function withEntities(intent, entities, text) {
+      const tokens = tagTokens(text, intent, matchTopics(text), entities, [false]);
+      const byName = new Map();
+      for (const t of tokens) {
+        if (!t.tag?.entity) continue;
+        const key = queryWords(t.tag.entity.name).join(" ");
+        if (!byName.has(key)) byName.set(key, { name: t.tag.entity.name, words: queryWords(t.tag.entity.name), coveredWords: new Set() });
+        byName.get(key).coveredWords.add(t.word);
+      }
+      const required = [...byName.entries()].map(([key, group]) => ({
+        name: group.name,
+        words: group.words,
+        coveredWords: group.coveredWords,
+        ids: entities.filter((e) => queryWords(e.name).join(" ") === key).map((e) => e.id),
+      }));
+      const covered = new Set(required.flatMap((g) => [...g.coveredWords]));
+      const requiredIds = new Set(required.flatMap((g) => g.ids));
+      const search = (intent.search || "").split(/\s+/)
+        .filter((w) => w && !covered.has(w.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]/g, "")))
+        .join(" ");
+      return {
+        ...intent,
+        search,
+        required: required.map(({ name, words, ids }) => ({ name, words, ids })),
+        entities: entities.filter((e) => !requiredIds.has(e.id)).map(({ id, name }) => ({ id, name })),
+      };
     }
 
     const queryChips = document.getElementById("query-chips");
@@ -3734,6 +3765,7 @@
       if (intent) {
         if (SORT_LABELS[intent.sort]) chips.push(queryChip("", SORT_LABELS[intent.sort]));
         if (intent.topic) chips.push(queryChip("topic ", intent.topic.name));
+        for (const group of intent.required ?? []) chips.push(queryChip("about ", group.name));
         if (intent.search) chips.push(queryChip("search ", `“${intent.search}”`));
       }
       // Suggestions are links to the topic's or entity's page, opened in place
@@ -3748,7 +3780,8 @@
         setTopicHref(chip, topic.id);
         chips.push(chip);
       }
-      for (const entity of text ? entitySuggestions : []) {
+      const requiredIds = new Set((intent?.required ?? []).flatMap((g) => g.ids));
+      for (const entity of text ? entitySuggestions.filter((e) => !requiredIds.has(e.id)) : []) {
         const chip = document.createElement("a");
         chip.className = "query-chip";
         chip.dataset.kind = entity.kind.replace("_", " ");
@@ -3769,9 +3802,13 @@
     // matches all go before the word still being typed is matched as a prefix,
     // so "event" is the kind, not the product "Éventail". Spans are text nodes,
     // never innerHTML. `topicMatches`: matchTopics of the text, already computed.
-    function renderSearchMarks(intent, topicMatches = []) {
-      const input = document.getElementById("search-input");
-      const value = input.value;
+    // The words of `value` with what each is tagged as, as the search box
+    // shows them (see renderSearchMarks): the reading's sort words and topic,
+    // then an entity or a topic suggestion whose whole name is typed, then a
+    // kind. Longer entity names go first, so "tim fernholz" is one name, not
+    // "Tim" and a loose "fernholz". `prefixes`: [false] places whole words
+    // only; [false, true] then lets the word still being typed match by prefix.
+    function tagTokens(value, intent, topicMatches, entities, prefixes = [false, true]) {
       const tokens = [...value.matchAll(/[\p{L}\p{N}]+/gu)].map((m) => ({
         start: m.index,
         end: m.index + m[0].length,
@@ -3799,30 +3836,37 @@
         return true;
       }
 
-      if (value.trim()) {
-        if (intent?.sort && SORT_LABELS[intent.sort]) {
-          for (const t of tokens) {
-            if (t.open && !t.partial && QUERY_SORT_WORDS[t.word] === intent.sort) {
-              t.tag = { kind: "order" };
-              t.open = false;
-            }
-          }
-        }
-        for (const prefix of [false, true]) {
-          if (intent?.topic) tagName(intent.topic.name, { kind: "topic", topic: intent.topic }, prefix);
-          for (const entity of entitySuggestions) {
-            const kind = entity.kind_path ? kindName(entity.kind_path) : entity.kind.replace("_", " ");
-            tagName(entity.name, { kind, suggested: true, entity }, prefix);
-          }
-          for (const topic of topicMatches) {
-            tagName(topic.name, { kind: "topic", suggested: true, topic }, prefix);
-          }
-          for (const kind of kindIndex) {
-            const tag = { kind: parentKindName(kind.path), suggested: true, kindPath: kind.path, kindLabel: kind.label };
-            kind.names.some((name) => tagName(name, tag, prefix));
+      if (!value.trim()) return tokens;
+      if (intent?.sort && SORT_LABELS[intent.sort]) {
+        for (const t of tokens) {
+          if (t.open && !t.partial && QUERY_SORT_WORDS[t.word] === intent.sort) {
+            t.tag = { kind: "order" };
+            t.open = false;
           }
         }
       }
+      const required = new Set((intent?.required ?? []).flatMap((g) => g.ids));
+      const longestFirst = [...entities].sort((a, b) => queryWords(b.name).length - queryWords(a.name).length);
+      for (const prefix of prefixes) {
+        if (intent?.topic) tagName(intent.topic.name, { kind: "topic", topic: intent.topic }, prefix);
+        for (const entity of longestFirst) {
+          const kind = entity.kind_path ? kindName(entity.kind_path) : entity.kind.replace("_", " ");
+          tagName(entity.name, { kind, suggested: !required.has(entity.id), entity }, prefix);
+        }
+        for (const topic of topicMatches) {
+          tagName(topic.name, { kind: "topic", suggested: true, topic }, prefix);
+        }
+        for (const kind of kindIndex) {
+          const tag = { kind: parentKindName(kind.path), suggested: true, kindPath: kind.path, kindLabel: kind.label };
+          kind.names.some((name) => tagName(name, tag, prefix));
+        }
+      }
+      return tokens;
+    }
+
+    function renderSearchMarks(intent, topicMatches = []) {
+      const value = document.getElementById("search-input").value;
+      const tokens = tagTokens(value, intent, topicMatches, entitySuggestions);
 
       // A name typed as neighbouring words ("ai agents") gets one tag.
       const spans = [];
@@ -3921,7 +3965,7 @@
       entitySuggestions = entities;
       const local = localRead(text, { partial });
       const asked = !local.sure && queryCreditsLeft !== 0;
-      const first = withEntities(asked ? local.intent : local.fallback, entities);
+      const first = withEntities(asked ? local.intent : local.fallback, entities, text);
       showQueryChips(text, first);
       queryChips.classList.toggle("pending", asked);
       applyIntent(text, first, { force });
@@ -3930,7 +3974,7 @@
       const intent = await readQuery(text.slice(0, QUERY_MAX_LENGTH), candidates.map((t) => t.id));
       if (generation !== queryGeneration) return;
       queryChips.classList.remove("pending");
-      const final = withEntities(intent ?? local.fallback, entities);
+      const final = withEntities(intent ?? local.fallback, entities, text);
       showQueryChips(text, final);
       applyIntent(text, final, { replace: true });
     }
