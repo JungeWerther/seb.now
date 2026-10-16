@@ -47,6 +47,9 @@ from seb_now.source_type import classify_source, display_domain, favicon_host
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 TEMPLATE_PATH = TEMPLATES_DIR / "index.html"
+# Compiled from frontend/src/filter.ts by `npm run build` in frontend/; CI
+# fails if it's out of date with its source.
+FILTER_JS_PATH = TEMPLATES_DIR / "filter.js"
 OUTPUT_PATH = Path(__file__).parent.parent.parent / "dist" / "index.html"
 
 ARTICLES_PLACEHOLDER = "<!--ARTICLES-->"
@@ -61,6 +64,7 @@ FIND_SOURCES_PROMPT_PLACEHOLDER = "__FIND_SOURCES_PROMPT__"
 FIND_ENTITY_SOURCES_PROMPT_PLACEHOLDER = "__FIND_ENTITY_SOURCES_PROMPT__"
 SUPABASE_JS_MODULE_URL_PLACEHOLDER = "__SUPABASE_JS_MODULE_URL__"
 CSP_PLACEHOLDER = "__CONTENT_SECURITY_POLICY__"
+FILTER_JS_PLACEHOLDER = "__FILTER_JS__"
 
 FEED_COLUMNS = "id, title, url, image_url, author, created_at"
 
@@ -310,6 +314,18 @@ def _render_skeletons() -> str:
     return "".join(f"\n{row}" for _ in range(FEED_SKELETON_ROWS))
 
 
+def compiled_script(path: Path) -> str:
+    """A compiled frontend script to inline into the page's module script.
+
+    It's our own code, not data, but it must still not be able to close the
+    `<script>` it lands in.
+    """
+    code = path.read_text()
+    if "</script" in code.lower():
+        raise ValueError(f"{path} contains </script and can't be inlined")
+    return code
+
+
 def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon_key: str = "") -> str:
     items = "".join(f"\n{_render_article(article)}" for article in articles)
     list_html = (
@@ -319,6 +335,7 @@ def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon
         f'    <template id="article-template">\n{_render_article(TEMPLATE_ARTICLE)}\n    </template>'
     )
     html = TEMPLATE_PATH.read_text().replace(ARTICLES_PLACEHOLDER, list_html)
+    html = html.replace(FILTER_JS_PLACEHOLDER, compiled_script(FILTER_JS_PATH))
     html = html.replace(SUPABASE_URL_PLACEHOLDER, script_json(supabase_url))
     html = html.replace(SUPABASE_ANON_KEY_PLACEHOLDER, script_json(supabase_anon_key))
     html = html.replace(FEED_PAGE_SIZE_PLACEHOLDER, script_json(FEED_PAGE_SIZE))

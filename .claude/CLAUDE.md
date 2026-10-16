@@ -608,7 +608,22 @@ the matched entities (`withEntityIds`); `filterLocalLinks` is `filter_links`
 until the index changes, and link rows are fetched by `seq` once per visit
 (`linkRowsBySeq`). Until the index is ready, where IndexedDB or gzip streams are
 missing, or while no snapshot of the current gen exists, the page asks
-`match_entities` and `filter_links` as before. Order names live in `SORTS` (the function) and
+`match_entities` and `filter_links` as before. **`Filter` is TypeScript**
+(`frontend/src/filter.ts`, see `frontend/README.md`): a script compiled by `tsc`
+into `src/seb_now/templates/filter.js` (committed, since the DO build has no
+Node), which `site.py` inlines at `__FILTER_JS__` at the top of the page's module
+script (`compiled_script` refuses anything containing `</script`), so the CSP
+hash covers it. It holds `Filter` (`unit`/`term`/`concat`), the canonical
+`filterKey` (terms and senses deduplicated and sorted, log left out) and
+`memoizePages`. The database path, `fetchServerFiltered`, pages `filter_links` by
+keyset (`before_created_at`, `before_id`, the last row's `created_at`/`link_id`;
+`20261017130000_filter_links_keyset.sql`) and caches each page by
+`filterPageKey` (5 min, 50 pages, a page in flight shared, failures not kept), so
+"paris event" reuses "event paris"; the local index keeps its own offset path.
+CI's `frontend` job runs ESLint (strict type-checked), `tsc --noEmit`, the build
+(failing if the committed `filter.js` differs) and `frontend/test/`;
+`tests/qa/` has `npm run keyset` (keyset pages equal offset pages on an embedded
+Postgres) next to #81's `db` and `page`. Order names live in `SORTS` (the function) and
 `SORT_LABELS` (the page) and must match `feed_query`'s check.
 
 **Query credits.** Every account (anonymous ones included) starts with
