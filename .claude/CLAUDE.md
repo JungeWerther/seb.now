@@ -511,7 +511,21 @@ is already a filter on Enter. The page
 reads these as a Writer monad (`Filter`): `bind` is conjunction and concatenates
 logs, the log being the filled chips (`showFilterChips`) plus, from the server,
 the matched entities whose chips light up. The feed holds it as `feed.filter`;
-typing again goes back to the ordinary query. Order names live in `SORTS` (the function) and
+typing again goes back to the ordinary query. Both entity matching and filter queries run
+on the page's own copy of the entity index once it has loaded (`entityIndex`,
+`refreshEntityIndex`, `INDEX_LOAD_DELAY_MS` after load and every
+`INDEX_REFRESH_MS` while visible): the snapshot from the `index` bucket
+(decompressed with `DecompressionStream`, decoded by `decodeIndexSnapshot`) is
+kept in IndexedDB (`seb-now-index`) and brought up to date with `index_diff`,
+asked from `INDEX_DIFF_OVERLAP` below its watermark; a newer `gen` reloads the
+snapshot. `matchLocalEntities` is `match_entities` ported (same word rules, little
+words and ranking, seq instead of id on ties), with ids fetched by seq only for
+the matched entities (`withEntityIds`); `filterLocalLinks` is `filter_links`
+(`Filter.local` holds the terms with entity seqs), its answer kept per filter
+until the index changes, and link rows are fetched by `seq` once per visit
+(`linkRowsBySeq`). Until the index is ready, where IndexedDB or gzip streams are
+missing, or while no snapshot of the current gen exists, the page asks
+`match_entities` and `filter_links` as before. Order names live in `SORTS` (the function) and
 `SORT_LABELS` (the page) and must match `feed_query`'s check.
 
 **Query credits.** Every account (anonymous ones included) starts with

@@ -2177,6 +2177,7 @@
     // entities they matched there, highlighted.
     async function fetchFiltered(filter, offset) {
       const client = await supabaseReady;
+      if (entityIndex.ready && filter.local) return fetchLocalFiltered(client, filter.local, offset);
       const { data: ids, error } = await client.rpc("filter_links", {
         filters: filter.terms,
         max_results: FEED_PAGE_SIZE,
@@ -2187,6 +2188,34 @@
         return null;
       }
       return linksWithMatches(client, ids);
+    }
+
+    // Link rows by seq, fetched once per visit: a filter's pages come from the
+    // local index as seqs, and only rows not seen yet are asked for.
+    const linkRowsBySeq = new Map();
+
+    // One page of the local index's answer to a filter: its links' rows in
+    // that order, each with the names of the entities its terms matched there
+    // highlighted.
+    async function fetchLocalFiltered(client, local, offset) {
+      const page = filterLocalLinks(local).slice(offset, offset + FEED_PAGE_SIZE);
+      const missing = page.map((p) => p.linkSeq).filter((seq) => !linkRowsBySeq.has(seq));
+      if (missing.length) {
+        const { data, error } = await client.from("links").select(`${FEED_SELECT}, seq`).in("seq", missing);
+        if (error) {
+          console.error("failed to load the filtered links", error);
+          return null;
+        }
+        for (const row of data) linkRowsBySeq.set(row.seq, row);
+      }
+      const rows = page.filter((p) => linkRowsBySeq.has(p.linkSeq)).map((p) => ({
+        row: linkRowsBySeq.get(p.linkSeq),
+        shared: {
+          entities: new Set([...p.entitySeqs].map((seq) => entityIndex.entities.get(seq)?.name).filter(Boolean)),
+          topics: new Set(),
+        },
+      }));
+      return { rows, count: page.length };
     }
 
     // `ids` ({link_id, entity_ids} rows) as links in that order, each with the
@@ -3489,26 +3518,37 @@
     // of bind over its filters from unit. The server adds to the log too: each
     // filter a link passes reports the entities it matched there
     // (filter_links' entity_ids), and those chips light up.
+    // `local` is the same terms for the page's own index (entity seqs instead
+    // of ids), or null when an entity came from the database without a seq.
     const Filter = {
-      unit: () => ({ terms: [], log: [] }),
+      unit: () => ({ terms: [], local: [], log: [] }),
       kind: (kind) => ({
         terms: [{ kind: kind.path }],
+        local: [{ kind: kind.path }],
         log: [{ kind: "kind", label: kind.label }],
       }),
       // Entities typed with the same words: a link mentioning any of them.
       entities: (entities) => ({
         terms: [{ entities: entities.map((e) => e.id) }],
+        local: entities.every((e) => e.seq != null) ? [{ seqs: entities.map((e) => e.seq) }] : null,
         log: [{
           kind: entities[0].kind_path ? kindName(entities[0].kind_path) : entities[0].kind.replace("_", " "),
           label: entities[0].name,
         }],
       }),
       // A period, resolved to its interval now: a link with an event in it.
+      // Events aren't in the local index, so a filter with one asks the
+      // database.
       period: (period) => ({
         terms: [{ period: period.interval(new Date()) }],
+        local: null,
         log: [{ kind: kindName(PERIOD_KIND), label: period.name }],
       }),
-      bind: (a, b) => ({ terms: [...a.terms, ...b.terms], log: [...a.log, ...b.log] }),
+      bind: (a, b) => ({
+        terms: [...a.terms, ...b.terms],
+        local: a.local && b.local && [...a.local, ...b.local],
+        log: [...a.log, ...b.log],
+      }),
     };
 
     // The filters the whole of `text` names, or null: every word is filler, a
@@ -3636,6 +3676,332 @@
       return { sure, intent: reading(search), fallback: reading([...search, ...unsure]) };
     }
 
+    // The entity index the page keeps for itself (20261016210000_entity_index.sql):
+    // every mentioned entity's name and kind and which links mention it, so the
+    // search box matches names and runs filter queries without a request each
+    // time. A snapshot from the public `index` bucket (made by index-snapshot,
+    // under a new name each time, so the CDN keeps it) is kept in IndexedDB;
+    // `index_diff` brings it up to date when the page opens and every
+    // INDEX_REFRESH_MS while it's visible. Diffs only add: when `gen` moved on
+    // (something was deleted, renamed or folded) the snapshot is loaded again,
+    // and until one of the current gen exists the page asks the database, as
+    // it does before the index has loaded or where IndexedDB, gzip streams or
+    // the bucket aren't there.
+    const INDEX_FORMAT = 1;
+    const INDEX_DB_NAME = "seb-now-index";
+    const INDEX_DB_STORE = "index";
+    const INDEX_DB_KEY = "current";
+    const INDEX_REFRESH_MS = 5 * 60 * 1000;
+    // Rows of a transaction still open when the page last asked can commit
+    // with a lower seq than it has seen, so it asks again from this far below.
+    const INDEX_DIFF_OVERLAP = 500;
+    // Wait this long after the page loads before fetching the index.
+    const INDEX_LOAD_DELAY_MS = 1500;
+    const INDEX_SNAPSHOT_PATH = /^snapshots\/[0-9a-z-]+\.json\.gz$/;
+    // match_entities' little words, which don't count toward a name's words.
+    const INDEX_LITTLE_WORDS = new Set(["a", "an", "and", "the", "of", "on", "in", "for", "to", "at", "by", "with",
+      "de", "du", "des", "la", "le", "les", "l", "d", "et", "y", "el", "von", "van", "der", "den"]);
+    // Letters NFKD leaves alone that unaccent folds.
+    const FOLD_LETTERS = { "ø": "o", "ł": "l", "đ": "d", "ð": "d", "þ": "th", "ß": "ss", "æ": "ae", "œ": "oe", "ı": "i" };
+
+    const entityIndex = {
+      ready: false,
+      gen: null,
+      wm: null,
+      // seq → { seq, name, kind_path, kind, folded, words }
+      entities: new Map(),
+      // entity seq → Set of link seqs
+      entityLinks: new Map(),
+      // link seq → { minute, entities: Set of entity seqs }
+      links: new Map(),
+      // Bumped on every change, so results computed from the index can be kept
+      // until it changes.
+      version: 0,
+      loading: null,
+    };
+
+    function foldName(text) {
+      return text.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase()
+        .replace(/[øłđðþßæœı]/g, (c) => FOLD_LETTERS[c]);
+    }
+
+    function indexEntity(seq, name, kindPath, kind) {
+      const folded = foldName(name);
+      entityIndex.entities.set(seq, {
+        seq, name, kind_path: kindPath, kind,
+        folded,
+        words: folded.split(/[^a-z0-9]+/).filter((w) => w && !INDEX_LITTLE_WORDS.has(w)),
+      });
+    }
+
+    function indexMention(linkSeq, entitySeq) {
+      let link = entityIndex.links.get(linkSeq);
+      if (!link) entityIndex.links.set(linkSeq, (link = { minute: 0, entities: new Set() }));
+      link.entities.add(entitySeq);
+      let links = entityIndex.entityLinks.get(entitySeq);
+      if (!links) entityIndex.entityLinks.set(entitySeq, (links = new Set()));
+      links.add(linkSeq);
+    }
+
+    function undeltas(values) {
+      const out = [];
+      for (const v of values) out.push(out.length ? out[out.length - 1] + v : v);
+      return out;
+    }
+
+    // A stored snapshot (_shared/index_snapshot.ts's format; keep in sync) with
+    // its seqs absolute again.
+    function decodeIndexSnapshot(snapshot) {
+      return {
+        ...snapshot,
+        entities: { ...snapshot.entities, seq: undeltas(snapshot.entities.seq) },
+        links: { ...snapshot.links, seq: undeltas(snapshot.links.seq), entities: snapshot.links.entities.map(undeltas) },
+      };
+    }
+
+    // Replaces the index with a decoded snapshot (or the copy kept in IndexedDB,
+    // which has the same shape).
+    function loadIndexState(state) {
+      entityIndex.entities.clear();
+      entityIndex.entityLinks.clear();
+      entityIndex.links.clear();
+      const { seq, name, kind } = state.entities;
+      seq.forEach((s, i) => {
+        const [kindPath, flatKind] = state.kinds[kind[i]] ?? ["entity", "other"];
+        indexEntity(s, name[i], kindPath, flatKind);
+      });
+      state.links.seq.forEach((linkSeq, i) => {
+        for (const entitySeq of state.links.entities[i]) indexMention(linkSeq, entitySeq);
+        entityIndex.links.get(linkSeq).minute = state.links.minute[i];
+      });
+      entityIndex.gen = state.gen;
+      entityIndex.wm = state.wm;
+      entityIndex.version++;
+    }
+
+    // The index in the snapshot's shape (absolute seqs), to keep in IndexedDB.
+    function indexState() {
+      const kinds = [];
+      const kindAt = new Map();
+      const entities = { seq: [], name: [], kind: [] };
+      for (const e of entityIndex.entities.values()) {
+        const key = `${e.kind_path} ${e.kind}`;
+        if (!kindAt.has(key)) {
+          kindAt.set(key, kinds.length);
+          kinds.push([e.kind_path, e.kind]);
+        }
+        entities.seq.push(e.seq);
+        entities.name.push(e.name);
+        entities.kind.push(kindAt.get(key));
+      }
+      const links = { seq: [], minute: [], entities: [] };
+      for (const [seq, link] of entityIndex.links) {
+        links.seq.push(seq);
+        links.minute.push(link.minute);
+        links.entities.push([...link.entities]);
+      }
+      return { v: INDEX_FORMAT, gen: entityIndex.gen, wm: entityIndex.wm, kinds, entities, links };
+    }
+
+    function openIndexDb() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(INDEX_DB_NAME, 1);
+        request.onupgradeneeded = () => request.result.createObjectStore(INDEX_DB_STORE);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function readStoredIndex() {
+      try {
+        const db = await openIndexDb();
+        return await new Promise((resolve, reject) => {
+          const request = db.transaction(INDEX_DB_STORE).objectStore(INDEX_DB_STORE).get(INDEX_DB_KEY);
+          request.onsuccess = () => resolve(request.result ?? null);
+          request.onerror = () => reject(request.error);
+        });
+      } catch {
+        return null;
+      }
+    }
+
+    async function storeIndex() {
+      try {
+        const db = await openIndexDb();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(INDEX_DB_STORE, "readwrite");
+          tx.objectStore(INDEX_DB_STORE).put(indexState(), INDEX_DB_KEY);
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+        });
+      } catch (error) {
+        // private browsing / storage full - the index still works for this visit
+        console.warn("couldn't keep the entity index", error);
+      }
+    }
+
+    async function fetchIndexSnapshot(path) {
+      if (!INDEX_SNAPSHOT_PATH.test(path)) throw new Error(`unexpected snapshot ${path}`);
+      const response = await fetch(`${SUPABASE_URL}/storage/v1/object/public/index/${path}`);
+      if (!response.ok) throw new Error(`snapshot ${path}: ${response.status}`);
+      const text = await new Response(response.body.pipeThrough(new DecompressionStream("gzip"))).text();
+      const snapshot = JSON.parse(text);
+      if (snapshot.v !== INDEX_FORMAT) throw new Error(`snapshot format ${snapshot.v}`);
+      return decodeIndexSnapshot(snapshot);
+    }
+
+    async function fetchIndexDiff(wm) {
+      const below = (n) => Math.max(0, n - INDEX_DIFF_OVERLAP);
+      const { data, error } = await (await supabaseReady).rpc("index_diff", wm
+        ? { link_seq: below(wm.l), entity_seq: below(wm.e), pair_seq: below(wm.p) }
+        : {});
+      if (error) throw error;
+      return data;
+    }
+
+    // Adds a diff's rows; true when it added anything.
+    function applyIndexDiff(diff) {
+      let changed = false;
+      for (const [seq, name, kindPath, kind] of diff.entities) {
+        const known = entityIndex.entities.get(seq);
+        if (known && known.name === name && known.kind_path === kindPath) continue;
+        indexEntity(seq, name, kindPath, kind);
+        changed = true;
+      }
+      for (const [linkSeq, entitySeq] of diff.pairs) {
+        if (entityIndex.links.get(linkSeq)?.entities.has(entitySeq)) continue;
+        indexMention(linkSeq, entitySeq);
+        changed = true;
+      }
+      for (const [linkSeq, minute] of diff.links) {
+        const link = entityIndex.links.get(linkSeq);
+        if (link) link.minute = minute;
+      }
+      entityIndex.wm = diff.wm;
+      if (changed) entityIndex.version++;
+      return changed;
+    }
+
+    // Brings the index up to date: from IndexedDB the first time, then a diff;
+    // a snapshot when the copy is missing or of an older gen. Leaves `ready`
+    // false (the page asks the database) when that can't be done.
+    function refreshEntityIndex() {
+      entityIndex.loading ??= (async () => {
+        if (!("indexedDB" in window) || typeof DecompressionStream === "undefined") return;
+        if (!entityIndex.gen) {
+          const stored = await readStoredIndex();
+          if (stored?.v === INDEX_FORMAT) loadIndexState(stored);
+        }
+        let diff = await fetchIndexDiff(entityIndex.gen ? entityIndex.wm : null);
+        if (diff.reload || diff.gen !== entityIndex.gen) {
+          if (!diff.snapshot || diff.snapshot.gen !== diff.gen) {
+            entityIndex.ready = false;
+            return;
+          }
+          loadIndexState(await fetchIndexSnapshot(diff.snapshot.path));
+          diff = await fetchIndexDiff(entityIndex.wm);
+          if (diff.reload || diff.gen !== entityIndex.gen) {
+            entityIndex.ready = false;
+            return;
+          }
+          applyIndexDiff(diff);
+          await storeIndex();
+        } else if (applyIndexDiff(diff)) {
+          await storeIndex();
+        }
+        entityIndex.ready = true;
+      })().catch((error) => {
+        console.error("failed to load the entity index", error);
+      }).finally(() => {
+        entityIndex.loading = null;
+      });
+      return entityIndex.loading;
+    }
+
+    function setupEntityIndex() {
+      setTimeout(refreshEntityIndex, INDEX_LOAD_DELAY_MS);
+      setInterval(() => {
+        if (document.visibilityState === "visible") refreshEntityIndex();
+      }, INDEX_REFRESH_MS);
+    }
+
+    // match_entities over the local index: a name word matches a typed word
+    // exactly, as its singular/plural, or by prefix for the partial one; at
+    // least half the name's words (little words aside) must match; ranked by
+    // that share, then how many links mention it, then shorter names.
+    function matchLocalEntities(words, partial, maxResults) {
+      const typed = words.slice(0, 12).map((w) => w.replace(/[^a-z0-9]/g, "")).filter(Boolean)
+        .map((w) => ({ w, partial: false }));
+      const last = (partial ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (last.length >= 2) typed.push({ w: last, partial: true });
+      if (!typed.length) return [];
+      const scored = [];
+      for (const e of entityIndex.entities.values()) {
+        if (!e.words.length) continue;
+        const candidate = typed.some((t) => (t.w.length >= 3
+          ? e.folded.includes(t.w)
+          : e.folded === t.w || e.folded.startsWith(`${t.w} `)));
+        if (!candidate) continue;
+        const hits = e.words.filter((x) => typed.some((t) => x === t.w
+          || (t.partial && x.startsWith(t.w))
+          || (t.w.length >= 3 && (x === `${t.w}s` || x === `${t.w}es` || t.w === `${x}s` || t.w === `${x}es`)))).length;
+        if (hits * 2 < e.words.length) continue;
+        scored.push({ e, share: hits / e.words.length, posts: entityIndex.entityLinks.get(e.seq)?.size ?? 0 });
+      }
+      return scored
+        .sort((a, b) => b.share - a.share || b.posts - a.posts || a.e.name.length - b.e.name.length || a.e.seq - b.e.seq)
+        .slice(0, Math.min(maxResults, 10));
+    }
+
+    // Entity ids by seq, fetched for the few matched ones (the index carries
+    // seqs, not ids) and kept for the visit.
+    const entityIdsBySeq = new Map();
+
+    async function withEntityIds(matches) {
+      const missing = matches.map((m) => m.e.seq).filter((seq) => !entityIdsBySeq.has(seq));
+      if (missing.length) {
+        const { data, error } = await (await supabaseReady).from("entities").select("id, seq").in("seq", missing);
+        if (error) throw error;
+        for (const row of data) entityIdsBySeq.set(row.seq, row.id);
+      }
+      return matches.filter((m) => entityIdsBySeq.has(m.e.seq)).map(({ e, posts }) => ({
+        id: entityIdsBySeq.get(e.seq), seq: e.seq, name: e.name, kind: e.kind, kind_path: e.kind_path, posts,
+      }));
+    }
+
+    // filter_links over the local index: the links passing every term, with
+    // the entities each term matched there, newest first. Kept per filter
+    // until the index changes.
+    const localFilterResults = new Map();
+
+    function filterLocalLinks(local) {
+      const key = `${entityIndex.version} ${JSON.stringify(local)}`;
+      if (localFilterResults.has(key)) return localFilterResults.get(key);
+      let passing = null;
+      for (const term of local) {
+        const entitySeqs = term.kind
+          ? [...entityIndex.entities.values()]
+            .filter((e) => e.kind_path === term.kind || e.kind_path.startsWith(`${term.kind}.`)).map((e) => e.seq)
+          : term.seqs;
+        const hits = new Map();
+        for (const entitySeq of entitySeqs) {
+          for (const linkSeq of entityIndex.entityLinks.get(entitySeq) ?? []) {
+            if (passing && !passing.has(linkSeq)) continue;
+            if (!hits.has(linkSeq)) hits.set(linkSeq, new Set(passing?.get(linkSeq)));
+            hits.get(linkSeq).add(entitySeq);
+          }
+        }
+        passing = hits;
+      }
+      const result = [...(passing ?? new Map())]
+        .map(([linkSeq, entitySeqs]) => ({ linkSeq, entitySeqs }))
+        .sort((a, b) => entityIndex.links.get(b.linkSeq).minute - entityIndex.links.get(a.linkSeq).minute
+          || b.linkSeq - a.linkSeq);
+      for (const k of localFilterResults.keys()) if (!k.startsWith(`${entityIndex.version} `)) localFilterResults.delete(k);
+      localFilterResults.set(key, result);
+      return result;
+    }
+
     // Entities whose names the typed words cover (match_entities), as the
     // search box's entity suggestions. The last word counts as still being
     // typed unless a space follows, as in matchTopics.
@@ -3643,6 +4009,17 @@
       const typed = queryWords(text);
       if (!typed.length) return Promise.resolve([]);
       const partial = /[a-z0-9]$/i.test(text) ? typed.pop() : null;
+      if (entityIndex.ready) {
+        const key = JSON.stringify(["local", entityIndex.version, typed, partial]);
+        if (!entityMatches.has(key)) {
+          entityMatches.set(key, withEntityIds(matchLocalEntities(typed, partial, QUERY_ENTITY_SUGGESTIONS)).catch((error) => {
+            console.error("failed to match entities", error);
+            entityMatches.delete(key);
+            return [];
+          }));
+        }
+        return entityMatches.get(key);
+      }
       const key = JSON.stringify([typed, partial]);
       if (!entityMatches.has(key)) {
         entityMatches.set(key, (async () => {
@@ -4251,6 +4628,7 @@
     setupTaste();
     setupProfile();
     setupSearch();
+    setupEntityIndex();
     setupDockActions();
     setupReplies();
     setupLinkPage();
