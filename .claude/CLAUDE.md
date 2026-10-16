@@ -15,7 +15,16 @@ no CLI/local Supabase link in this repo.
 
 Schema: `profiles` / `links` / `votes` / `follows`, RLS enabled on all four
 (policies scoped to `auth.uid()`), migrations versioned under
-`supabase/migrations/`. `profiles` rows are auto-created by an
+`supabase/migrations/`. **Migrations deploy from the `migrations` branch**: on every
+push to it, after the test jobs pass, CI's `migrate` job runs
+`scripts/migrate.py`, which applies each file whose version (its 14-digit
+prefix) isn't in `supabase_migrations.schema_migrations`, oldest first, one
+transaction per file together with its history row. The frontend deploys from
+`main` (DigitalOcean deploy-on-push), so a schema change goes to `migrations`
+first and is merged into `main` once it has applied; a PR without migrations
+goes straight to `main`. Don't apply a repo migration by hand; if you ever must,
+insert its history row with the file's own version. Two files may not share a
+version (`tests/test_migrate.py`). Needs the `SUPABASE_CONNECTION_STRING` secret (the Session pooler connection string). `profiles` rows are auto-created by an
 `auth.users` insert trigger. **Anonymous Sign-ins must be enabled in the
 Supabase dashboard** (Authentication → Sign In / Providers) — no MCP tool
 exposes that toggle, and votes/follows depend on it (RLS write access

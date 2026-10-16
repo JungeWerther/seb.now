@@ -29,3 +29,18 @@ jobs:
           deno-version: v2.x
       - run: deno check supabase/functions/entity-extract/index.ts supabase/functions/event-extract/index.ts supabase/functions/index-snapshot/index.ts supabase/functions/ical-ingest/index.ts
       - run: deno test supabase/functions/_shared
+
+  # The database deploys from the `migrations` branch, the frontend from main
+  # (DigitalOcean deploys main on push). Land a schema change on `migrations`
+  # first, then merge it into main, so a page never ships ahead of its schema.
+  migrate:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/migrations'
+    needs: [test, edge-functions]
+    runs-on: ubuntu-latest
+    concurrency: database
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv run --no-project --with "psycopg[binary]" python scripts/migrate.py
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_CONNECTION_STRING }}
