@@ -313,6 +313,27 @@ marks the link. `POST {"link_ids": [...], "dry_run": true}` reports without
 writing. Events aren't entities yet: a listing's headings are headlines, not
 clean names, so merging them into `entities` (kind `event`) is a later step.
 
+**The entity index — `index-snapshot` + `index_diff`.** So the page can match
+entity names and run filter queries itself (no request per keystroke or query),
+it keeps a copy of the entity index: every mentioned entity's name and kind, and
+which links mention it (`20261016200000_entity_index.sql`). Rows are counted by a
+`seq` identity column on `links`, `entities` and `link_entities`. The
+**`index-snapshot`** Edge Function (`9-59/10 * * * *`, does nothing when nothing
+changed since the last snapshot) calls `public.index_snapshot()` (service_role
+only), delta-encodes it (`_shared/index_snapshot.ts`, which documents the format;
+keep the page's decoder in sync), gzips it and uploads it to the public `index`
+Storage bucket as `snapshots/<gen>-<l>-<e>-<p>.json.gz`, a new name each time so
+the CDN can cache it for a year, then records it in `public.index_state` and
+keeps the newest 3. `public.index_diff(link_seq, entity_seq, pair_seq)` (public)
+returns what was added past a watermark (mentions, their links' minutes, new or
+mentioned entities), plus the current `gen`, watermark, kinds and latest
+snapshot. Diffs only carry additions: deleting a mention or an entity, moving a
+mention to another entity (folding duplicates) or renaming or re-kinding an
+entity bumps `index_state.gen` (triggers; an upsert that only rewrites a
+mention's `p` doesn't), and a page whose copy is of an older gen reloads the
+snapshot, asking the database directly until a snapshot of the current gen
+exists. Over 2,000 new mentions also means reload.
+
 A user's preference is derived, not stored: the
 `public.user_topic_preferences` view (`security_invoker`, so RLS on
 `votes`/`link_topics` applies) gives per `(voter_id, topic_id)` the
