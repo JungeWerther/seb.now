@@ -725,7 +725,8 @@ def test_typed_terms_are_superpositions_of_senses_and_indexicals_have_pages() ->
     html = render([])
     script = html[html.index('<script type="module">') :]
     # Every sense of the same words is one filter, sent as {"any": [...]}.
-    assert "terms: [senses.length === 1 ? senses[0] : { any: senses }]" in script
+    assert "terms: [oneOrAny(senses)]" in script
+    assert "return senses.length === 1 && only !== undefined ? only : { any: senses };" in script
     # Indexicals come from the database and are read in a context.
     assert 'client.from("indexicals").select("term, kind_path, context, description")' in script
     assert 'return { indexical: indexical.term, at: localNow() };' in script
@@ -749,3 +750,23 @@ def test_order_pages_open_from_the_search_box() -> None:
     assert "else if (orderFromPath()) focusOrder(orderFromPath(), { push: false });" in script
     # An order's page is feed_query with just that sort.
     assert 'resetFeed("", SORT_LABELS[sort] ? { sort } : null);' in script
+
+
+def test_render_inlines_the_compiled_filter_script_into_the_page_script() -> None:
+    html = render([])
+    script = html[html.index('<script type="module">') : html.index("</script>")]
+
+    assert "__FILTER_JS__" not in html
+    assert "function filterKey(" in script and "const Filter = {" in script
+    assert "const fetchServerFiltered = memoizePages(filterPageKey" in script
+    # The local index keeps its own offset-based path; filter_links pages by keyset.
+    assert "if (entityIndex.ready && filter.local) return fetchLocalFiltered(client, filter.local, offset);" in script
+    assert "before_created_at: cursor?.createdAt ?? null" in script
+
+
+def test_compiled_scripts_that_could_close_the_page_script_are_refused(tmp_path: Path) -> None:
+    path = tmp_path / "evil.js"
+    path.write_text('const s = "</SCRIPT><script>alert(1)";')
+
+    with pytest.raises(ValueError):
+        site.compiled_script(path)

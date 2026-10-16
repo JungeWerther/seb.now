@@ -3,6 +3,9 @@
 import { readFileSync } from "node:fs";
 
 const html = readFileSync(process.argv[2], "utf8");
+// Filter lives in frontend/src/filter.ts; site.py inlines its compiled script
+// into the page, so it's prepended here the same way.
+const filterJs = readFileSync(new URL("../../src/seb_now/templates/filter.js", import.meta.url), "utf8");
 
 // The source of a top-level `function name(...) {...}` or `const name = ...;`.
 function grab(name) {
@@ -30,9 +33,9 @@ function grab(name) {
 }
 
 const names = ["QUERY_PREFIX_MIN_LENGTH", "QUERY_STOPWORDS", "QUERY_SORT_WORDS", "QUERY_FILLER_WORDS",
-  "queryWords", "wordMatches", "kindName", "localNow", "indexicalSense", "typedIndexical", "Filter", "typedFilter",
+  "queryWords", "wordMatches", "kindName", "localNow", "indexicalSense", "typedIndexical", "typedFilter",
   "localFilterResults", "filterLocalLinks"];
-const src = names.map(grab).join("\n") + `
+const src = filterJs + "\n" + names.map(grab).join("\n") + `
 let kindIndex = [], indexicalIndex = [], entityIndex = null;
 const queryContext = { focus: null };
 return { typedFilter, typedIndexical, filterLocalLinks, set(k, i, f) { kindIndex = k; indexicalIndex = i; queryContext.focus = f; },

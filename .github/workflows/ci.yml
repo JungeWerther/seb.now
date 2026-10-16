@@ -30,12 +30,34 @@ jobs:
       - run: deno check supabase/functions/entity-extract/index.ts supabase/functions/event-extract/index.ts supabase/functions/index-snapshot/index.ts supabase/functions/ical-ingest/index.ts
       - run: deno test supabase/functions/_shared
 
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      # The compiled script is committed (the DO build has no Node), so it has
+      # to match its source.
+      - name: Compiled script is up to date
+        run: git diff --exit-code -- ../src/seb_now/templates/filter.js
+      - run: npm test
+
   # The database deploys from the `migrations` branch, the frontend from main
   # (DigitalOcean deploys main on push). Land a schema change on `migrations`
   # first, then merge it into main, so a page never ships ahead of its schema.
   migrate:
     if: github.event_name == 'push' && github.ref == 'refs/heads/migrations'
-    needs: [test, edge-functions]
+    needs: [test, edge-functions, frontend]
     runs-on: ubuntu-latest
     concurrency: database
     steps:
