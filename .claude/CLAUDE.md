@@ -499,15 +499,41 @@ over and there are at least two filters, `showTypedFilter` swaps the search resu
 for `public.filter_links(filters jsonb, max_results, page_offset)`
 (`20261016180000_filter_links.sql`, security invoker; `filters` is an array of
 `{"kind": "<ltree path>"}` / `{"entities": [ids]}`, a link must pass all of them,
-newest first, with the entities each filter matched as `entity_ids`). A **period**
-(kind `entity.period`: "tonight", "tomorrow", the page's `PERIODS`) is a third
-filter: the page resolves the name to an interval `[from, to)` in local
-wall-clock time (tonight 18:00–04:00, still the night before until 04:00;
-tomorrow the next whole day) and sends `{"period": [from, to]}`; a link passes
-when one of its `link_events` overlaps it (an event runs from `start_time`, else
-the start of `starts_on`, unbounded with no start, to the end of `ends_on`, else
-of `starts_on`) — `20261016200000_period_filter.sql`. A period alone ("tonight")
-is already a filter on Enter. The page
+newest first, with the entities each filter matched as `entity_ids`). **Senses.** A typed term
+stands for every sense it has at once (a superposition, in the MeTTa sense):
+`typedFilter` groups every kind, indexical and entity named by the same words
+into one filter, sent as `{"any": [sense, …]}` (a lone sense is sent bare), and
+`filter_links` reads a filter as the disjunction of its senses and filters as a
+conjunction, so ambiguity costs the sum of the senses, not the product, and
+only constraints prune. A sense is `{"kind"}`, `{"entities"}`, `{"topic"}`,
+`{"period": [from, to]}` or `{"indexical": term, "at" | "focus"}`;
+`filter_sense` checks one and resolves an indexical. Entity names are unique
+**per kind** (`entities_name_kind_key` on `lower(name), kind_path`), not
+globally: the same words as another kind are another sense, and `entity-extract`
+takes an exact match, or resolves a name it creates, only as the same kind.
+
+**Indexicals** (`public.indexicals`: "tonight", "tomorrow", "this") are
+expressions, not entities. Each has a character, a fixed rule from a context to
+what it picks out: `context` 'time' reads the reader's local wall-clock time
+(`at`, the page's `localNow()`), 'focus' reads the entity, kind or topic page the
+search box was opened on (`queryContext`, set on the box's focus, since typing
+leaves the page); `kind_path` is the kind of what it picks out (a Period for
+tonight and tomorrow, any entity for "this"). A time indexical's rule is
+offsets from the reader's day, `[d + starts_after, d + ends_after)` with
+`d = (at - day_starts_at)::date` (`indexical_interval`): tonight 18:00–04:00, still
+the night before until 04:00; tomorrow the next whole day. It keeps the links
+with an event overlapping that interval (`link_event_range`: from `start_time`,
+else `event_day_starts()` (06:00) on `starts_on` — a date with no time is that day's
+waking hours — unbounded with no start, to the end of `ends_on`, else of
+`starts_on`; a one-day event with a start time and no end lasts
+`event_default_duration()`, 3 hours). An indexical alone ("tonight", "this") is
+a filter on Enter. Each has a page, `/i/<term>` (`focusIndexical`, reusing the
+kind head: what it picks out now and its count via `indexical_summary`, the kind
+linked, its description; a time indexical's links below), and is listed first
+among the members on its kind's page. QA for both (`tests/qa/`, not in CI: `npm i` there, then `npm run db` runs the
+migration on an embedded Postgres shaped like ours with seeded events, `npm run
+page` runs the page's own query-reading functions on stubbed indexes). Adding one is a row in `indexicals`:
+`20261016200000_period_filter.sql`, `20261016235000_senses_and_indexicals.sql`. The page
 reads these as a Writer monad (`Filter`): `bind` is conjunction and concatenates
 logs, the log being the filled chips (`showFilterChips`) plus, from the server,
 the matched entities whose chips light up. The feed holds it as `feed.filter`;
@@ -521,7 +547,9 @@ asked from `INDEX_DIFF_OVERLAP` below its watermark; a newer `gen` reloads the
 snapshot. `matchLocalEntities` is `match_entities` ported (same word rules, little
 words and ranking, seq instead of id on ties), with ids fetched by seq only for
 the matched entities (`withEntityIds`); `filterLocalLinks` is `filter_links`
-(`Filter.local` holds the terms with entity seqs), its answer kept per filter
+(`Filter.local` holds the terms with entity seqs, a term with several senses as
+`{any: [...]}` too; a filter with an indexical, period or topic sense has no
+`local` and asks the database, since events and topics aren't in the index), its answer kept per filter
 until the index changes, and link rows are fetched by `seq` once per visit
 (`linkRowsBySeq`). Until the index is ready, where IndexedDB or gzip streams are
 missing, or while no snapshot of the current gen exists, the page asks

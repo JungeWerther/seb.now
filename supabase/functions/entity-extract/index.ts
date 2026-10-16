@@ -17,7 +17,8 @@ import { candidates } from "./candidates.ts";
 //     concept or neither, and what kind of thing it would be (the kind is read
 //     only for names);
 //  3. for each name, `entity_candidates` finds close existing entities; an exact
-//     name match is taken as is, otherwise one more Jev request per link asks
+//     name match of the same kind is taken as is (names are unique per kind:
+//     the same words as another kind are another sense), otherwise one more Jev request per link asks
 //     which of them each name is, or none (then a new entity is created).
 //     A name that a longer name in the same pass contains ("Pusateri" in "Drew
 //     Pusateri") is always asked, with those longer names as options too: a
@@ -247,7 +248,9 @@ async function mentionsOf(db: SupabaseClient, jev: JevClient, link: Link, phrase
     if (error) throw new Error(error.message);
     const options = data as Candidate[];
     const longer = longerNames(name, found.names);
-    const exact = options.find((c) => c.name.toLowerCase() === name.surface.toLowerCase());
+    // An exact match is the same name *as the same kind*: "Tonight" the film
+    // isn't the period, and a name with senses of other kinds only is asked.
+    const exact = options.find((c) => c.name.toLowerCase() === name.surface.toLowerCase() && c.kind === name.kind);
     if (longer.length) {
       // A longer name that is already an entity would be offered twice and split the vote.
       const offered = new Set(longer.map((o) => o.surface.toLowerCase()));
@@ -464,14 +467,20 @@ async function evaluate(db: SupabaseClient, jev: JevClient, ids: string[] | null
   };
 }
 
-// `entities.name` is unique: a name Jev called new that already exists (it only
-// differs in case, or was created concurrently) resolves to the existing row.
+// A name is unique per kind (ignoring case), not globally: the same words can
+// name a place and a work, each its own sense. A name Jev called new that
+// already exists *as this kind* (it only differs in case, or was created
+// concurrently) resolves to that row; the same name as another kind is a new
+// sense, never merged into it.
 async function createEntity(db: SupabaseClient, name: string, kind: Kind): Promise<string> {
   const { data, error } = await db.from("entities").insert({ name, kind }).select("id").single();
   if (!error) return data.id;
-  const { data: existing, error: readError } = await db.from("entities").select("id").ilike("name", name.replace(/[%_\\]/g, "\\$&")).limit(1).single();
+  const { data: existing, error: readError } = await db.from("entities").select("id, kind")
+    .ilike("name", name.replace(/[%_\\]/g, "\\$&"));
   if (readError) throw new Error(`${error.message}; ${readError.message}`);
-  return existing.id;
+  const same = (existing as { id: string; kind: string }[]).find((r) => r.kind === kind);
+  if (!same) throw new Error(`${error.message}; no ${kind} named ${name}`);
+  return same.id;
 }
 
 async function unprocessedLinks(db: SupabaseClient, step: "entities" | "page_entities", max: number): Promise<Link[]> {
