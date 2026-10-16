@@ -3453,6 +3453,34 @@
       })) ?? null;
     }
 
+    // Periods (kind entity.period): names for a span of time relative to now.
+    // Each denotes an interval [from, to) in local wall-clock time, the way
+    // link_events' dates and times are written, and as a filter keeps the
+    // links with an event overlapping it ("event tonight", "tomorrow").
+    // Tonight runs to 4am, and after midnight it's still the night before.
+    const PERIOD_KIND = "entity.period";
+    const NIGHT_ENDS_AT = 4;
+    const PERIODS = [
+      { name: "tonight", interval: (now) => {
+        const day = now.getHours() < NIGHT_ENDS_AT ? -1 : 0;
+        return [wallClock(now, day, 18), wallClock(now, day + 1, NIGHT_ENDS_AT)];
+      } },
+      { name: "tomorrow", interval: (now) => [wallClock(now, 1, 0), wallClock(now, 2, 0)] },
+    ];
+
+    // "YYYY-MM-DDTHH:00" for `hour` o'clock, `days` from `now`'s local date.
+    function wallClock(now, days, hour) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, hour);
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(hour)}:00`;
+    }
+
+    // The period the whole of `text` names, if any.
+    function typedPeriod(text) {
+      const typed = queryWords(text).join(" ");
+      return PERIODS.find((p) => queryWords(p.name).join(" ") === typed) ?? null;
+    }
+
     // A query made only of filters ("event paris": the kind Event and the place
     // Paris) is read as a Writer monad over links. A filter is the terms
     // filter_links checks plus a log, the chips it writes; `bind` is
@@ -3475,6 +3503,11 @@
           label: entities[0].name,
         }],
       }),
+      // A period, resolved to its interval now: a link with an event in it.
+      period: (period) => ({
+        terms: [{ period: period.interval(new Date()) }],
+        log: [{ kind: kindName(PERIOD_KIND), label: period.name }],
+      }),
       bind: (a, b) => ({ terms: [...a.terms, ...b.terms], log: [...a.log, ...b.log] }),
     };
 
@@ -3490,6 +3523,7 @@
       const open = words.map(() => true);
       const names = [
         ...kindIndex.flatMap((kind) => kind.names.map((name) => ({ words: queryWords(name), kind }))),
+        ...PERIODS.map((period) => ({ words: queryWords(period.name), period })),
         ...entities.map((entity) => ({ words: queryWords(entity.name), entity })),
       ].filter((n) => n.words.length)
         .sort((a, b) => b.words.length - a.words.length || Number(Boolean(a.entity)) - Number(Boolean(b.entity)));
@@ -3508,12 +3542,13 @@
         }
         if (at.length !== name.words.length) continue;
         for (const i of at) open[i] = false;
-        placed.push(name.kind ? { at, kind: name.kind } : { at, words: name.words, entities: [name.entity] });
+        placed.push(name.entity ? { at, words: name.words, entities: [name.entity] } : { at, kind: name.kind, period: name.period });
       }
       if (open.some(Boolean)) return null;
+      const filterOf = (p) => p.period ? Filter.period(p.period) : p.kind ? Filter.kind(p.kind) : Filter.entities(p.entities);
       return placed
         .sort((a, b) => Math.min(...a.at) - Math.min(...b.at))
-        .reduce((filter, p) => Filter.bind(filter, p.kind ? Filter.kind(p.kind) : Filter.entities(p.entities)), Filter.unit());
+        .reduce((filter, p) => Filter.bind(filter, filterOf(p)), Filter.unit());
     }
 
     // The kind one level up from `path`, "kind" for the root.
@@ -3860,6 +3895,7 @@
           const tag = { kind: parentKindName(kind.path), suggested: true, kindPath: kind.path, kindLabel: kind.label };
           kind.names.some((name) => tagName(name, tag, prefix));
         }
+        for (const period of PERIODS) tagName(period.name, { kind: kindName(PERIOD_KIND), suggested: true }, prefix);
       }
       return tokens;
     }
@@ -3989,14 +4025,15 @@
     // On Enter, a query naming two or more filters (typedFilter: "event
     // paris") lists the links passing all of them, newest first, instead of
     // its search results, which stay up until the filtered page arrives.
-    // Names are matched as typed, every word finished.
+    // Names are matched as typed, every word finished. A period is a filter
+    // on its own ("tonight"), since no search reads it.
     async function showTypedFilter(text) {
-      if (queryWords(text).length < 2) return;
+      if (queryWords(text).length < 2 && !typedPeriod(text)) return;
       const generation = queryGeneration;
       const [, entities] = await Promise.all([loadTopicIndex(), matchEntities(`${text} `)]);
       if (generation !== queryGeneration || document.getElementById("search-input").value.trim() !== text) return;
       const filter = typedFilter(text, entities);
-      if (!filter || filter.terms.length < 2) return;
+      if (!filter || (filter.terms.length < 2 && !filter.terms.some((t) => t.period))) return;
       // The search's own reading, still in flight, must not replace the list.
       queryGeneration++;
       showFilterChips(filter);

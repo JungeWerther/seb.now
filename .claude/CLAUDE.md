@@ -478,7 +478,15 @@ over and there are at least two filters, `showTypedFilter` swaps the search resu
 for `public.filter_links(filters jsonb, max_results, page_offset)`
 (`20261016180000_filter_links.sql`, security invoker; `filters` is an array of
 `{"kind": "<ltree path>"}` / `{"entities": [ids]}`, a link must pass all of them,
-newest first, with the entities each filter matched as `entity_ids`). The page
+newest first, with the entities each filter matched as `entity_ids`). A **period**
+(kind `entity.period`: "tonight", "tomorrow", the page's `PERIODS`) is a third
+filter: the page resolves the name to an interval `[from, to)` in local
+wall-clock time (tonight 18:00–04:00, still the night before until 04:00;
+tomorrow the next whole day) and sends `{"period": [from, to]}`; a link passes
+when one of its `link_events` overlaps it (an event runs from `start_time`, else
+the start of `starts_on`, unbounded with no start, to the end of `ends_on`, else
+of `starts_on`) — `20261016200000_period_filter.sql`. A period alone ("tonight")
+is already a filter on Enter. The page
 reads these as a Writer monad (`Filter`): `bind` is conjunction and concatenates
 logs, the log being the filled chips (`showFilterChips`) plus, from the server,
 the matched entities whose chips light up. The feed holds it as `feed.filter`;
