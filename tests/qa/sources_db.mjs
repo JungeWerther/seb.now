@@ -178,6 +178,27 @@ const before = (await rows(`select count(*)::int n from link_entities`))[0].n;
 await db.exec(`update links set author = author, source_id = source_id`);
 check("idempotent", (await rows(`select count(*)::int n from link_entities`))[0].n, before);
 
+// Copilot review cases.
+// A handle is matched within the link's platform only.
+await db.exec(`insert into sources (kind, identifier, label, handle) values ('mastodon_account', 'example@mastodon.social', 'Example on Mastodon', '@example');
+  insert into links (url, author) values ('https://www.youtube.com/watch?v=eeeeeeeeeee', '@example')`);
+check("same handle on another platform not matched", await tagOf("https://www.youtube.com/watch?v=eeeeeeeeeee"),
+  ["@example (entity.source.youtube_channel)"]);
+// A Mastodon account sharing someone's video doesn't learn that video's handle.
+await db.exec(`insert into links (url, author, origin, fediverse_post_uri, source_id) values
+  ('https://www.youtube.com/watch?v=fffffffffff', '@someoneelse', 'fediverse', 'https://mastodon.art/users/colossal/statuses/2',
+   (select id from sources where identifier = 'colossal@mastodon.art'))`);
+check("mastodon account keeps no handle", (await rows(`select handle from sources where identifier = 'colossal@mastodon.art'`))[0].handle, null);
+// A host turning ambiguous clears the old tag.
+await db.exec(`insert into sources (kind, identifier, label) values ('web_feed', 'https://simonwillison.net/other.xml', 'Someone Else: other outlet')`);
+check("ambiguous host clears stale tag", await tagOf("https://simonwillison.net/2026/Oct/1/x/"), []);
+// An unchanged re-upsert deletes nothing (would bump the index gen).
+await db.exec(`create table deletes (n int); insert into deletes values (0);
+  create function count_deletes() returns trigger language plpgsql as $f$ begin update deletes set n = n + 1; return null; end $f$;
+  create trigger count_deletes after delete on link_entities for each statement execute function count_deletes();
+  update links set author = author`);
+check("no-op re-upsert runs no delete", (await rows(`select n from deletes`))[0].n, 0);
+
 if (failures) {
   console.log(`${failures} failed`);
   process.exit(1);

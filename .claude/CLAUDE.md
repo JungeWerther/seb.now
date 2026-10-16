@@ -839,11 +839,12 @@ account's `@handle` once known. Each link is tagged with its source in
 `links_tag_source` trigger (`tag_link_source`), which picks, most certain
 first: `links.source_id` (written by the youtube, web-feed, fediverse and ical
 ingests); the Mastodon account in `fediverse_post_uri`; a source whose `handle`
-is the link's author; the web feeds on the link's host (`source_host`, without
+is the link's author, on the link's platform (`link_handle_kind`; handles are
+unique per kind only); the web feeds on the link's host (`source_host`, without
 `www.`/`feed(s).`/`rss.`) when they all name one outlet. A YouTube or
 fediverse `@author` no source claims becomes a source of its own, named by
 the handle; when a followed channel's handle is learnt (an ingested video
-with `source_id` and an author, or set by hand), that handle entity folds into
+with `source_id` and an author, YouTube only, or set by hand), that handle entity folds into
 the channel's (`fold_handle_entity`). Inserting a source, or setting its
 handle, re-tags its links (`sources_sync_entity`). Source tags aren't
 mentions: the feed rows keep them off the entity chips and link the domain line

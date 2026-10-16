@@ -149,6 +149,16 @@ end $$;
 -- handle; the web feeds on its host, when they all name the same outlet. A
 -- YouTube or fediverse author no followed source claims becomes a source of
 -- its own, named by the handle.
+-- The source kind a link's @author handle belongs to: YouTube for a video
+-- (whichever ingest found it), Mastodon for a fediverse post; else none.
+create function public.link_handle_kind(l links) returns text
+language sql stable set search_path = public, extensions as $$
+  select case
+    when youtube_video_id(l.url) is not null then 'youtube_channel'
+    when l.origin = 'fediverse' then 'mastodon_account'
+  end
+$$;
+
 create function public.link_source(l links) returns uuid
 language plpgsql stable set search_path = public, extensions as $$
 declare
@@ -162,8 +172,10 @@ begin
     select id into found from sources where kind = 'mastodon_account' and lower(identifier) = lower(acct);
     if found is not null then return found; end if;
   end if;
-  if l.author is not null then
-    select id into found from sources where lower(handle) = lower(l.author) order by created_at limit 1;
+  -- Handles are unique per kind only, so match within the link's platform.
+  if l.author is not null and link_handle_kind(l) is not null then
+    select id into found from sources
+    where kind = link_handle_kind(l) and lower(handle) = lower(l.author);
     if found is not null then return found; end if;
   end if;
   select min(id::text)::uuid into found from sources
@@ -186,23 +198,27 @@ begin
   source := link_source(l);
   if source is not null then
     select * into s from sources where id = source;
-    -- The ingest knows the channel; YouTube's oEmbed told us its handle.
-    if s.handle is null and l.source_id = s.id and s.kind in ('youtube_channel', 'mastodon_account')
+    -- The ingest knows the channel and YouTube's oEmbed told us the video's
+    -- handle. Only for YouTube: a Mastodon account's post can link someone
+    -- else's video, whose author isn't the account.
+    if s.handle is null and l.source_id = s.id and s.kind = 'youtube_channel'
+       and youtube_video_id(l.url) is not null
        and l.author ~ '^@[^[:space:]]{1,99}$'
        and not exists (select 1 from sources o where o.kind = s.kind and lower(o.handle) = lower(l.author)) then
       update sources set handle = l.author where id = s.id;
     end if;
     eid := ensure_source_entity(s.id);
-  elsif l.author ~ '^@[^[:space:]]{1,99}$' then
-    handle_kind := case
-      when youtube_video_id(l.url) is not null then 'entity.source.youtube_channel'
-      when l.origin = 'fediverse' then 'entity.source.mastodon_account'
-    end::ltree;
-    if handle_kind is null then return; end if;
+  elsif l.author ~ '^@[^[:space:]]{1,99}$' and link_handle_kind(l) is not null then
+    handle_kind := ('entity.source.' || link_handle_kind(l))::ltree;
     eid := source_entity_upsert(l.author, handle_kind, null);
   end if;
+  -- Drop a tag that no longer holds (another source, or none: a host became
+  -- ambiguous). Only when there is one: any delete bumps index_state.gen.
+  if exists (select 1 from link_entities
+             where link_id = l.id and found_in = 'source' and entity_id is distinct from eid) then
+    delete from link_entities where link_id = l.id and found_in = 'source' and entity_id is distinct from eid;
+  end if;
   if eid is null then return; end if;
-  delete from link_entities where link_id = l.id and found_in = 'source' and entity_id <> eid;
   insert into link_entities (link_id, entity_id, surface, p, labeled_by, found_in)
   values (l.id, eid, left(coalesce(l.author, s.label, (select name from entities where id = eid)), 200), 1, 'source', 'source')
   on conflict (link_id, entity_id) do nothing;
@@ -230,6 +246,7 @@ revoke execute on function public.source_entity_upsert(text, ltree, text) from p
 revoke execute on function public.fold_handle_entity(text, text, uuid) from public, anon, authenticated;
 revoke execute on function public.ensure_source_entity(uuid) from public, anon, authenticated;
 revoke execute on function public.link_source(links) from public, anon, authenticated;
+revoke execute on function public.link_handle_kind(links) from public, anon, authenticated;
 revoke execute on function public.tag_link_source(uuid) from public, anon, authenticated;
 revoke execute on function public.retag_source_links(uuid) from public, anon, authenticated;
 
