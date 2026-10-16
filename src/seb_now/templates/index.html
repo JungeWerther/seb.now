@@ -1820,7 +1820,9 @@
     // links `related` to a focused post (see focusLink), or every link
     // mentioning an `entity`, newest first (see focusEntity). A typed query
     // Jev has read (see runQuery) sets `intent`, and the feed is feed_query's
-    // for it instead; `query` is then just the text it was read from.
+    // for it instead; `query` is then just the text it was read from. A
+    // query made only of filters (see Filter) sets `filter`, and the feed is
+    // filter_links' for it.
     // `generation` bumps whenever it's swapped, so a request still in flight
     // for the previous feed is dropped when it lands.
     const feed = {
@@ -1829,6 +1831,7 @@
       related: null,
       entity: null,
       topic: null,
+      filter: null,
       chronological: false,
       asOf: null,
       offset: 0,
@@ -2163,11 +2166,34 @@
         console.error("failed to load the kind's links", error);
         return null;
       }
+      return linksWithMatches(client, ids);
+    }
+
+    // One page of filter_links: the links passing every one of a typed
+    // query's filters (see Filter), each with what its filters logged, the
+    // entities they matched there, highlighted.
+    async function fetchFiltered(filter, offset) {
+      const client = await supabaseReady;
+      const { data: ids, error } = await client.rpc("filter_links", {
+        filters: filter.terms,
+        max_results: FEED_PAGE_SIZE,
+        page_offset: offset,
+      });
+      if (error) {
+        console.error("failed to load the filtered links", error);
+        return null;
+      }
+      return linksWithMatches(client, ids);
+    }
+
+    // `ids` ({link_id, entity_ids} rows) as links in that order, each with the
+    // chips of its matched entities highlighted.
+    async function linksWithMatches(client, ids) {
       if (ids.length === 0) return { rows: [], count: 0 };
       const order = ids.map((r) => r.link_id);
-      const { data: rows, error: linksError } = await client.from("links").select(FEED_SELECT).in("id", order);
-      if (linksError) {
-        console.error("failed to load the kind's links", linksError);
+      const { data: rows, error } = await client.from("links").select(FEED_SELECT).in("id", order);
+      if (error) {
+        console.error("failed to load links", error);
         return null;
       }
       const matched = new Map(ids.map((r) => [r.link_id, new Set(r.entity_ids)]));
@@ -2183,6 +2209,11 @@
     }
 
     async function fetchPage() {
+      if (feed.filter) {
+        const page = await fetchFiltered(feed.filter, feed.offset);
+        if (page) feed.offset += page.count;
+        return page;
+      }
       if (feed.kind) {
         const page = await fetchKindLinks(feed.kind, feed.offset);
         if (page) feed.offset += page.count;
@@ -2285,6 +2316,7 @@
       feed.entity = null;
       feed.topic = null;
       feed.kind = null;
+      feed.filter = null;
       feed.chronological = false;
       // Ranks are computed as of this moment for every page of this feed.
       feed.asOf = new Date().toISOString();
@@ -3418,6 +3450,69 @@
       })) ?? null;
     }
 
+    // A query made only of filters ("event paris": the kind Event and the place
+    // Paris) is read as a Writer monad over links. A filter is the terms
+    // filter_links checks plus a log, the chips it writes; `bind` is
+    // conjunction (a link must pass both) and keeps both logs, in order.
+    // `unit` passes every link and writes nothing, so reading a query is a fold
+    // of bind over its filters from unit. The server adds to the log too: each
+    // filter a link passes reports the entities it matched there
+    // (filter_links' entity_ids), and those chips light up.
+    const Filter = {
+      unit: () => ({ terms: [], log: [] }),
+      kind: (kind) => ({
+        terms: [{ kind: kind.path }],
+        log: [{ kind: "kind", label: kind.label }],
+      }),
+      // Entities typed with the same words: a link mentioning any of them.
+      entities: (entities) => ({
+        terms: [{ entities: entities.map((e) => e.id) }],
+        log: [{
+          kind: entities[0].kind_path ? kindName(entities[0].kind_path) : entities[0].kind.replace("_", " "),
+          label: entities[0].name,
+        }],
+      }),
+      bind: (a, b) => ({ terms: [...a.terms, ...b.terms], log: [...a.log, ...b.log] }),
+    };
+
+    // The filters the whole of `text` names, or null: every word is filler, a
+    // newest-first word (a filtered list is newest first anyway), or part of a
+    // kind's name or of the whole name of one of `entities` (match_entities).
+    // Longer names are placed first, and at the same length a kind before an
+    // entity, so "event" is the kind, not an entity called "Event"; entities
+    // whose names are the same words are one filter.
+    function typedFilter(text, entities) {
+      const words = queryWords(text).filter((w) => !QUERY_FILLER_WORDS.has(w) && QUERY_SORT_WORDS[w] !== "latest");
+      if (!words.length) return null;
+      const open = words.map(() => true);
+      const names = [
+        ...kindIndex.flatMap((kind) => kind.names.map((name) => ({ words: queryWords(name), kind }))),
+        ...entities.map((entity) => ({ words: queryWords(entity.name), entity })),
+      ].filter((n) => n.words.length)
+        .sort((a, b) => b.words.length - a.words.length || Number(Boolean(a.entity)) - Number(Boolean(b.entity)));
+      const placed = [];
+      for (const name of names) {
+        const same = name.entity && placed.find((p) => p.entities && p.words.join(" ") === name.words.join(" "));
+        if (same) {
+          same.entities.push(name.entity);
+          continue;
+        }
+        const at = [];
+        for (const n of name.words) {
+          const i = words.findIndex((w, j) => open[j] && !at.includes(j) && wordMatches(w, n, false));
+          if (i < 0) break;
+          at.push(i);
+        }
+        if (at.length !== name.words.length) continue;
+        for (const i of at) open[i] = false;
+        placed.push(name.kind ? { at, kind: name.kind } : { at, words: name.words, entities: [name.entity] });
+      }
+      if (open.some(Boolean)) return null;
+      return placed
+        .sort((a, b) => Math.min(...a.at) - Math.min(...b.at))
+        .reduce((filter, p) => Filter.bind(filter, p.kind ? Filter.kind(p.kind) : Filter.entities(p.entities)), Filter.unit());
+    }
+
     // The kind one level up from `path`, "kind" for the root.
     function parentKindName(path) {
       return path.includes(".") ? kindName(path.slice(0, path.lastIndexOf("."))) : "kind";
@@ -3840,6 +3935,32 @@
       applyIntent(text, final, { replace: true });
     }
 
+    // A filter's log as the reading's chips, filled like Jev's.
+    function showFilterChips(filter) {
+      queryChips.classList.remove("pending");
+      queryChips.replaceChildren(...filter.log.map((entry) => queryChip(`${entry.kind} `, entry.label)));
+      queryChips.hidden = false;
+    }
+
+    // On Enter, a query naming two or more filters (typedFilter: "event
+    // paris") lists the links passing all of them, newest first, instead of
+    // its search results, which stay up until the filtered page arrives.
+    // Names are matched as typed, every word finished.
+    async function showTypedFilter(text) {
+      if (queryWords(text).length < 2) return;
+      const generation = queryGeneration;
+      const [, entities] = await Promise.all([loadTopicIndex(), matchEntities(`${text} `)]);
+      if (generation !== queryGeneration || document.getElementById("search-input").value.trim() !== text) return;
+      const filter = typedFilter(text, entities);
+      if (!filter || filter.terms.length < 2) return;
+      // The search's own reading, still in flight, must not replace the list.
+      queryGeneration++;
+      showFilterChips(filter);
+      resetFeed(text);
+      feed.filter = filter;
+      loadMore({ replace: true });
+    }
+
     function setupSearch() {
       const input = document.getElementById("search-input");
       const clearBtn = document.getElementById("search-clear");
@@ -3883,6 +4004,7 @@
         const kind = typedKind(input.value);
         if (!kind) {
           search({ finished: true });
+          showTypedFilter(input.value.trim());
           return;
         }
         // A query still being read must not land in the list the kind page shows.
