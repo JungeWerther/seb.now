@@ -3,7 +3,10 @@
   "type": "module",
   "scripts": {
     "db": "node senses_db.mjs ../../supabase/migrations/20261016235000_senses_and_indexicals.sql",
-    "page": "node query_reading.mjs ../../src/seb_now/templates/index.html"
+    "page": "node query_reading.mjs ../../src/seb_now/templates/index.html",
+    "keyset": "node keyset_db.mjs ../../supabase/migrations/20261016235000_senses_and_indexicals.sql ../../supabase/migrations/20261017130000_filter_links_keyset.sql"
   },
-  "dependencies": { "@electric-sql/pglite": "^0.5.10" }
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.10"
+  }
 }

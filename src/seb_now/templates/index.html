@@ -1149,6 +1149,10 @@
   </div>
   <script type="module">
 
+    // Compiled from frontend/src/*.ts (tsc, see frontend/README.md); site.py
+    // inlines it here. Filter, filterKey, nextFilterCursor, memoizePages...
+    __FILTER_JS__
+
     // Loaded without blocking the rest of this script, so swiping and the
     // other UI work while supabase-js is still downloading.
     const SUPABASE_URL = __SUPABASE_URL__;
@@ -2202,23 +2206,36 @@
       return linksWithMatches(client, ids);
     }
 
-    // One page of filter_links: the links passing every one of a typed
-    // query's filters (see Filter), each with what its filters logged, the
-    // entities they matched there, highlighted.
-    async function fetchFiltered(filter, offset) {
+    // One page of a typed query's filters (see Filter): the links passing
+    // every one of them, each with what its filters logged, the entities they
+    // matched there, highlighted. From the page's own index when the filter
+    // can be read there (`offset` into its answer), else from filter_links.
+    async function fetchFiltered(filter, offset, cursor) {
       const client = await supabaseReady;
       if (entityIndex.ready && filter.local) return fetchLocalFiltered(client, filter.local, offset);
+      return fetchServerFiltered(filter, cursor);
+    }
+
+    // One page of filter_links older than `cursor` (all when null), with the
+    // cursor the next page starts from. Keyset pages don't shift as links
+    // are added, so they're cached by filterPageKey (memoizePages): "paris
+    // event" reuses "event paris", and going back to a filter lists it again
+    // without asking the server.
+    const fetchServerFiltered = memoizePages(filterPageKey, async (filter, cursor) => {
+      const client = await supabaseReady;
       const { data: ids, error } = await client.rpc("filter_links", {
         filters: filter.terms,
         max_results: FEED_PAGE_SIZE,
-        page_offset: offset,
+        before_created_at: cursor?.createdAt ?? null,
+        before_id: cursor?.id ?? null,
       });
       if (error) {
         console.error("failed to load the filtered links", error);
         return null;
       }
-      return linksWithMatches(client, ids);
-    }
+      const page = await linksWithMatches(client, ids);
+      return page && { ...page, cursor: nextFilterCursor(ids) };
+    });
 
     // Link rows by seq, fetched once per visit: a filter's pages come from the
     // local index as seqs, and only rows not seen yet are asked for.
@@ -2274,8 +2291,9 @@
       // An indexical's page with nothing to list ("this", read on no page).
       if (feed.indexical && !feed.filter) return { rows: [], count: 0 };
       if (feed.filter) {
-        const page = await fetchFiltered(feed.filter, feed.offset);
+        const page = await fetchFiltered(feed.filter, feed.offset, feed.cursor);
         if (page) feed.offset += page.count;
+        if (page?.cursor) feed.cursor = page.cursor;
         return page;
       }
       if (feed.kind) {
@@ -2863,7 +2881,7 @@
       document.getElementById("focus-kind-meta").replaceChildren(...meta);
       document.getElementById("focus-kind-description").textContent = summary.description;
       if (summary.context === "time") {
-        feed.filter = { terms: [{ indexical: term, at }], log: [] };
+        feed.filter = { terms: [{ indexical: term, at }], local: null, log: [] };
         loadMore();
       }
       updateFocusBand();
@@ -3711,37 +3729,18 @@
     }
 
     // A query made only of filters ("event paris": the kind Event and the place
-    // Paris) is read as a Writer monad over links. A filter is the terms
-    // filter_links checks plus a log, the chips it writes; `bind` is
-    // conjunction (a link must pass both) and keeps both logs, in order.
-    // `unit` passes every link and writes nothing, so reading a query is a fold
-    // of bind over its filters from unit. The server adds to the log too: each
-    // filter a link passes reports the entities it matched there
-    // (filter_links' entity_ids), and those chips light up.
-    // `local` is the same terms for the page's own index (entity seqs instead
-    // of ids), or null when an entity came from the database without a seq.
-    //
-    // A typed term stands for every sense it has at once (a superposition, in
-    // the MeTTa sense): "tonight" is the period and maybe also a film called
-    // "Tonight". `Filter.term` is one filter whose senses are a disjunction
-    // ({"any": [...]}), so a link passes it through any of them; constraints
-    // (the other filters) prune the branches, nothing is chosen up front.
-    // `local` is the same filter for the page's own index when every sense is
-    // a kind or entities with seqs; events and topics aren't in the index, so
-    // a filter with an indexical, a period or a topic asks the database.
-    const Filter = {
-      unit: () => ({ terms: [], local: [], log: [] }),
-      term: (senses, label, kinds, localSenses) => ({
-        terms: [senses.length === 1 ? senses[0] : { any: senses }],
-        local: localSenses && [localSenses.length === 1 ? localSenses[0] : { any: localSenses }],
-        log: [{ kind: [...new Set(kinds)].join(" / "), label }],
-      }),
-      bind: (a, b) => ({
-        terms: [...a.terms, ...b.terms],
-        local: a.local && b.local && [...a.local, ...b.local],
-        log: [...a.log, ...b.log],
-      }),
-    };
+    // Paris) is read as a Filter (frontend/src/filter.ts): the terms
+    // filter_links checks plus the chips they write, combined by
+    // Filter.concat (conjunction, logs appended in order) from Filter.unit.
+    // Each term stands for every sense its words have (a superposition, in
+    // the MeTTa sense: "tonight" the period and maybe a film called
+    // "Tonight"), sent as {"any": [...]}; the other filters prune the
+    // branches, nothing is chosen up front. The server adds to the log too:
+    // each filter a link passes reports the entities it matched there
+    // (filter_links' entity_ids), and those chips light up. `local` is the
+    // same filter for the page's own index when every sense is a kind or
+    // entities with seqs; events and topics aren't in the index, so a filter
+    // with an indexical, a period or a topic asks the database.
 
     // The filters the whole of `text` names, or null: every word is filler, a
     // newest-first word (a filtered list is newest first anyway), or part of a
@@ -3808,7 +3807,7 @@
           const local = term.senses.every((x) => x.kind) && term.entities.every((e) => e.seq != null)
             ? [...term.senses, ...(term.entities.length ? [{ seqs: term.entities.map((e) => e.seq) }] : [])]
             : null;
-          return Filter.bind(filter, Filter.term(senses, term.label, term.kinds, local));
+          return Filter.concat(filter, Filter.term(senses, term.label, term.kinds, local));
         }, Filter.unit());
     }
 
