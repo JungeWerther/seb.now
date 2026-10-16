@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "db": "node senses_db.mjs ../../supabase/migrations/20261016235000_senses_and_indexicals.sql",
+    "page": "node query_reading.mjs ../../src/seb_now/templates/index.html"
+  },
+  "dependencies": { "@electric-sql/pglite": "^0.5.10" }
+}

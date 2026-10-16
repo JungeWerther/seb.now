@@ -1832,6 +1832,7 @@
       entity: null,
       topic: null,
       filter: null,
+      indexical: null,
       chronological: false,
       asOf: null,
       offset: 0,
@@ -1903,6 +1904,16 @@
 
     function setKindHref(anchor, path) {
       if (new RegExp(`^${KIND_ID_PATTERN}$`).test(path)) anchor.href = `/k/${path}`;
+      else anchor.removeAttribute("href");
+    }
+
+    // An indexical's id is its term, words joined by "-" in its address.
+    const INDEXICAL_ID_PATTERN = "[a-z]+(?:-[a-z]+)*";
+    const INDEXICAL_PATH_PATTERN = new RegExp(`^/i/(${INDEXICAL_ID_PATTERN})/?$`);
+
+    function setIndexicalHref(anchor, term) {
+      const id = term.replace(/ /g, "-");
+      if (new RegExp(`^${INDEXICAL_ID_PATTERN}$`).test(id)) anchor.href = `/i/${id}`;
       else anchor.removeAttribute("href");
     }
 
@@ -2241,6 +2252,8 @@
     }
 
     async function fetchPage() {
+      // An indexical's page with nothing to list ("this", read on no page).
+      if (feed.indexical && !feed.filter) return { rows: [], count: 0 };
       if (feed.filter) {
         const page = await fetchFiltered(feed.filter, feed.offset);
         if (page) feed.offset += page.count;
@@ -2349,6 +2362,7 @@
       feed.topic = null;
       feed.kind = null;
       feed.filter = null;
+      feed.indexical = null;
       feed.chronological = false;
       // Ranks are computed as of this moment for every page of this feed.
       feed.asOf = new Date().toISOString();
@@ -2394,7 +2408,7 @@
 
       // A post's or an entity's own address opens on it (setupLinkPage), not
       // the feed.
-      if (linkIdFromPath() || entityIdFromPath() || topicPathFromPath() || kindPathFromPath()) {
+      if (linkIdFromPath() || entityIdFromPath() || topicPathFromPath() || kindPathFromPath() || indexicalFromPath()) {
         articleList.replaceChildren();
         return;
       }
@@ -2456,6 +2470,10 @@
       return location.pathname.match(ENTITY_PATH_PATTERN)?.[1] ?? null;
     }
 
+    function indexicalFromPath() {
+      return location.pathname.match(INDEXICAL_PATH_PATTERN)?.[1]?.replace(/-/g, " ") ?? null;
+    }
+
     function isFocused() {
       return document.documentElement.classList.contains("focused");
     }
@@ -2465,7 +2483,7 @@
       item.className = `tag ${kind}`;
       const label = document.createElement(id ? "a" : "span");
       label.textContent = name;
-      if (id) ({ topic: setTopicHref, kind: setKindHref }[kind] ?? setEntityHref)(label, id);
+      if (id) ({ topic: setTopicHref, kind: setKindHref, indexical: setIndexicalHref }[kind] ?? setEntityHref)(label, id);
       item.append(label);
       if (detail) {
         const extra = document.createElement("span");
@@ -2627,6 +2645,18 @@
       updateFocusBand();
     }
 
+    // "Fri 16 Oct 18:00 – Sat 04:00" for a local [starts, ends); a whole day
+    // reads as just that day.
+    function formatInterval(starts, ends) {
+      const a = new Date(starts);
+      const b = new Date(ends);
+      const day = (d) => d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+      const time = (d) => d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+      const midnight = (d) => d.getHours() === 0 && d.getMinutes() === 0;
+      if (midnight(a) && midnight(b) && b - a <= 86400000 + 3600000) return day(a);
+      return `${day(a)} ${time(a)} – ${a.toDateString() === new Date(b - 1).toDateString() ? "" : `${day(b)} `}${time(b)}`;
+    }
+
     // A topic's own page, seb.now/t/<path>: its name, path and definition on
     // the band with a button that asks Claude for new sources covering it, and
     // below it every link labelled with it or one of its children, newest
@@ -2745,12 +2775,76 @@
           .filter((k) => k.path.startsWith(`${path}.`) && k.path.split(".").length === path.split(".").length + 1)
           .map((k) => tagItem(k.label, "", "kind", k.path)),
       );
+      // Indexicals that pick out things of this kind ("tonight", a Period)
+      // are listed first, ahead of its entities.
+      await loadTopicIndex();
+      if (generation !== focusGeneration) return;
+      const indexicals = indexicalIndex.filter((i) => i.kind_path === path);
       showFocusSection(
         "focus-entities",
-        (entities ?? []).map((e) => tagItem(e.name, `${e.posts}`, "entity", e.id)),
+        [
+          ...indexicals.map((i) => tagItem(i.term, "", "indexical", i.term)),
+          ...(entities ?? []).map((e) => tagItem(e.name, `${e.posts}`, "entity", e.id)),
+        ],
       );
       updateFocusBand();
     }
+
+    // An indexical's own page, seb.now/i/<term> ("tonight"): what it picks
+    // out right now (a time indexical's interval), the kind of thing that is,
+    // how many posts and its definition on the band; below it, for a time
+    // indexical, the links with an event in that interval (filter_links), a
+    // page at a time. "this" lists nothing here: it picks out the page you
+    // type it on.
+    async function focusIndexical(term, { push = true, saveFeed = true } = {}) {
+      const generation = ++focusGeneration;
+      enterFocus(`/i/${term.replace(/ /g, "-")}`, { push, saveFeed });
+      focusMain.replaceChildren();
+      showFocusSection("focus-entities", []);
+      showFocusSection("focus-topics", []);
+      showFocusSection("focus-kinds", []);
+      focusEntityHead.hidden = true;
+      focusTopicHead.hidden = true;
+      document.getElementById("focus-kind-name").textContent = term;
+      document.getElementById("focus-kind-meta").replaceChildren();
+      document.getElementById("focus-kind-description").textContent = "";
+      findSources.hidden = true;
+      focusKindHead.hidden = false;
+
+      const at = localNow();
+      resetFeed("");
+      feed.indexical = term;
+      articleList.replaceChildren();
+      updateSearchEmpty();
+      window.scrollTo({ top: 0, behavior: "instant" });
+
+      const client = await supabaseReady;
+      const { data, error } = await client.rpc("indexical_summary", { term, at });
+      if (generation !== focusGeneration) return;
+      const summary = data?.[0];
+      if (error || !summary) {
+        focusKindHead.hidden = true;
+        focusStatus.textContent = error ? "Couldn't load this word." : "This word isn't an indexical.";
+        updateFocusBand();
+        return;
+      }
+      const kind = document.createElement("a");
+      kind.textContent = kindName(summary.kind_path);
+      kind.dataset.name = kind.textContent;
+      setKindHref(kind, summary.kind_path);
+      const meta = summary.context === "time"
+        ? ["a ", kind, ` · now ${formatInterval(summary.starts, summary.ends)}`,
+           ` · ${summary.posts} ${summary.posts === 1 ? "post" : "posts"}`]
+        : ["picks out any ", kind, " · read from the page you type it on"];
+      document.getElementById("focus-kind-meta").replaceChildren(...meta);
+      document.getElementById("focus-kind-description").textContent = summary.description;
+      if (summary.context === "time") {
+        feed.filter = { terms: [{ indexical: term, at }], log: [] };
+        loadMore();
+      }
+      updateFocusBand();
+    }
+
 
     // Back to the feed: the one saved on the way in, where it was scrolled to,
     // with the focused post flying back into its place; `restore: false`
@@ -2815,8 +2909,15 @@
       // Topic and entity chips open their page in place; a modified click
       // (new tab) follows the link as usual.
       document.addEventListener("click", (event) => {
-        const chip = event.target.closest("a[href^='/e/'], a[href^='/t/'], a[href^='/k/']");
+        const chip = event.target.closest("a[href^='/e/'], a[href^='/t/'], a[href^='/k/'], a[href^='/i/']");
         if (!chip || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        const term = chip.pathname.match(INDEXICAL_PATH_PATTERN)?.[1]?.replace(/-/g, " ");
+        if (term) {
+          event.preventDefault();
+          if (feed.indexical === term) window.scrollTo({ top: 0, behavior: "smooth" });
+          else focusIndexical(term);
+          return;
+        }
         const kindPath = chip.pathname.match(KIND_PATH_PATTERN)?.[1];
         if (kindPath) {
           event.preventDefault();
@@ -2848,6 +2949,7 @@
         else if (entityId) focusEntity(entityId, { push: false });
         else if (topicPathFromPath()) focusTopic(topicPathFromPath(), { push: false });
         else if (kindPathFromPath()) focusKind(kindPathFromPath(), { push: false });
+        else if (indexicalFromPath()) focusIndexical(indexicalFromPath(), { push: false });
         else if (isFocused()) leaveFocus();
       });
       const id = linkIdFromPath();
@@ -2856,6 +2958,7 @@
       else if (entityId) focusEntity(entityId, { push: false, saveFeed: false });
       else if (topicPathFromPath()) focusTopic(topicPathFromPath(), { push: false, saveFeed: false });
       else if (kindPathFromPath()) focusKind(kindPathFromPath(), { push: false, saveFeed: false });
+      else if (indexicalFromPath()) focusIndexical(indexicalFromPath(), { push: false, saveFeed: false });
     }
 
     function setupMenu() {
@@ -3439,6 +3542,7 @@
       topicIndexReady ??= (async () => {
         const client = await supabaseReady;
         const kindsLoaded = client.from("kinds").select("path, label");
+        const indexicalsLoaded = client.from("indexicals").select("term, kind_path, context, description");
         const topics = [];
         for (let from = 0; ; from += TOPICS_PAGE_SIZE) {
           const { data, error } = await client.from("topics").select("id, name")
@@ -3451,6 +3555,9 @@
         const { data: kinds, error } = await kindsLoaded;
         if (error) console.error("failed to load kinds", error);
         else indexKinds(kinds);
+        const { data: indexicals, error: indexicalsError } = await indexicalsLoaded;
+        if (indexicalsError) console.error("failed to load indexicals", indexicalsError);
+        else indexicalIndex = indexicals;
       })().catch((error) => {
         console.error("failed to load topics", error);
         topicIndexReady = null;
@@ -3482,32 +3589,47 @@
       })) ?? null;
     }
 
-    // Periods (kind entity.period): names for a span of time relative to now.
-    // Each denotes an interval [from, to) in local wall-clock time, the way
-    // link_events' dates and times are written, and as a filter keeps the
-    // links with an event overlapping it ("event tonight", "tomorrow").
-    // Tonight runs to 4am, and after midnight it's still the night before.
-    const PERIOD_KIND = "entity.period";
-    const NIGHT_ENDS_AT = 4;
-    const PERIODS = [
-      { name: "tonight", interval: (now) => {
-        const day = now.getHours() < NIGHT_ENDS_AT ? -1 : 0;
-        return [wallClock(now, day, 18), wallClock(now, day + 1, NIGHT_ENDS_AT)];
-      } },
-      { name: "tomorrow", interval: (now) => [wallClock(now, 1, 0), wallClock(now, 2, 0)] },
-    ];
+    // Indexicals (public.indexicals): "tonight", "tomorrow", "this". They're
+    // expressions, not entities: each has a character, a fixed rule from a
+    // context to what it picks out, which the database applies. A time
+    // indexical reads the reader's local clock (`localNow()`) and picks out an
+    // interval (a Period), keeping the links with an event in it; "this" reads
+    // the focus, the entity, kind or topic page the search box was opened on
+    // (`queryContext`). Each has its own page, /i/<term>.
+    let indexicalIndex = [];
+    const queryContext = { focus: null };
 
-    // "YYYY-MM-DDTHH:00" for `hour` o'clock, `days` from `now`'s local date.
-    function wallClock(now, days, hour) {
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, hour);
+    // The reader's local wall-clock time, "YYYY-MM-DDTHH:MM", the way
+    // link_events' dates and times are written.
+    function localNow(now = new Date()) {
       const pad = (n) => String(n).padStart(2, "0");
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(hour)}:00`;
+      return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
     }
 
-    // The period the whole of `text` names, if any.
-    function typedPeriod(text) {
+    // The page the search box is opened on, as a focus "this" can pick out.
+    function currentFocus() {
+      const name = (id) => document.getElementById(id)?.textContent.trim() || "";
+      const entity = entityIdFromPath();
+      if (entity) return { focus: { entity }, name: name("focus-entity-name") };
+      const kind = kindPathFromPath();
+      if (kind) return { focus: { kind }, name: name("focus-kind-name") };
+      const topic = topicPathFromPath();
+      if (topic) return { focus: { topic }, name: name("focus-topic-name") };
+      return null;
+    }
+
+    // An indexical as one sense of a typed term, read in the current context;
+    // null when its context is missing ("this" typed on the plain feed).
+    function indexicalSense(indexical) {
+      if (indexical.context === "time") return { indexical: indexical.term, at: localNow() };
+      if (!queryContext.focus) return null;
+      return { indexical: indexical.term, focus: queryContext.focus.focus };
+    }
+
+    // The indexical the whole of `text` names, if any, readable here.
+    function typedIndexical(text) {
       const typed = queryWords(text).join(" ");
-      return PERIODS.find((p) => queryWords(p.name).join(" ") === typed) ?? null;
+      return indexicalIndex.find((i) => i.term === typed && indexicalSense(i)) ?? null;
     }
 
     // A query made only of filters ("event paris": the kind Event and the place
@@ -3520,29 +3642,21 @@
     // (filter_links' entity_ids), and those chips light up.
     // `local` is the same terms for the page's own index (entity seqs instead
     // of ids), or null when an entity came from the database without a seq.
+    //
+    // A typed term stands for every sense it has at once (a superposition, in
+    // the MeTTa sense): "tonight" is the period and maybe also a film called
+    // "Tonight". `Filter.term` is one filter whose senses are a disjunction
+    // ({"any": [...]}), so a link passes it through any of them; constraints
+    // (the other filters) prune the branches, nothing is chosen up front.
+    // `local` is the same filter for the page's own index when every sense is
+    // a kind or entities with seqs; events and topics aren't in the index, so
+    // a filter with an indexical, a period or a topic asks the database.
     const Filter = {
       unit: () => ({ terms: [], local: [], log: [] }),
-      kind: (kind) => ({
-        terms: [{ kind: kind.path }],
-        local: [{ kind: kind.path }],
-        log: [{ kind: "kind", label: kind.label }],
-      }),
-      // Entities typed with the same words: a link mentioning any of them.
-      entities: (entities) => ({
-        terms: [{ entities: entities.map((e) => e.id) }],
-        local: entities.every((e) => e.seq != null) ? [{ seqs: entities.map((e) => e.seq) }] : null,
-        log: [{
-          kind: entities[0].kind_path ? kindName(entities[0].kind_path) : entities[0].kind.replace("_", " "),
-          label: entities[0].name,
-        }],
-      }),
-      // A period, resolved to its interval now: a link with an event in it.
-      // Events aren't in the local index, so a filter with one asks the
-      // database.
-      period: (period) => ({
-        terms: [{ period: period.interval(new Date()) }],
-        local: null,
-        log: [{ kind: kindName(PERIOD_KIND), label: period.name }],
+      term: (senses, label, kinds, localSenses) => ({
+        terms: [senses.length === 1 ? senses[0] : { any: senses }],
+        local: localSenses && [localSenses.length === 1 ? localSenses[0] : { any: localSenses }],
+        log: [{ kind: [...new Set(kinds)].join(" / "), label }],
       }),
       bind: (a, b) => ({
         terms: [...a.terms, ...b.terms],
@@ -3553,42 +3667,71 @@
 
     // The filters the whole of `text` names, or null: every word is filler, a
     // newest-first word (a filtered list is newest first anyway), or part of a
-    // kind's name or of the whole name of one of `entities` (match_entities).
-    // Longer names are placed first, and at the same length a kind before an
-    // entity, so "event" is the kind, not an entity called "Event"; entities
-    // whose names are the same words are one filter.
+    // name: a kind's, an indexical's, or the whole name of one of `entities`
+    // (match_entities). Every sense of the same words is one term (a kind
+    // called "event" and an entity called "Event" are both read), and longer
+    // names are placed first.
     function typedFilter(text, entities) {
       const words = queryWords(text).filter((w) => !QUERY_FILLER_WORDS.has(w) && QUERY_SORT_WORDS[w] !== "latest");
       if (!words.length) return null;
+      const senses = [
+        ...kindIndex.flatMap((kind) => kind.names.map((name) => ({
+          name, sense: { kind: kind.path }, kind: "kind",
+        }))),
+        ...indexicalIndex.flatMap((indexical) => {
+          const sense = indexicalSense(indexical);
+          if (!sense) return [];
+          const focusName = sense.focus && queryContext.focus.name;
+          return [{
+            name: indexical.term,
+            label: focusName ? `${indexical.term} · ${focusName}` : indexical.term,
+            sense,
+            kind: kindName(indexical.kind_path),
+          }];
+        }),
+        ...entities.map((entity) => ({
+          name: entity.name,
+          entity,
+          kind: entity.kind_path ? kindName(entity.kind_path) : entity.kind.replace("_", " "),
+        })),
+      ];
+      // One term per sequence of words, with all its senses.
+      const terms = new Map();
+      for (const s of senses) {
+        const nameWords = queryWords(s.name);
+        if (!nameWords.length) continue;
+        const key = nameWords.join(" ");
+        if (!terms.has(key)) terms.set(key, { words: nameWords, label: s.label ?? s.name, senses: [], entities: [], kinds: [] });
+        const term = terms.get(key);
+        if (s.entity) term.entities.push(s.entity);
+        else if (!term.senses.some((x) => JSON.stringify(x) === JSON.stringify(s.sense))) term.senses.push(s.sense);
+        if (s.label) term.label = s.label;
+        term.kinds.push(s.kind);
+      }
       const open = words.map(() => true);
-      const names = [
-        ...kindIndex.flatMap((kind) => kind.names.map((name) => ({ words: queryWords(name), kind }))),
-        ...PERIODS.map((period) => ({ words: queryWords(period.name), period })),
-        ...entities.map((entity) => ({ words: queryWords(entity.name), entity })),
-      ].filter((n) => n.words.length)
-        .sort((a, b) => b.words.length - a.words.length || Number(Boolean(a.entity)) - Number(Boolean(b.entity)));
       const placed = [];
-      for (const name of names) {
-        const same = name.entity && placed.find((p) => p.entities && p.words.join(" ") === name.words.join(" "));
-        if (same) {
-          same.entities.push(name.entity);
-          continue;
-        }
+      for (const term of [...terms.values()].sort((a, b) => b.words.length - a.words.length)) {
         const at = [];
-        for (const n of name.words) {
+        for (const n of term.words) {
           const i = words.findIndex((w, j) => open[j] && !at.includes(j) && wordMatches(w, n, false));
           if (i < 0) break;
           at.push(i);
         }
-        if (at.length !== name.words.length) continue;
+        if (at.length !== term.words.length) continue;
         for (const i of at) open[i] = false;
-        placed.push(name.entity ? { at, words: name.words, entities: [name.entity] } : { at, kind: name.kind, period: name.period });
+        placed.push({ at, term });
       }
       if (open.some(Boolean)) return null;
-      const filterOf = (p) => p.period ? Filter.period(p.period) : p.kind ? Filter.kind(p.kind) : Filter.entities(p.entities);
       return placed
         .sort((a, b) => Math.min(...a.at) - Math.min(...b.at))
-        .reduce((filter, p) => Filter.bind(filter, filterOf(p)), Filter.unit());
+        .reduce((filter, { term }) => {
+          // Same-named entities are one sense: a link mentioning any of them.
+          const senses = [...term.senses, ...(term.entities.length ? [{ entities: term.entities.map((e) => e.id) }] : [])];
+          const local = term.senses.every((x) => x.kind) && term.entities.every((e) => e.seq != null)
+            ? [...term.senses, ...(term.entities.length ? [{ seqs: term.entities.map((e) => e.seq) }] : [])]
+            : null;
+          return Filter.bind(filter, Filter.term(senses, term.label, term.kinds, local));
+        }, Filter.unit());
     }
 
     // The kind one level up from `path`, "kind" for the root.
@@ -3979,10 +4122,11 @@
       if (localFilterResults.has(key)) return localFilterResults.get(key);
       let passing = null;
       for (const term of local) {
-        const entitySeqs = term.kind
+        // A term passes through any of its senses ({any: [...]}).
+        const entitySeqs = (term.any ?? [term]).flatMap((sense) => sense.kind
           ? [...entityIndex.entities.values()]
-            .filter((e) => e.kind_path === term.kind || e.kind_path.startsWith(`${term.kind}.`)).map((e) => e.seq)
-          : term.seqs;
+            .filter((e) => e.kind_path === sense.kind || e.kind_path.startsWith(`${sense.kind}.`)).map((e) => e.seq)
+          : sense.seqs);
         const hits = new Map();
         for (const entitySeq of entitySeqs) {
           for (const linkSeq of entityIndex.entityLinks.get(entitySeq) ?? []) {
@@ -4272,7 +4416,9 @@
           const tag = { kind: parentKindName(kind.path), suggested: true, kindPath: kind.path, kindLabel: kind.label };
           kind.names.some((name) => tagName(name, tag, prefix));
         }
-        for (const period of PERIODS) tagName(period.name, { kind: kindName(PERIOD_KIND), suggested: true }, prefix);
+        for (const indexical of indexicalIndex) {
+          tagName(indexical.term, { kind: kindName(indexical.kind_path), suggested: true, indexical: indexical.term }, prefix);
+        }
       }
       return tokens;
     }
@@ -4305,13 +4451,15 @@
         nodes.push(mark);
         // A topic, an entity or a kind opens its page through the chip-link
         // click handler; a sort word has none.
-        const target = t.tag.entity ?? t.tag.topic ?? (t.tag.kindPath && { id: t.tag.kindPath, name: t.tag.kindLabel });
+        const target = t.tag.entity ?? t.tag.topic ?? (t.tag.kindPath && { id: t.tag.kindPath, name: t.tag.kindLabel })
+          ?? (t.tag.indexical && { id: t.tag.indexical, name: t.tag.indexical });
         if (target) {
           const link = document.createElement("a");
           link.textContent = text;
           link.dataset.name = target.name;
           if (t.tag.entity) setEntityHref(link, target.id);
           else if (t.tag.topic) setTopicHref(link, target.id);
+          else if (t.tag.indexical) setIndexicalHref(link, target.id);
           else setKindHref(link, target.id);
           link.title = target.name;
           links.push(link);
@@ -4402,15 +4550,16 @@
     // On Enter, a query naming two or more filters (typedFilter: "event
     // paris") lists the links passing all of them, newest first, instead of
     // its search results, which stay up until the filtered page arrives.
-    // Names are matched as typed, every word finished. A period is a filter
-    // on its own ("tonight"), since no search reads it.
+    // Names are matched as typed, every word finished. An indexical is a
+    // filter on its own ("tonight", "this"), since no search reads it.
     async function showTypedFilter(text) {
-      if (queryWords(text).length < 2 && !typedPeriod(text)) return;
+      if (queryWords(text).length < 2 && !typedIndexical(text)) return;
       const generation = queryGeneration;
       const [, entities] = await Promise.all([loadTopicIndex(), matchEntities(`${text} `)]);
       if (generation !== queryGeneration || document.getElementById("search-input").value.trim() !== text) return;
       const filter = typedFilter(text, entities);
-      if (!filter || (filter.terms.length < 2 && !filter.terms.some((t) => t.period))) return;
+      const indexical = (t) => t.indexical || t.any?.some((x) => x.indexical);
+      if (!filter || (filter.terms.length < 2 && !filter.terms.some(indexical))) return;
       // The search's own reading, still in flight, must not replace the list.
       queryGeneration++;
       showFilterChips(filter);
@@ -4439,6 +4588,11 @@
       }
 
       input.addEventListener("focus", () => loadTopicIndex(), { once: true });
+      // "this" is the page the box was opened on: typing leaves that page,
+      // so the focus is read when the box is entered, not on Enter.
+      input.addEventListener("focus", () => {
+        queryContext.focus = currentFocus();
+      });
       input.addEventListener("input", () => {
         try {
           if (input.value) localStorage.setItem(SEARCH_QUERY_STORAGE_KEY, input.value);

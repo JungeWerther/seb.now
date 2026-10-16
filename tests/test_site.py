@@ -637,7 +637,7 @@ def test_entity_page_lists_every_link_mentioning_it_and_chips_open_it() -> None:
     assert 'rpc("entity_links"' in script
     assert "`/e/${id}`" in script
     # Chips are links, but a plain click opens the page in place.
-    assert "closest(\"a[href^='/e/'], a[href^='/t/'], a[href^='/k/']\")" in script
+    assert "closest(\"a[href^='/e/'], a[href^='/t/'], a[href^='/k/'], a[href^='/i/']\")" in script
     assert "focusEntity(id, { name: chip.dataset.name ?? chip.textContent })" in script
     assert "else if (entityId) focusEntity(entityId, { push: false });" in script
     # Entity ids become hrefs only when they look like one.
@@ -718,3 +718,22 @@ def test_visit_returns_only_send_values_the_link_visits_checks_allow() -> None:
     assert sent_kinds <= return_kinds, sent_kinds - return_kinds
     sent_actions = set(re.findall(r'noteNextAction\("(\w+)"', script)) | set(re.findall(r'value === 1 \? "(\w+)" : "(\w+)"', script)[0])
     assert sent_actions == next_actions, sent_actions ^ next_actions
+
+
+def test_typed_terms_are_superpositions_of_senses_and_indexicals_have_pages() -> None:
+    """A term is one filter over all its senses; indexicals open at /i/<term>."""
+    html = render([])
+    script = html[html.index('<script type="module">') :]
+    # Every sense of the same words is one filter, sent as {"any": [...]}.
+    assert "terms: [senses.length === 1 ? senses[0] : { any: senses }]" in script
+    # Indexicals come from the database and are read in a context.
+    assert 'client.from("indexicals").select("term, kind_path, context, description")' in script
+    assert 'return { indexical: indexical.term, at: localNow() };' in script
+    assert 'return { indexical: indexical.term, focus: queryContext.focus.focus };' in script
+    assert "queryContext.focus = currentFocus();" in script
+    # Their own pages.
+    assert "async function focusIndexical(term" in script
+    assert 'client.rpc("indexical_summary", { term, at })' in script
+    assert "else if (indexicalFromPath()) focusIndexical(indexicalFromPath(), { push: false });" in script
+    # On the page's own index too: a term's senses are a disjunction there.
+    assert "const entitySeqs = (term.any ?? [term]).flatMap((sense) => sense.kind" in script
