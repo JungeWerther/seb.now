@@ -520,12 +520,26 @@ the words it couldn't place searched for too. The matched words are also tagged 
 place in the box (`renderSearchMarks`, run by `showQueryChips`): `#search-marks` is a
 copy of the typed text laid out identically behind the transparent input, with the
 text invisible and good matches wrapped in `<mark data-kind>` (a small kind label
-above the word, drawn by CSS) — the reading's sort words and topic filled, an entity
-or topic suggestion whose whole name is typed dashed, then (last, so they never take a
-word from a longer name) the names of entity kinds; neighbouring words of one name
-share one tag. Whole-word matches (exact or singular/plural) are all placed before the
-word still being typed may match as a prefix, so a typed "event" is the kind, not the
-product "Éventail" that `match_entities` suggests for it by prefix. Kinds and entities are labelled with the level above them in the kind
+above the word, drawn by CSS) — the reading's sort words and topic filled, then,
+dashed, every name whose whole is typed. **A tag never picks a sense.** Every named
+thing the box can read (the `match_entities` suggestions, the topic suggestions, the
+kinds by label and path segment, the indexicals: `namedSenses`) goes into one
+`lexicon` (`frontend/src/senses.ts`) keyed by its folded words, so a name keeps all its
+senses, and `claimNames` places names longest first, whole words first. A name with
+one sense is tagged as itself and opens its page; a name with several (Nightcall and
+The Nightcall, the kind Event and an entity "Event") is one tag labelled with what
+they share (`senseLabel`: "work ×2", "artifact ×3" from `commonKindPath`, "senses ×n"
+across a topic and a kind) that opens `/s/<words>`, the term's page. The word still
+being typed is a guess, not a reading: it only finishes a name (by prefix) when exactly
+one name could take it, so "nightc" is Nightcall but "night", a prefix of Nightcall,
+Nightwatch and Night Owl, is tagged as nothing (before this a prefix tagged whichever
+suggestion came first, so "night" read as the song). A typed "event" is still the kind,
+not the product "Éventail", since whole words go first. **A term's own page**,
+`seb.now/s/<words>` (`focusTerm`, `setTermHref`, `TERM_PATH_PATTERN`), shows the words,
+how many senses and their shared label in the kind band, each sense as a chip in its
+section (kinds, entities and indexicals, topics) opening its own page, and below every
+link about any of them: one `filter_links` term `{any: [...]}`, read locally when every
+sense is a kind or an indexed entity. Kinds and entities are labelled with the level above them in the kind
 tree (`public.kinds`, an `ltree` under `entity`, loaded once with the topics), not
 the full ancestry: "company" reads `org`, an entity "Uber" `company` (its
 `entities.kind_path`, fetched by id with the `match_entities` results). A label runs
@@ -535,7 +549,7 @@ copy again but above the input and see-through, holds just those words as `/t/<p
 or `/e/<id>` links (with `data-name`, which the chip-link click handler prefers over
 the typed text), so tapping one opens its page in place while a tap anywhere else
 reaches the input; a kind links to its page (`/k/<path>`), an indexical to its
-(`/i/<term>`) and a sort word to its order's (`/o/<sort>`). **Every tag opens a
+(`/i/<term>`), a name with several senses to its term's (`/s/<words>`) and a sort word to its order's (`/o/<sort>`). **Every tag opens a
 page — CI enforces it** (`tests/test_search_marks_pages.py`): each tag `tagTokens`
 builds carries `page: markPage(name, setXHref, id)`, `renderSearchMarks` never
 leaves a tagged word as plain text, and every `set*Href` a tag names must build an

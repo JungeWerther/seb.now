@@ -18,3 +18,9 @@ compiled file.
 - `src/filter.ts`: typed filter queries ("event paris") as a monoid of
   filter_links terms plus chips, and the page cache in front of filter_links
   (`memoize`, keyed by the normalized filter and the keyset cursor).
+- `src/senses.ts`: what typed words name, for the search box's tags. A
+  `lexicon` groups every named thing by its folded words, so a name keeps
+  all its senses; `claimNames` reads whole words first, longest names first,
+  and lets the word still being typed finish a name only when exactly one
+  name could take it; `senseLabel` labels several senses by what they share
+  in the kind tree (`commonKindPath`).

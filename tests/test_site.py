@@ -682,7 +682,7 @@ def test_entity_page_lists_every_link_mentioning_it_and_chips_open_it() -> None:
     assert 'rpc("entity_links"' in script
     assert "`/e/${id}`" in script
     # Chips are links, but a plain click opens the page in place.
-    assert "closest(\"a[href^='/e/'], a[href^='/t/'], a[href^='/k/'], a[href^='/i/'], a[href^='/o/']\")" in script
+    assert "closest(\"a[href^='/e/'], a[href^='/t/'], a[href^='/k/'], a[href^='/i/'], a[href^='/s/'], a[href^='/o/']\")" in script
     assert "focusEntity(id, { name: chip.dataset.name ?? chip.textContent })" in script
     assert "else if (entityId) focusEntity(entityId, { push: false });" in script
     # Entity ids become hrefs only when they look like one.
@@ -721,7 +721,7 @@ def test_kind_page_lists_links_its_subkinds_and_top_entities_and_kinds_link_ther
     assert "else if (kindPathFromPath()) focusKind(kindPathFromPath(), { push: false });" in script
     # An entity's page links its kind, and the search box links a typed kind.
     assert "if (entity.kind_path) setKindHref(kind, entity.kind_path);" in script
-    assert "page: markPage(kind.label, setKindHref, kind.path)" in script
+    assert "page: markPage(sense.kind.label, setKindHref, sense.kind.path)" in script
 
 
 def test_entity_page_offers_find_sources_with_its_own_prompt() -> None:
@@ -797,12 +797,31 @@ def test_order_pages_open_from_the_search_box() -> None:
     assert 'resetFeed("", SORT_LABELS[sort] ? { sort } : null);' in script
 
 
+def test_search_tags_never_choose_a_sense_and_a_term_page_lists_them() -> None:
+    """A name with several senses is one tag opening /s/<words>; a prefix only completes one name."""
+    script = _page_script(render([]))
+    # Typed names come from one lexicon of every sense, claimed by senses.ts.
+    assert "claimNames(tokens, entries, wordMatches, complete)" in script
+    assert "lexicon(namedSenses(entities, topics), queryWords, (sense) => sense.id)" in script
+    # Several senses: one tag, labelled with what they share, opening their term's page.
+    assert "kind: senseLabel(entry.senses, kindName)," in script
+    assert "page: markPage(term, setTermHref, term)," in script
+    assert "const TERM_PATH_PATTERN = new RegExp(`^/s/(${TERM_ID_PATTERN})/?$`);" in script
+    assert "else if (termFromPath()) focusTerm(termFromPath(), { push: false });" in script
+    # The term page lists the posts about any sense, as one filter_links term.
+    assert "feed.filter = Filter.term(filterSenses, term, senses.map((sense) => sense.label), local);" in script
+    # Required entities are read from whole words only.
+    assert "tagTokens(text, intent, matchTopics(text), entities, false)" in script
+
+
 def test_render_inlines_the_compiled_filter_script_into_the_page_script() -> None:
     html = render([])
     script = html[html.index('<script type="module">') : html.index("</script>")]
 
     assert "__FILTER_JS__" not in html
+    assert "__SENSES_JS__" not in html
     assert "function filterKey(" in script and "const Filter = {" in script
+    assert "function claimNames(" in script and "function senseLabel(" in script
     assert "const fetchServerFiltered = memoize(filterPageKey" in script
     # The local index keeps its own offset-based path; filter_links pages by keyset.
     assert "if (entityIndex.ready && filter.local) return fetchLocalFiltered(client, filter.local, offset);" in script
