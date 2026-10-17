@@ -1,5 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { ENV, MCP } from "../_shared/constants.ts";
+import { jsonResponses } from "../_shared/helpers.ts";
 
 // An MCP server (Streamable HTTP transport, stateless: every POST carries one
 // JSON-RPC message and gets one JSON response, no SSE stream). Hand-rolled
@@ -27,13 +29,6 @@ const USER_INSTRUCTIONS =
   "links; endorse good proposals from others; and label links for the user's own feed with " +
   "suggest_link_topic. Accepted topics are credited to their proposer in list_topics.";
 
-const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 50;
-const MAX_QUERY_LENGTH = 200;
-const MAX_PROPOSAL_EXAMPLES = 10;
-const MAX_RATIONALE_LENGTH = 500;
-const MAX_TOPIC_NAME_LENGTH = 60;
-const MAX_TOPIC_DESCRIPTION_LENGTH = 300;
 const PROPOSAL_STATUSES = ["open", "accepted", "rejected"];
 const PROPOSAL_SELECT =
   "id, topic_id, parent_id, name, description, rationale, status, created_at, decided_at, " +
@@ -41,18 +36,13 @@ const PROPOSAL_SELECT =
   "topic_proposal_examples(p, links(id, title, url))";
 const LINK_SELECT = "id, title, url, author, created_at, link_topics(p, topic_id, topics(name))";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
-// The URL clients connect to for the signed-in endpoint, and so the OAuth
-// resource its tokens are for: the seb.now proxy, not this function's own URL.
-const USER_RESOURCE = "https://seb.now/mcp/user";
-const PROTECTED_RESOURCE_METADATA_URL = `${SUPABASE_URL}/functions/v1/mcp/oauth-protected-resource`;
-const AUTHORIZATION_SERVER = `${SUPABASE_URL}/auth/v1`;
+const PROTECTED_RESOURCE_METADATA_URL = `${ENV.SUPABASE_URL}/functions/v1/mcp/oauth-protected-resource`;
+const AUTHORIZATION_SERVER = `${ENV.SUPABASE_URL}/auth/v1`;
 
 type Db = SupabaseClient<any, "public", any>;
 
 function dbClient(accessToken?: string): Db {
-  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  return createClient(ENV.SUPABASE_URL, ENV.SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
     ...(accessToken ? { global: { headers: { Authorization: `Bearer ${accessToken}` } } } : {}),
   });
@@ -76,9 +66,9 @@ type Context = { db: Db; userId?: string };
 const limitSchema = {
   type: "integer",
   minimum: 1,
-  maximum: MAX_LIMIT,
-  default: DEFAULT_LIMIT,
-  description: `How many links to return (1-${MAX_LIMIT}).`,
+  maximum: MCP.MAX_LIMIT,
+  default: MCP.DEFAULT_LIMIT,
+  description: `How many links to return (1-${MCP.MAX_LIMIT}).`,
 };
 
 const RANK_FORMULA = "rank = taste * (1 + ups) / (2 + ups + downs) * 0.5 ^ (age_hours / 24)";
@@ -112,7 +102,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        query: { type: "string", minLength: 1, maxLength: MAX_QUERY_LENGTH, description: "Text to look for." },
+        query: { type: "string", minLength: 1, maxLength: MCP.MAX_QUERY_LENGTH, description: "Text to look for." },
         limit: limitSchema,
       },
       required: ["query"],
@@ -222,22 +212,22 @@ const USER_TOOLS = [
             "The new topic's full id: its parent's id plus one segment of 2-32 lowercase letters, digits " +
             "or underscores. At most three levels deep.",
         },
-        name: { type: "string", minLength: 2, maxLength: MAX_TOPIC_NAME_LENGTH, description: "Short human-readable name." },
+        name: { type: "string", minLength: 2, maxLength: MCP.MAX_TOPIC_NAME_LENGTH, description: "Short human-readable name." },
         description: {
           type: "string",
           minLength: 10,
-          maxLength: MAX_TOPIC_DESCRIPTION_LENGTH,
+          maxLength: MCP.MAX_TOPIC_DESCRIPTION_LENGTH,
           description: "What belongs in this topic, written as a definition a classifier can apply.",
         },
         rationale: {
           type: "string",
-          maxLength: MAX_RATIONALE_LENGTH,
+          maxLength: MCP.MAX_RATIONALE_LENGTH,
           description: "Why the existing topics don't cover it.",
         },
         examples: {
           type: "array",
           minItems: 1,
-          maxItems: MAX_PROPOSAL_EXAMPLES,
+          maxItems: MCP.MAX_PROPOSAL_EXAMPLES,
           description: "Links that belong in the topic.",
           items: {
             type: "object",
@@ -300,7 +290,7 @@ function intArg(args: Row, name: string, fallback: number, min: number, max: num
   return value;
 }
 
-function stringArg(args: Row, name: string, maxLength = MAX_QUERY_LENGTH): string {
+function stringArg(args: Row, name: string, maxLength: number = MCP.MAX_QUERY_LENGTH): string {
   const value = args[name];
   if (typeof value !== "string" || !value.trim() || value.length > maxLength) {
     throw new InvalidParams(`${name} must be a non-empty string of at most ${maxLength} characters`);
@@ -363,7 +353,7 @@ async function withVotes(db: Db, links: Row[], extra: (link: Row) => Row = () =>
 }
 
 async function getFeed(args: Row, { db }: Context) {
-  const limit = intArg(args, "limit", DEFAULT_LIMIT, 1, MAX_LIMIT);
+  const limit = intArg(args, "limit", MCP.DEFAULT_LIMIT, 1, MCP.MAX_LIMIT);
   const offset = intArg(args, "offset", 0, 0, Number.MAX_SAFE_INTEGER);
   const { data: ranked, error } = await db.rpc("ranked_feed", {
     as_of: new Date().toISOString(),
@@ -389,7 +379,7 @@ async function getFeed(args: Row, { db }: Context) {
 // + entity matches + substring fallback, with a mild recency boost.
 async function searchLinks(args: Row, { db }: Context) {
   const query = stringArg(args, "query");
-  const limit = intArg(args, "limit", DEFAULT_LIMIT, 1, MAX_LIMIT);
+  const limit = intArg(args, "limit", MCP.DEFAULT_LIMIT, 1, MCP.MAX_LIMIT);
   const { data: hits, error } = await db.rpc("search_links", { q: query, max_results: limit });
   if (error) throw new Error(error.message);
   const ids = hits.map((h: Row) => h.link_id);
@@ -441,7 +431,7 @@ function formatProposal({ profiles, topic_proposal_endorsements, topic_proposal_
 async function listTopicProposals(args: Row, { db }: Context) {
   const status = args.status ?? "open";
   if (!PROPOSAL_STATUSES.includes(status)) throw new InvalidParams(`status must be one of ${PROPOSAL_STATUSES.join(", ")}`);
-  const limit = intArg(args, "limit", DEFAULT_LIMIT, 1, MAX_LIMIT);
+  const limit = intArg(args, "limit", MCP.DEFAULT_LIMIT, 1, MCP.MAX_LIMIT);
   const { data, error } = await db
     .from("topic_proposals")
     .select(PROPOSAL_SELECT)
@@ -454,7 +444,7 @@ async function listTopicProposals(args: Row, { db }: Context) {
 
 async function getLinksByTopic(args: Row, { db }: Context) {
   const topic = stringArg(args, "topic").toLowerCase();
-  const limit = intArg(args, "limit", DEFAULT_LIMIT, 1, MAX_LIMIT);
+  const limit = intArg(args, "limit", MCP.DEFAULT_LIMIT, 1, MCP.MAX_LIMIT);
   const { data: topics, error } = await db.from("topics").select("id");
   if (error) throw new Error(error.message);
   const ids = topics.map((t: Row) => t.id).filter((id: string) => id === topic || id.startsWith(`${topic}.`));
@@ -515,12 +505,12 @@ async function vote(args: Row, { db, userId }: Context) {
 async function proposeTopic(args: Row, { db, userId }: Context) {
   if (!userId) throw new Error("propose_topic needs a signed-in user");
   const topicId = stringArg(args, "topic_id").toLowerCase();
-  const name = stringArg(args, "name", MAX_TOPIC_NAME_LENGTH);
-  const description = stringArg(args, "description", MAX_TOPIC_DESCRIPTION_LENGTH);
-  const rationale = args.rationale == null ? null : stringArg(args, "rationale", MAX_RATIONALE_LENGTH);
+  const name = stringArg(args, "name", MCP.MAX_TOPIC_NAME_LENGTH);
+  const description = stringArg(args, "description", MCP.MAX_TOPIC_DESCRIPTION_LENGTH);
+  const rationale = args.rationale == null ? null : stringArg(args, "rationale", MCP.MAX_RATIONALE_LENGTH);
   const examples = args.examples;
-  if (!Array.isArray(examples) || !examples.length || examples.length > MAX_PROPOSAL_EXAMPLES) {
-    throw new InvalidParams(`examples must list 1-${MAX_PROPOSAL_EXAMPLES} links`);
+  if (!Array.isArray(examples) || !examples.length || examples.length > MCP.MAX_PROPOSAL_EXAMPLES) {
+    throw new InvalidParams(`examples must list 1-${MCP.MAX_PROPOSAL_EXAMPLES} links`);
   }
   const rows = examples.map((e: Row, i: number) => ({ link_id: uuidArg(e ?? {}, "link_id"), p: pArg(e?.p, `examples[${i}].p`) }));
   const { data: links, error: linksError } = await db.from("links").select("id").in("id", rows.map((r) => r.link_id));
@@ -666,18 +656,13 @@ async function dispatch(message: Row, ctx: Context): Promise<Row | null> {
   }
 }
 
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-  });
-}
+const json = jsonResponses({ headers: CORS_HEADERS });
 
 // RFC 9728 protected-resource metadata: tells an MCP client which
 // authorization server issues tokens for the signed-in endpoint.
 function protectedResourceMetadata(): Response {
   return json({
-    resource: USER_RESOURCE,
+    resource: MCP.USER_RESOURCE,
     authorization_servers: [AUTHORIZATION_SERVER],
     bearer_methods_supported: ["header"],
     resource_name: SERVER_INFO.name,

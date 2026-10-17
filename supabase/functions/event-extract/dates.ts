@@ -1,5 +1,6 @@
 import * as chrono from "npm:chrono-node@2.10.2";
 import { sentenceAround } from "../_shared/page.ts";
+import { EVENT_DATES } from "../_shared/constants.ts";
 
 // Date mentions found by code, no model: every date or date range chrono can
 // read in the link's title, its feed description and each section of its page,
@@ -15,7 +16,6 @@ import { sentenceAround } from "../_shared/page.ts";
 // Year. The same date read twice is kept once, at its first place: title
 // before description before page.
 
-const MAX_CANDIDATES = 20;
 
 export type Origin = "title" | "description" | "page";
 
@@ -106,7 +106,7 @@ export function dateCandidates(sources: Source[], reference: Date, lang: string 
         origin: source.origin,
         section: source.section,
       });
-      if (out.length >= MAX_CANDIDATES) return out;
+      if (out.length >= EVENT_DATES.MAX_CANDIDATES) return out;
     }
   }
   return out;

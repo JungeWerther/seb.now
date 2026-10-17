@@ -8,6 +8,7 @@ import { nameHints } from "../_shared/hints.ts";
 import { NameHints, pageCandidates } from "../_shared/names.ts";
 import { fetchPage, JsonLdEvent, PageContent, pageText, parseSections, Section } from "../_shared/page.ts";
 import { DateCandidate, dateCandidates, Source } from "./dates.ts";
+import { EVENT_EXTRACT, JEV } from "../_shared/constants.ts";
 
 // Finds the events a link announces and when they happen, from its own page.
 // Per link:
@@ -35,19 +36,6 @@ import { DateCandidate, dateCandidates, Source } from "./dates.ts";
 // POST {} processes up to LINKS_PER_RUN unprocessed links, newest first;
 // POST {"link_ids": [...]} those links. "dry_run": true reports without writing.
 
-const MODEL = "jev-1.13.0";
-const LINKS_PER_RUN = 10;
-const MAX_LINK_IDS = 50;
-const CONCURRENCY = 4;
-const MIN_PAGE_P = 0.5;
-const MAX_NOT_AN_EVENT_P = 0.5;
-const MIN_ROLE_P = 0.5;
-const MIN_VENUE_P = 0.5;
-const SECTION_VENUE_PHRASES = 6;
-const LEAD_CHARS = 600;
-const EXCERPT_CHARS = 300;
-const DESCRIPTION_CHARS = 500;
-const RECENT_MS = 24 * 60 * 60 * 1000;
 const NONE = "none";
 const PHRASE_PREFIX = "phrase_";
 // Kinds of entity an event can be held at: a museum or a shop is an organisation as well as a place.
@@ -246,7 +234,7 @@ async function processLink(db: SupabaseClient, jev: JevClient, link: Link, dryRu
       ...page.sections.map((s, i) => ({ text: [s.heading, s.text].filter(Boolean).join("\n"), origin: "page" as const, section: i })),
     ];
     const candidates = dateCandidates(sources, reference, page.lang);
-    const cutoff = new Date(reference.getTime() - RECENT_MS).toISOString().slice(0, 10);
+    const cutoff = new Date(reference.getTime() - EVENT_EXTRACT.RECENT_MS).toISOString().slice(0, 10);
     if (candidates.some((c) => (c.end ?? c.start) >= cutoff)) {
       rows = (await judge(db, jev, link, page, candidates, report))
         .filter((r) => (r.ends_on ?? r.starts_on)! >= cutoff);
@@ -293,12 +281,12 @@ async function judge(
 ): Promise<EventRow[]> {
   const sections = content.sections;
   const places = await loadPlaces(db, link.id);
-  const lead = sections.map((s) => s.text).join("\n").slice(0, LEAD_CHARS);
+  const lead = sections.map((s) => s.text).join("\n").slice(0, EVENT_EXTRACT.LEAD_CHARS);
   const state = {
     link: {
       title: link.title,
       site: hostOf(link.url),
-      ...(link.description ? { description: link.description.slice(0, DESCRIPTION_CHARS) } : {}),
+      ...(link.description ? { description: link.description.slice(0, EVENT_EXTRACT.DESCRIPTION_CHARS) } : {}),
       ...(lead ? { lead } : {}),
     },
   };
@@ -332,7 +320,7 @@ async function judge(
       type: "choice",
       instructions: {
         heading: sections[s].heading,
-        excerpt: sections[s].text.slice(0, EXCERPT_CHARS),
+        excerpt: sections[s].text.slice(0, EVENT_EXTRACT.EXCERPT_CHARS),
         question: "If `link` lists several events, what kind of event is the one under `heading`?",
       },
       criteria: KIND_OPTIONS,
@@ -355,7 +343,7 @@ async function judge(
       type: "choice",
       instructions: {
         heading: sections[s].heading,
-        excerpt: sections[s].text.slice(0, EXCERPT_CHARS),
+        excerpt: sections[s].text.slice(0, EVENT_EXTRACT.EXCERPT_CHARS),
         question: "If `link` lists several events, where is the one under `heading` held? Pick the most specific: the venue, building or site, not the city around it, unless only the city is said.",
       },
       criteria: {
@@ -377,7 +365,7 @@ async function judge(
   const kindOf = (key: string): { kind: Kind; p: number } | null => {
     const probabilities = result.answers[key].probabilities as Record<string, number>;
     const notP = probabilities[NOT_AN_EVENT] ?? 0;
-    if (notP >= MAX_NOT_AN_EVENT_P) return null;
+    if (notP >= EVENT_EXTRACT.MAX_NOT_AN_EVENT_P) return null;
     const [kind] = Object.entries(probabilities)
       .filter(([k]) => k !== NOT_AN_EVENT)
       .sort((a, b) => b[1] - a[1])[0];
@@ -389,7 +377,7 @@ async function judge(
     const key = `v${s}`;
     if (!result.answers[key]) return { entityId: null, name: null };
     const { choice, p } = answer(key);
-    if (choice === NONE || p < MIN_VENUE_P) return { entityId: null, name: null };
+    if (choice === NONE || p < EVENT_EXTRACT.MIN_VENUE_P) return { entityId: null, name: null };
     if (!choice.startsWith(PHRASE_PREFIX)) return { entityId: choice, name: null };
     return { entityId: null, name: sectionVenues.get(s)!.phrases[Number(choice.slice(PHRASE_PREFIX.length))] ?? null };
   };
@@ -399,15 +387,15 @@ async function judge(
   const judged: Judged[] = candidates.flatMap((c, i) => {
     const a = answer(`d${i}`);
     report.dates.push({ text: c.text, start: c.start, end: c.end, in: c.origin, section: c.section, role: a.choice, p: round(a.p) });
-    return a.choice !== "other" && a.p >= MIN_ROLE_P ? [{ ...c, role: a.choice as Role, roleP: a.p }] : [];
+    return a.choice !== "other" && a.p >= EVENT_EXTRACT.MIN_ROLE_P ? [{ ...c, role: a.choice as Role, roleP: a.p }] : [];
   });
-  if (page.choice === "other" || page.p < MIN_PAGE_P) return [];
+  if (page.choice === "other" || page.p < EVENT_EXTRACT.MIN_PAGE_P) return [];
 
   if (page.choice === "single_event") {
     const kind = kindOf("kind");
     if (!kind) return [];
     const venue = places.length ? answer("venue") : null;
-    const venueId = venue && venue.choice !== NONE && venue.p >= MIN_VENUE_P ? venue.choice : null;
+    const venueId = venue && venue.choice !== NONE && venue.p >= EVENT_EXTRACT.MIN_VENUE_P ? venue.choice : null;
     const fromLink = judged.filter((d) => d.origin !== "page");
     return unitRows(fromLink.length ? fromLink : judged, null, kind.kind, Math.min(page.p, kind.p), { entityId: venueId, name: null });
   }
@@ -431,19 +419,19 @@ function venueOptions(places: Place[], section: Section, hints: Partial<NameHint
     return true;
   });
   const known = new Set(named.flatMap((p) => [p.surface, p.name]).filter((n): n is string => !!n).map((n) => n.toLowerCase()));
-  const phrases = pageCandidates([section], "", hints, SECTION_VENUE_PHRASES)
+  const phrases = pageCandidates([section], "", hints, EVENT_EXTRACT.SECTION_VENUE_PHRASES)
     .map((c) => c.surface)
     .filter((phrase) => !known.has(phrase.toLowerCase()));
   return { named, phrases };
 }
 
 async function unprocessedLinkIds(db: SupabaseClient): Promise<string[]> {
-  const { data, error } = await db.rpc("links_to_enrich", { step: "events", max_results: LINKS_PER_RUN });
+  const { data, error } = await db.rpc("links_to_enrich", { step: "events", max_results: EVENT_EXTRACT.LINKS_PER_RUN });
   if (error) throw new Error(error.message);
   return (data as { link_id: string }[]).map((r) => r.link_id);
 }
 
-Deno.serve(serveJev({ fn: "event-extract", model: MODEL, maxLinkIds: MAX_LINK_IDS }, async ({ db, jev, ids, dryRun, report }) => {
+Deno.serve(serveJev({ fn: "event-extract", model: JEV.MODEL, maxLinkIds: EVENT_EXTRACT.MAX_LINK_IDS }, async ({ db, jev, ids, dryRun, report }) => {
   const { data: links, error } = await db
     .from("links")
     .select("id, title, url, description, created_at")
@@ -451,7 +439,7 @@ Deno.serve(serveJev({ fn: "event-extract", model: MODEL, maxLinkIds: MAX_LINK_ID
   if (error) throw new Error(error.message);
 
   const process = reporting(report, (link: Link) => ({ link_id: link.id }), (link) => processLink(db, jev, link, dryRun));
-  const results = (await pool(links as Link[], CONCURRENCY, process)).filter(isPresent);
+  const results = (await pool(links as Link[], EVENT_EXTRACT.CONCURRENCY, process)).filter(isPresent);
   return {
     links: results.length,
     jev_calls: results.filter((r) => r.page !== null).length,

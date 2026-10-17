@@ -1,5 +1,6 @@
 import nlp from "npm:compromise@14.14.4";
-import { EDGE_PUNCTUATION, knownNamesIn, MAX_LENGTH, NameHints, ONLY_NUMBERS, POSSESSIVE_END, PRONOUN } from "../_shared/names.ts";
+import { EDGE_PUNCTUATION, knownNamesIn, NameHints, ONLY_NUMBERS, POSSESSIVE_END, PRONOUN } from "../_shared/names.ts";
+import { NAMES, TITLE_CANDIDATES } from "../_shared/constants.ts";
 
 // Candidate phrases that might name an entity. Recall matters more than
 // precision here: Jev decides which candidates are names, and it can only
@@ -14,8 +15,6 @@ import { EDGE_PUNCTUATION, knownNamesIn, MAX_LENGTH, NameHints, ONLY_NUMBERS, PO
 // its halves are already offered on their own. Names already in `entities`
 // that the title contains come first, with their exact extent.
 
-const MAX_CANDIDATES = 20;
-const MIN_LENGTH = 2;
 const LEADING_WORDS =
   /^(?:(?:a|an|the|my|your|our|their|its|his|her|some|this|that|these|those|all|every|no|new|how|why|what|one|two|three|four|five|six|seven|eight|nine|ten)\s+)+/i;
 const SPLIT_AT =
@@ -24,7 +23,6 @@ const CAPITALISED_RUN = /(?:[A-Z0-9][\w.+’'-]*|[a-z]+[A-Z][\w.+-]*)(?:\s+(?:[A
 const LEADING_NUMBER = /^(?:[\d$€£][\w.,$€£%]*\s+)+/;
 const CAMEL_CASE_WORD = /\b[A-Za-z]*[a-z][A-Z][\w]*\b/g;
 const INNER_POSSESSIVE = /['’]s?\s/;
-const WINDOW_MIN_RUN_WORDS = 3;
 
 export function clean(phrase: string): string {
   return phrase
@@ -38,7 +36,7 @@ export function clean(phrase: string): string {
 
 function pairs(run: string): string[] {
   const words = run.split(/\s+/);
-  if (words.length < WINDOW_MIN_RUN_WORDS) return [];
+  if (words.length < TITLE_CANDIDATES.WINDOW_MIN_RUN_WORDS) return [];
   return words.slice(1).map((word, i) => `${words[i]} ${word}`);
 }
 
@@ -57,11 +55,11 @@ export function candidates(title: string, hints: Partial<NameHints> = {}): strin
   for (const phrase of [...knownNamesIn(title, hints), ...raw.map(clean)]) {
     const key = phrase.toLowerCase();
     const unbalanced = (phrase.match(/\(/g)?.length ?? 0) !== (phrase.match(/\)/g)?.length ?? 0);
-    if (phrase.length < MIN_LENGTH || phrase.length > MAX_LENGTH || ONLY_NUMBERS.test(phrase) || PRONOUN.test(phrase) || unbalanced || seen.has(key)) {
+    if (phrase.length < TITLE_CANDIDATES.MIN_LENGTH || phrase.length > NAMES.MAX_LENGTH || ONLY_NUMBERS.test(phrase) || PRONOUN.test(phrase) || unbalanced || seen.has(key)) {
       continue;
     }
     seen.add(key);
     out.push(phrase);
   }
-  return out.slice(0, MAX_CANDIDATES);
+  return out.slice(0, TITLE_CANDIDATES.MAX_CANDIDATES);
 }

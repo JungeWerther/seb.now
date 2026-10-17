@@ -1,18 +1,17 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { extractTag, mapSeries, pastDate, present, previewImage, serveIngest, upsertLink } from "../_shared/ingest.ts";
+import { TECHCRUNCH } from "../_shared/constants.ts";
 
 // TechCrunch's public RSS feed - no auth. Regex-extracted rather than a
 // full XML parser: the feed's <item>/<title>/<link> shape is stable and a
 // dependency-free extractor is a smaller surface than a full XML parser in
 // this Deno edge runtime for a shape this simple.
-const FEED_URL = "https://techcrunch.com/feed/";
-const ITEMS_LIMIT = 20;
 
 type Item = { title: string; link: string; published: string | null };
 
 Deno.serve(serveIngest(async (db, report) => {
-  const itemBlocks = (await (await fetch(FEED_URL)).text()).match(/<item>[\s\S]*?<\/item>/g) ?? [];
-  const items = itemBlocks.slice(0, ITEMS_LIMIT)
+  const itemBlocks = (await (await fetch(TECHCRUNCH.FEED_URL)).text()).match(/<item>[\s\S]*?<\/item>/g) ?? [];
+  const items = itemBlocks.slice(0, TECHCRUNCH.ITEMS_LIMIT)
     .map((block) => ({
       title: extractTag(block, "title"),
       link: extractTag(block, "link"),

@@ -1,12 +1,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { decodeEntities, enabledSources, mapSeries, present, previewImage, serveIngest, upsertLink } from "../_shared/ingest.ts";
+import { FEDIVERSE } from "../_shared/constants.ts";
 
 // Public Mastodon REST API - no auth needed for public statuses. Not raw
 // ActivityPub outbox parsing: Mastodon's JSON API is simpler and stable,
 // and every account we pull from happens to be Mastodon. The accounts are
 // the enabled mastodon_account rows in sources, as handle@instance.
 
-const POSTS_PER_ACCOUNT = 10;
 
 type Status = {
   id: string;
@@ -59,7 +59,7 @@ async function latestPosts(handle: string, instance: string) {
   if (!lookupRes.ok) throw new Error(`lookup ${lookupRes.status}`);
   const account = await lookupRes.json();
   const statusesRes = await fetch(
-    `https://${instance}/api/v1/accounts/${account.id}/statuses?exclude_replies=true&exclude_reblogs=true&limit=${POSTS_PER_ACCOUNT}`,
+    `https://${instance}/api/v1/accounts/${account.id}/statuses?exclude_replies=true&exclude_reblogs=true&limit=${FEDIVERSE.POSTS_PER_ACCOUNT}`,
   );
   if (!statusesRes.ok) throw new Error(`statuses ${statusesRes.status}`);
   return { displayName: account.display_name || handle, statuses: await statusesRes.json() };

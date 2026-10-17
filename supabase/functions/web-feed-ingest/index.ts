@@ -11,16 +11,12 @@ import {
   type Report,
   serveIngest,
   upsertLink,
-  USER_AGENT,
 } from "../_shared/ingest.ts";
+import { INGEST, WEB_FEED } from "../_shared/constants.ts";
 
 // Any site's own RSS 2.0 or Atom feed: the enabled web_feed rows in sources,
 // whose identifier is the feed URL. Regex-extracted like techcrunch-ingest;
 // both formats keep each post in a flat <item>/<entry> block.
-const ITEMS_PER_FEED = 10;
-const FEED_FETCH_TIMEOUT_MS = 10000;
-const DESCRIPTION_MAX_CHARS = 500;
-const DESCRIPTION_MIN_CHARS = 20;
 
 // WordPress appends this to every excerpt; it says nothing about the post.
 const WORDPRESS_FOOTER = /(?:The post .+ appeared first on .+|L[’']article .+ est apparu en premier sur .+)$/s;
@@ -54,9 +50,9 @@ function plainDescription(raw: string | null): string | null {
     .replace(/\s+/g, " ")
     .replace(WORDPRESS_FOOTER, "")
     .trim();
-  if (text.length < DESCRIPTION_MIN_CHARS) return null;
-  if (text.length <= DESCRIPTION_MAX_CHARS) return text;
-  const cut = text.slice(0, DESCRIPTION_MAX_CHARS - 1);
+  if (text.length < WEB_FEED.DESCRIPTION_MIN_CHARS) return null;
+  if (text.length <= WEB_FEED.DESCRIPTION_MAX_CHARS) return text;
+  const cut = text.slice(0, WEB_FEED.DESCRIPTION_MAX_CHARS - 1);
   return `${cut.slice(0, cut.lastIndexOf(" ") > 0 ? cut.lastIndexOf(" ") : cut.length)}…`;
 }
 
@@ -81,15 +77,15 @@ function parseFeed(xml: string, feedUrl: string): Item[] {
       };
     })
     .filter((item): item is Item => !!item.title && !!item.url)
-    .slice(0, ITEMS_PER_FEED);
+    .slice(0, WEB_FEED.ITEMS_PER_FEED);
 }
 
 // The feed's items, or none when it can't be read (reported).
 async function readFeed(feedUrl: string, report: Report): Promise<Item[]> {
   try {
     const res = await fetch(feedUrl, {
-      headers: { "User-Agent": USER_AGENT, Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml" },
-      signal: AbortSignal.timeout(FEED_FETCH_TIMEOUT_MS),
+      headers: { "User-Agent": INGEST.USER_AGENT, Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml" },
+      signal: AbortSignal.timeout(WEB_FEED.FEED_FETCH_TIMEOUT_MS),
     });
     if (!res.ok) {
       report({ feed: feedUrl, status: res.status });

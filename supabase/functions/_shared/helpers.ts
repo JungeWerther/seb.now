@@ -1,12 +1,18 @@
-// Small helpers any function can use: a JSON response, the null filter, and
+// Small helpers any function can use: JSON responses, the null filter, and
 // `reporting`, which turns a step's failure into a reported null.
 
 export type Row = Record<string, unknown>;
 export type Report = (error: Row) => void;
 
-export function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body, null, 2), { status, headers: { "Content-Type": "application/json" } });
+// A JSON responder with these extra headers, indented by `indent` spaces (none
+// when left out): each function declares the one its clients get.
+export function jsonResponses({ headers = {}, indent }: { headers?: Record<string, string>; indent?: number } = {}) {
+  return (body: unknown, status = 200, contentType = "application/json"): Response =>
+    new Response(JSON.stringify(body, null, indent), { status, headers: { ...headers, "Content-Type": contentType } });
 }
+
+// Indented, for the cron-run functions whose answers people read.
+export const json = jsonResponses({ indent: 2 });
 
 export const isPresent = <T>(value: T | null): value is T => value !== null;
 

@@ -1232,6 +1232,16 @@ This does not extend to every literal anywhere (`range(0, n)`, `.unsqueeze(0)`,
 a `torch.manual_seed(0)` reproducibility seed) — only to values instantiating
 a class where the choice of value is itself a design decision worth naming.
 
+The Edge Functions have the same rule in `supabase/functions/_shared/constants.ts`:
+every metaparameter (model ids, limits, thresholds, timeouts, secret names,
+external services' addresses) lives there in a frozen namespace per function
+(`TOPIC_LABEL.LINKS_PER_RUN`, `JEV.MODEL`, shared ones like `JEV`/`INGEST` once),
+and `ENV` is the only place the environment is read (lazy getters, so importing
+it reads nothing). `tests/test_edge_constants.py` fails on a top-level
+`UPPER_CASE` const or a `Deno.env.get` anywhere else; a regex literal is exempt,
+and protocol tables, Jev prompt schemas, sentinel option keys and values derived
+at boot go in its `ALLOWED` with a one-line reason (stale entries fail too).
+
 ## Data lives in tables, not module-level collections
 
 A list, tuple, set or dict written out at module scope is usually *data*

@@ -1,6 +1,6 @@
 import { DeclaredName, sentenceAround, sentences } from "./page.ts";
+import { NAMES } from "./constants.ts";
 
-export const MAX_LENGTH = 60;
 export const PRONOUN = /^(?:i|me|you|he|him|she|her|it|its|we|us|they|them|this|that|these|those|who|what|someone|something|everyone|everything)$/i;
 export const EDGE_PUNCTUATION = /^[\s"'“”‘’(\[–—:,;.!?…-]+|[\s"'“”‘’)\]–—:,;.!?…-]+$/g;
 export const POSSESSIVE_END = /['’]s?$/;
@@ -37,15 +37,6 @@ export const ONLY_NUMBERS = /^[\d\s.,$€£%+-]+$/;
 // first appears in. event-extract also uses it on one entry of a guide at a
 // time, to propose that entry's venue.
 
-const PAGE_CANDIDATES = 80;
-const KNOWN_CANDIDATES = 25;
-const PAGE_MIN_LENGTH = 3;
-const CAP_RATE_NAME = 0.5;
-// Below this, a capitalised word at a sentence start is never a name's first
-// word ("After", "Pour"); above, it sometimes is ("New York").
-const NAME_START_RATE = 0.1;
-const PREFIX_CAP_RATE = 0.25;
-const MAX_PARTICLES = 2;
 // Grammar, not data: the little words that sit inside names in the languages
 // the feed carries.
 const PARTICLES = new Set(["de", "du", "des", "la", "le", "les", "et", "of", "the", "and", "for", "von", "van", "der", "den", "di", "del", "da", "y"]);
@@ -177,7 +168,7 @@ function knownIndex(known: string[] = []): KnownIndex {
   const byFirst: KnownIndex = new Map();
   for (const name of known) {
     const matches = [...name.matchAll(TOKEN)].map((m) => m[0]);
-    if (!matches.length || name.length < PAGE_MIN_LENGTH) continue;
+    if (!matches.length || name.length < NAMES.PAGE_MIN_LENGTH) continue;
     const words = matches.map((w) => fold(w).replace(FOLDED_ELIDED, ""));
     const list = byFirst.get(words[0]) ?? [];
     list.push({ words, caps: matches.map(isCapitalised) });
@@ -196,7 +187,7 @@ function knownIn(sentencesOf: Token[][], byFirst: KnownIndex, hints: Partial<Nam
         if (!span.some((s) => s.cap) || span.some((s, j) => j > 0 && name.caps[j] && !s.cap)) continue;
         if (span.length === 1) {
           const rate = hints.caseRates?.get(t.key);
-          const nameLike = rate === undefined || rate >= CAP_RATE_NAME;
+          const nameLike = rate === undefined || rate >= NAMES.CAP_RATE_NAME;
           if (!(nameLike || (caseIsInformative && !t.opens && t.cap))) continue;
         }
         found.push({ tokens: span, sentence: tokens });
@@ -225,7 +216,7 @@ export function pageCandidates(
   sections: { heading: string | null; text: string }[],
   title: string,
   hints: Partial<NameHints> = {},
-  max = PAGE_CANDIDATES,
+  max: number = NAMES.PAGE_CANDIDATES,
 ): PagePhrase[] {
   const inTitle = title.toLowerCase();
   const calendar = calendarWords(hints.lang?.split("-")[0] ?? null);
@@ -238,7 +229,7 @@ export function pageCandidates(
     const surface = cleanSurface(text.slice(from, to));
     const key = surface.toLowerCase();
     const words = [...surface.matchAll(WORD)].map((m) => fold(m[0]));
-    if (surface.length < PAGE_MIN_LENGTH || surface.length > MAX_LENGTH || ONLY_NUMBERS.test(surface) || PRONOUN.test(surface)) return;
+    if (surface.length < NAMES.PAGE_MIN_LENGTH || surface.length > NAMES.MAX_LENGTH || ONLY_NUMBERS.test(surface) || PRONOUN.test(surface)) return;
     if (inTitle.includes(key) || !words.length || words.every((w) => calendar.has(w) || PARTICLES.has(w))) return;
     const entry = found.get(key);
     if (entry) {
@@ -257,10 +248,10 @@ export function pageCandidates(
     const end = run[run.length - 1].end;
     // Other common words capitalised inside the run mean a title-case line
     // ("Meet Your Seoul"), where a capital at the front says nothing either way.
-    const titleCase = run.slice(1).some((t) => t.cap && (rateOf(t) ?? 1) < CAP_RATE_NAME);
-    const commonFront = rate !== undefined && rate < CAP_RATE_NAME;
-    if (!(first.opens && rate !== undefined && rate < NAME_START_RATE && !titleCase)) {
-      offer(s, text, first.start, end, !first.opens || run.length > 1 || (rate ?? 0) >= CAP_RATE_NAME, "run");
+    const titleCase = run.slice(1).some((t) => t.cap && (rateOf(t) ?? 1) < NAMES.CAP_RATE_NAME);
+    const commonFront = rate !== undefined && rate < NAMES.CAP_RATE_NAME;
+    if (!(first.opens && rate !== undefined && rate < NAMES.NAME_START_RATE && !titleCase)) {
+      offer(s, text, first.start, end, !first.opens || run.length > 1 || (rate ?? 0) >= NAMES.CAP_RATE_NAME, "run");
     }
     // The run without a front word that is lowercase mid-sentence ("The", "Dès"), or unseen at a sentence start.
     if (run.length > 1 && (rate === undefined ? first.opens : commonFront)) {
@@ -282,8 +273,8 @@ export function pageCandidates(
     }
     // With the lowercase word in front that often opens a name ("musée d'Orsay", "galerie Perrotin").
     let p = i - 1;
-    while (p >= 0 && i - p <= MAX_PARTICLES && !tokens[p].cap && PARTICLES.has(tokens[p].key) && joins(tokens[p], tokens[p + 1])) p--;
-    if (p >= 0 && !tokens[p].cap && !tokens[p].number && (rateOf(tokens[p]) ?? 0) >= PREFIX_CAP_RATE && joins(tokens[p], tokens[p + 1])) {
+    while (p >= 0 && i - p <= NAMES.MAX_PARTICLES && !tokens[p].cap && PARTICLES.has(tokens[p].key) && joins(tokens[p], tokens[p + 1])) p--;
+    if (p >= 0 && !tokens[p].cap && !tokens[p].number && (rateOf(tokens[p]) ?? 0) >= NAMES.PREFIX_CAP_RATE && joins(tokens[p], tokens[p + 1])) {
       const head = trimmed[0];
       offer(s, text, tokens[p].start, head[head.length - 1].end, true, "run");
     }
@@ -305,7 +296,7 @@ export function pageCandidates(
         let last = i;
         for (let j = i + 1; j < tokens.length;) {
           let k = j;
-          while (k < tokens.length && k - j < MAX_PARTICLES && !tokens[k].cap && PARTICLES.has(tokens[k].key) && joins(tokens[k - 1], tokens[k])) k++;
+          while (k < tokens.length && k - j < NAMES.MAX_PARTICLES && !tokens[k].cap && PARTICLES.has(tokens[k].key) && joins(tokens[k - 1], tokens[k])) k++;
           if (k < tokens.length && (tokens[k].cap || (tokens[k].number && k === j)) && joins(tokens[k - 1], tokens[k])) {
             last = k;
             j = k + 1;
@@ -339,7 +330,7 @@ export function pageCandidates(
   for (const name of hints.declared ?? []) {
     if (taken.size >= max) break;
     const key = name.name.toLowerCase();
-    if (inTitle.includes(key) || name.name.length > MAX_LENGTH) continue;
+    if (inTitle.includes(key) || name.name.length > NAMES.MAX_LENGTH) continue;
     const entry = found.get(key) ?? {
       surface: name.name,
       count: 1,
@@ -351,7 +342,7 @@ export function pageCandidates(
     taken.add(entry);
   }
   const all = [...found.values()].filter((f) => f.midSentence).sort((a, b) => b.count - a.count);
-  for (const known of all.filter((f) => f.source === "known").slice(0, KNOWN_CANDIDATES)) {
+  for (const known of all.filter((f) => f.source === "known").slice(0, NAMES.KNOWN_CANDIDATES)) {
     if (taken.size >= max) break;
     taken.add(known);
   }
