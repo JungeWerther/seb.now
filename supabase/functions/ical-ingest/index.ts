@@ -1,5 +1,16 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import {
+  enabledSources,
+  httpUrl,
+  mapSeries,
+  present,
+  previewImage,
+  type Report,
+  serveIngest,
+  upsertLink,
+  USER_AGENT,
+} from "../_shared/ingest.ts";
 import { CalendarEvent, lastDay, parseCalendar } from "../_shared/ical.ts";
 
 // Public event calendars (iCalendar .ics): the enabled ical_feed rows in
@@ -12,30 +23,18 @@ const EVENT_ZONE = "Europe/Paris"; // link_events dates are wall-clock dates her
 const HORIZON_DAYS = 45;
 const EVENTS_PER_FEED = 40;
 const FEED_FETCH_TIMEOUT_MS = 15000;
-const IMAGE_FETCH_TIMEOUT_MS = 5000;
 const IMAGE_CONCURRENCY = 6;
 const DESCRIPTION_MAX_CHARS = 500;
 const DESCRIPTION_MIN_CHARS = 20;
 const EVIDENCE_MAX_CHARS = 500;
 const VENUE_MAX_CHARS = 300;
 const TITLE_MAX_CHARS = 300;
-const USER_AGENT = "seb.now feed reader (+https://seb.now)";
 
 // Luma writes the event page and its address into DESCRIPTION; neither is
 // part of what the event is about.
 const LUMA_PAGE_LINE = /^Get up-to-date information at:\s*(https?:\/\/\S+)\s*/i;
 const LUMA_ADDRESS_BLOCK = /^Address:\n(?:.+\n)*?(?:\n|$)/im;
 const LUMA_HOSTED_BY = /\n*Hosted by [^\n]*$/i;
-
-function httpUrl(raw: string | null | undefined, base?: string): string | null {
-  if (!raw) return null;
-  try {
-    const url = new URL(raw.trim(), base);
-    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
-  } catch {
-    return null;
-  }
-}
 
 function eventPage(event: CalendarEvent): string | null {
   return event.url ?? httpUrl(event.description?.match(LUMA_PAGE_LINE)?.[1]);
@@ -86,28 +85,6 @@ function upcoming(events: CalendarEvent[]): CalendarEvent[] {
     .slice(0, EVENTS_PER_FEED);
 }
 
-function metaContent(html: string, key: string): string | undefined {
-  return (
-    html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${key}["'][^>]+content=["']([^"']+)["']`, "i"))?.[1] ??
-    html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${key}["']`, "i"))?.[1]
-  );
-}
-
-async function scrapePreviewImage(pageUrl: string): Promise<string | null> {
-  try {
-    const res = await fetch(pageUrl, {
-      headers: { "User-Agent": USER_AGENT },
-      signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
-    });
-    if (!res.ok || !(res.headers.get("content-type") ?? "").includes("text/html")) return null;
-    const html = await res.text();
-    const declared = metaContent(html, "og:image") ?? metaContent(html, "twitter:image");
-    return declared ? httpUrl(declared.replace(/&amp;/g, "&"), pageUrl) : null;
-  } catch {
-    return null;
-  }
-}
-
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
   let next = 0;
@@ -120,94 +97,80 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return out;
 }
 
-Deno.serve(async (_req: Request) => {
-  const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-
-  const errors: unknown[] = [];
-  const { data: sources, error: sourcesError } = await db
-    .from("sources")
-    .select("id, identifier")
-    .eq("kind", "ical_feed")
-    .eq("enabled", true);
-  if (sourcesError) errors.push({ sources: sourcesError.message });
-
-  // The same event can be on several calendars (a community's and the city's).
-  const seen = new Set<string>();
-  let fetched = 0;
-  let upserted = 0;
-  let withImage = 0;
-
-  for (const { id: sourceId, identifier: feedUrl } of sources ?? []) {
-    let events: { event: CalendarEvent; url: string }[];
-    try {
-      const res = await fetch(feedUrl, {
-        headers: { "User-Agent": USER_AGENT, Accept: "text/calendar, */*" },
-        signal: AbortSignal.timeout(FEED_FETCH_TIMEOUT_MS),
-      });
-      if (!res.ok) {
-        errors.push({ feed: feedUrl, status: res.status });
-        continue;
-      }
-      events = upcoming(parseCalendar(await res.text(), EVENT_ZONE))
-        .map((event) => ({ event, url: eventPage(event) }))
-        .filter((e): e is { event: CalendarEvent; url: string } => !!e.url && !seen.has(e.url));
-    } catch (e) {
-      errors.push({ feed: feedUrl, error: e instanceof Error ? e.message : String(e) });
-      continue;
+// Upcoming events with a page of their own, or none when the calendar can't be
+// read (reported).
+async function readCalendar(feedUrl: string, report: Report): Promise<{ event: CalendarEvent; url: string }[]> {
+  try {
+    const res = await fetch(feedUrl, {
+      headers: { "User-Agent": USER_AGENT, Accept: "text/calendar, */*" },
+      signal: AbortSignal.timeout(FEED_FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      report({ feed: feedUrl, status: res.status });
+      return [];
     }
-    for (const { url } of events) seen.add(url);
-    fetched += events.length;
+    return upcoming(parseCalendar(await res.text(), EVENT_ZONE))
+      .map((event) => ({ event, url: eventPage(event) }))
+      .filter((e): e is { event: CalendarEvent; url: string } => !!e.url);
+  } catch (e) {
+    report({ feed: feedUrl, error: e instanceof Error ? e.message : String(e) });
+    return [];
+  }
+}
 
-    const images = await mapLimit(events, IMAGE_CONCURRENCY, ({ url }) => scrapePreviewImage(url));
-    for (const [i, { event, url }] of events.entries()) {
-      const description = plainDescription(event.description);
-      // Omitted rather than null when missing, so a flaky fetch keeps an earlier image.
-      const row = {
+// The calendar is the authority on its event's dates: replace whatever an
+// earlier run or the page reading found, but never hand labels.
+async function recordDates(db: SupabaseClient, linkId: string, event: CalendarEvent, url: string, report: Report) {
+  const end = lastDay(event);
+  const { error: deleteError } = await db.from("link_events").delete().eq("link_id", linkId).neq("labeled_by", "manual");
+  if (deleteError) return report({ url, error: deleteError.message });
+  const { error: eventError } = await db.from("link_events").insert({
+    link_id: linkId,
+    name: null,
+    kind: "other",
+    starts_on: event.start.date,
+    ends_on: end === event.start.date ? null : end,
+    start_time: event.start.time,
+    venue_name: venueName(event.location),
+    evidence: evidence(event),
+    p: 1,
+    labeled_by: "ical",
+  });
+  if (eventError) report({ url, error: eventError.message });
+  const { error: markError } = await db.from("link_enrichment").upsert({ link_id: linkId, events_at: new Date().toISOString() });
+  if (markError) report({ url, error: markError.message });
+}
+
+Deno.serve(serveIngest(async (db, report) => {
+  const sources = await enabledSources(db, "ical_feed", report);
+  // The same event can be on several calendars (a community's and the city's),
+  // so calendars are read in order and an event is taken from the first.
+  const seen = new Set<string>();
+  const feeds = await mapSeries(sources, async ({ id: sourceId, identifier: feedUrl }) => {
+    const events = (await readCalendar(feedUrl, report)).filter(({ url }) => !seen.has(url));
+    events.forEach(({ url }) => seen.add(url));
+
+    const images = await mapLimit(events, IMAGE_CONCURRENCY, ({ url }) => previewImage(url));
+    const linkIds = await mapSeries(events, async ({ event, url }, i) => {
+      const linkId = await upsertLink(db, {
         url,
         title: cut(event.summary, TITLE_MAX_CHARS),
         origin: "feed",
         submitted_by: null,
         // Which followed calendar listed it; the database tags the link with it.
         source_id: sourceId,
-        ...(images[i] ? { image_url: images[i] } : {}),
-        ...(description ? { description } : {}),
-      };
-      const { data: link, error } = await db.from("links").upsert(row, { onConflict: "url" }).select("id").single();
-      if (error || !link) {
-        errors.push({ url, error: error?.message ?? "no row" });
-        continue;
-      }
-      upserted++;
-      if (images[i]) withImage++;
+        ...present({ image_url: images[i], description: plainDescription(event.description) }),
+      }, { url }, report);
+      if (linkId) await recordDates(db, linkId, event, url, report);
+      return linkId;
+    });
+    return {
+      fetched: events.length,
+      upserted: linkIds.filter(Boolean).length,
+      withImage: linkIds.filter((id, i) => id && images[i]).length,
+    };
+  });
 
-      // The calendar is the authority on its event's dates: replace whatever
-      // an earlier run or the page reading found, but never hand labels.
-      const end = lastDay(event);
-      const { error: deleteError } = await db.from("link_events").delete().eq("link_id", link.id).neq("labeled_by", "manual");
-      if (deleteError) {
-        errors.push({ url, error: deleteError.message });
-        continue;
-      }
-      const { error: eventError } = await db.from("link_events").insert({
-        link_id: link.id,
-        name: null,
-        kind: "other",
-        starts_on: event.start.date,
-        ends_on: end === event.start.date ? null : end,
-        start_time: event.start.time,
-        venue_name: venueName(event.location),
-        evidence: evidence(event),
-        p: 1,
-        labeled_by: "ical",
-      });
-      if (eventError) errors.push({ url, error: eventError.message });
-      const { error: markError } = await db.from("link_enrichment").upsert({ link_id: link.id, events_at: new Date().toISOString() });
-      if (markError) errors.push({ url, error: markError.message });
-    }
-  }
-
-  return new Response(
-    JSON.stringify({ feeds: sources?.length ?? 0, fetched, upserted, withImage, errors }, null, 2),
-    { headers: { "Content-Type": "application/json" } },
-  );
-});
+  const total = (key: keyof (typeof feeds)[number]) => feeds.reduce((sum, feed) => sum + feed[key], 0);
+  return { feeds: sources.length, fetched: total("fetched"), upserted: total("upserted"), withImage: total("withImage") };
+}));
