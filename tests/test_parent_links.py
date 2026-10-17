@@ -8,6 +8,12 @@ so the tree can be walked up as well as down. The line never shows the page's
 raw id or path (`culture.styles.post_1945_architecture_design.brutalist`); the
 parent link is how the hierarchy shows. A page with no parent goes in
 `FLAT_PAGES` with a one-line reason; stale entries fail.
+
+A page that is itself a node of a tree (its parent link opens the same kind of
+page it is: a kind's parent is a kind, a topic's a topic) also lists its
+children, exactly one level below it, in its Kinds section via
+`showChildKinds(path, nodes, chipKind)`, passing its own `path`; the component
+itself keeps only the nodes one level below it, so no caller can list more.
 """
 
 import re
@@ -91,6 +97,61 @@ def test_meta_lines_show_no_raw_id() -> None:
             ]
     assert not leaks, "These meta lines show a page's raw id or path:\n" + "\n".join(
         leaks
+    )
+
+
+def _route(source: str, setter: str) -> str | None:
+    match = re.search(r"anchor\.href = `/(\w+)/", _function_body(source, setter))
+    return match and match.group(1)
+
+
+def _tree_pages(source: str) -> list[str]:
+    """The pages whose parent opens a page like their own (a kind's kind)."""
+    pages = []
+    for page in _page_functions(source):
+        body = _function_body(source, page)
+        own = re.search(r"enterFocus\(`/(\w+)/", body)
+        setters = {
+            re.split(r",\s*", link)[1]
+            for link in _calls(body, "parentLink")
+            if link.count(",") >= 2
+        }
+        if own and any(_route(source, setter) == own.group(1) for setter in setters):
+            pages.append(page)
+    return pages
+
+
+def test_child_kinds_are_one_level_below_the_page() -> None:
+    source = _source()
+    assert re.search(
+        r"\.filter\(\(\{ id \}\) => isChildPath\(path\)\(id\)\)",
+        _function_body(source, "showChildKinds"),
+    ), "showChildKinds no longer keeps only the nodes one level below the page's path"
+    one_level = re.search(
+        r"const isChildPath = \(parent\) => \(child\) =>([^;]+);", source
+    )
+    assert one_level and 'split(".").length + 1' in one_level.group(1), (
+        "isChildPath no longer means exactly one level down"
+    )
+
+
+def test_every_tree_page_lists_its_children() -> None:
+    source = _source()
+    pages = _tree_pages(source)
+    assert {"focusKind", "focusTopic"} <= set(pages), (
+        f"tree pages not recognised: {pages}"
+    )
+    missing = [
+        page
+        for page in pages
+        if not any(
+            re.match(r"\s*path\s*,", call)
+            for call in _calls(_function_body(source, page), "showChildKinds")
+        )
+    ]
+    assert not missing, (
+        "These tree pages don't list their children: call showChildKinds(path, nodes, chipKind) "
+        "with the page's own path:\n" + "\n".join(missing)
     )
 
 

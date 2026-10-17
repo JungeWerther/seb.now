@@ -871,7 +871,8 @@ line), shown in the kind band (`showKindHead`).
 **A topic's own page.** Every topic has a page at `seb.now/t/<path>` (its ltree
 id, `ai.agents`), on the same focused view (`focusTopic`): the band shows
 `#focus-topic` (name; "a kind of" the topic one level up, a link to that page;
-post count and the topic's `description`) and the
+post count and the topic's `description`), then its direct subtopics as chips in the
+Kinds section (`public.topic_children`) and the
 list is every link labelled with the topic or one of its children, newest
 first, from `public.topic_links(topic, max_results, page_offset)` (security
 invoker, `topic` passed as text and cast to `ltree`; the count comes from
@@ -895,7 +896,10 @@ entity's or indexical's title is drawn by one function: its parent first (a
 `parentLink` to the kind or topic it sits under, or a plain phrase at a root),
 then its facts, joined by " · ", never its raw id or path.
 `tests/test_parent_links.py` enforces all three; pages with no parent (a post,
-a term, a sort order) are in its `FLAT_PAGES`.
+a term, a sort order) are in its `FLAT_PAGES`. A page that is a node of
+a tree (a kind, a topic) also lists its children one level below it in its
+Kinds section through `showChildKinds(path, nodes, chipKind)`, which itself keeps only the
+nodes one level below `path`; the same test enforces both.
 
 **A kind's own page.** Every entity kind has a page at `seb.now/k/<path>` (its
 path in `public.kinds`, `entity.agent.org.company`), on the same focused view
