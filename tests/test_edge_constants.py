@@ -46,6 +46,7 @@ ALLOWED = {
     ("topic-label/index.ts", "NONE"): "sentinel option key of the Jev question",
     ("topic-label/index.ts", "ROOT"): "sentinel for the taxonomy's root node",
     ("entity-extract/index.ts", "NEW_ENTITY"): "sentinel option key of the Jev question",
+    ("entity-extract/index.ts", "UNIQUE_VIOLATION"): "Postgres error code, fixed by the protocol",
     ("entity-extract/index.ts", "SAME_AS_PREFIX"): "option-key prefix the code parses back",
     ("entity-extract/index.ts", "MENTION_OPTIONS"): "a Jev question's options (prompt schema)",
     ("entity-extract/index.ts", "KIND_OPTIONS"): "a Jev question's options (prompt schema)",

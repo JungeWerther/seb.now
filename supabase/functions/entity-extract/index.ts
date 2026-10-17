@@ -58,6 +58,7 @@ import { ENTITY_EXTRACT, JEV, PAGE } from "../_shared/constants.ts";
 // "text": true adds the page text as read.
 
 const NEW_ENTITY = "new";
+const UNIQUE_VIOLATION = "23505";
 const SAME_AS_PREFIX = "same_as_";
 
 const MENTION_OPTIONS = {
@@ -412,9 +413,11 @@ async function pagePhrases(db: SupabaseClient, link: Link, page: PageContent, kn
 }
 
 // The text a page pass reads, whole: `pageText` is capped for storage, but the
-// candidates come from every section, so the span rule must see them all.
+// candidates come from every section, so the span rule must see them all. The
+// names the page declares in its structured data each stand on their own line:
+// a declared name is a reference of its own, never a fragment.
 function readText(link: Link, page: PageContent): string {
-  return [link.title, ...sectionTexts(page)].join("\n");
+  return [link.title, ...sectionTexts(page), ...page.declared.map((d) => d.name)].join("\n");
 }
 
 // `titleNames` are the title pass's names when they weren't saved (a dry run);
@@ -513,11 +516,15 @@ async function stageDrops(db: SupabaseClient, batch: string, results: Awaited<Re
   if (error) throw new Error(error.message);
   const seen = new Set((existing as { link_id: string; entity_id: string }[]).map((r) => `${r.link_id} ${r.entity_id}`));
   const fresh = rows.filter((r) => !seen.has(`${r.link_id} ${r.entity_id}`));
-  if (fresh.length) {
-    const { error: insertError } = await db.from("entity_edits").insert(fresh);
-    if (insertError) throw new Error(insertError.message);
+  // One row at a time, so a drop another request staged meanwhile (the unique
+  // index on staged drops) skips that row instead of failing the batch.
+  let staged = 0;
+  for (const row of fresh) {
+    const { error: insertError } = await db.from("entity_edits").insert(row);
+    if (insertError && insertError.code !== UNIQUE_VIOLATION) throw new Error(insertError.message);
+    if (!insertError) staged++;
   }
-  return fresh.length;
+  return staged;
 }
 
 // Pages are fetched FETCH_CONCURRENCY at a time, ahead of the one-at-a-time Jev work.
