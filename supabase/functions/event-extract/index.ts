@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
+import { isPresent, reporting, serveJev } from "../_shared/jev_function.ts";
+import { pool } from "../_shared/pool.ts";
 import { nameHints } from "../_shared/hints.ts";
 import { NameHints, pageCandidates } from "../_shared/names.ts";
 import { fetchPage, JsonLdEvent, PageContent, pageText, parseSections, Section } from "../_shared/page.ts";
@@ -33,7 +35,6 @@ import { DateCandidate, dateCandidates, Source } from "./dates.ts";
 // POST {"link_ids": [...]} those links. "dry_run": true reports without writing.
 
 const MODEL = "jev-1.13.0";
-const TYPESAFE_KEY_SECRET = "typesafe-ai-token";
 const LINKS_PER_RUN = 10;
 const MAX_LINK_IDS = 50;
 const CONCURRENCY = 4;
@@ -441,48 +442,20 @@ async function unprocessedLinkIds(db: SupabaseClient): Promise<string[]> {
   return (data as { link_id: string }[]).map((r) => r.link_id);
 }
 
-Deno.serve(async (req: Request) => {
-  const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const body = await req.json().catch(() => ({}));
-  const dryRun = body?.dry_run === true;
-  const given: unknown = body?.link_ids;
-  if (given !== undefined && (!Array.isArray(given) || given.length > MAX_LINK_IDS || !given.every((i) => typeof i === "string"))) {
-    return new Response(JSON.stringify({ error: `link_ids must be at most ${MAX_LINK_IDS} ids` }), { status: 400 });
-  }
-  const { data: apiKey, error: keyError } = await db.rpc("get_vault_secret", { secret_name: TYPESAFE_KEY_SECRET });
-  if (keyError || !apiKey) {
-    return new Response(JSON.stringify({ error: `no ${TYPESAFE_KEY_SECRET} in Vault` }), { status: 500 });
-  }
-  const jev = new JevClient(apiKey, MODEL, { db, fn: "event-extract", dryRun });
-
-  const ids = (given as string[] | undefined) ?? await unprocessedLinkIds(db);
-  const { data: links, error } = await db.from("links").select("id, title, url, description, created_at").in("id", ids);
+Deno.serve(serveJev({ fn: "event-extract", model: MODEL, maxLinkIds: MAX_LINK_IDS }, async ({ db, jev, ids, dryRun, report }) => {
+  const { data: links, error } = await db
+    .from("links")
+    .select("id, title, url, description, created_at")
+    .in("id", ids ?? await unprocessedLinkIds(db));
   if (error) throw new Error(error.message);
 
-  const results: Awaited<ReturnType<typeof processLink>>[] = [];
-  const errors: unknown[] = [];
-  const queue = [...(links as Link[])];
-  await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
-    for (let link = queue.shift(); link; link = queue.shift()) {
-      try {
-        results.push(await processLink(db, jev, link, dryRun));
-      } catch (e) {
-        errors.push({ link_id: link.id, error: String(e) });
-      }
-    }
-  }));
-  const events = results.flatMap((r) => r.events);
-  return new Response(
-    JSON.stringify({
-      model: MODEL,
-      dry_run: dryRun,
-      links: results.length,
-      jev_calls: results.filter((r) => r.page !== null).length,
-      events: events.length,
-      input_tokens: results.reduce((s, r) => s + r.inputTokens, 0),
-      errors,
-      results,
-    }, null, 2),
-    { headers: { "Content-Type": "application/json" } },
-  );
-});
+  const process = reporting(report, (link: Link) => ({ link_id: link.id }), (link) => processLink(db, jev, link, dryRun));
+  const results = (await pool(links as Link[], CONCURRENCY, process)).filter(isPresent);
+  return {
+    links: results.length,
+    jev_calls: results.filter((r) => r.page !== null).length,
+    events: results.flatMap((r) => r.events).length,
+    input_tokens: results.reduce((s, r) => s + r.inputTokens, 0),
+    results,
+  };
+}));
