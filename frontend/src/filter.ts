@@ -134,7 +134,7 @@ interface CacheEntry<V> {
 // `load` memoized by key. The promise is what's kept, so a second request for
 // a page still in flight shares the first; a load that fails (null or a
 // rejection) is dropped so the next request tries again.
-function memoizePages<A extends unknown[], V>(
+function memoize<A extends unknown[], V>(
   key: (...args: A) => string,
   load: (...args: A) => Promise<V | null>,
   { ttlMs = FILTER_CACHE_TTL_MS, maxEntries = FILTER_CACHE_MAX_PAGES, now = () => Date.now() } = {},

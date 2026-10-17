@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
+import { memoize, once } from "../_shared/memo.ts";
 
 // Reads what the search box is asking for, as the reader types: the page
 // proposes the topics whose names match the text (it holds the whole topic
@@ -62,37 +63,25 @@ interface Topic {
 
 type Reading = Awaited<ReturnType<typeof parse>>;
 
-let jev: JevClient | null = null;
-let adminClient: SupabaseClient | null = null;
-const cache = new Map<string, Reading>();
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
-function admin(): SupabaseClient {
-  adminClient ??= createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  return adminClient;
-}
+const admin: SupabaseClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-async function client(): Promise<JevClient> {
-  if (jev) return jev;
-  const { data: apiKey, error } = await admin().rpc("get_vault_secret", { secret_name: TYPESAFE_KEY_SECRET });
+const client = once(async (): Promise<JevClient> => {
+  const { data: apiKey, error } = await admin.rpc("get_vault_secret", { secret_name: TYPESAFE_KEY_SECRET });
   if (error || !apiKey) throw new Error(`no ${TYPESAFE_KEY_SECRET} in Vault`);
-  jev = new JevClient(apiKey, MODEL, { db: admin(), fn: "query-parse" });
-  return jev;
-}
+  return new JevClient(apiKey, MODEL, { db: admin, fn: "query-parse" });
+});
 
-function remember(key: string, reading: Reading) {
-  if (cache.size >= CACHE_SIZE) cache.delete(cache.keys().next().value!);
-  cache.set(key, reading);
-}
-
-async function storedReading(key: string): Promise<Reading | null> {
-  const { data, error } = await admin().from("query_readings").select("reading").eq("key", key).maybeSingle();
+// A reading anyone has had, from this isolate's memory, else query_readings.
+const storedReading = memoize((key: string) => key, async (key: string): Promise<Reading | null> => {
+  const { data, error } = await admin.from("query_readings").select("reading").eq("key", key).maybeSingle();
   if (error) console.error("query_readings read failed", error);
   return (data?.reading as Reading | undefined) ?? null;
-}
+}, { maxEntries: CACHE_SIZE });
 
 // The caller's user id, from the bearer token the gateway has already verified.
 function callerId(req: Request): string | null {
@@ -108,8 +97,8 @@ function callerId(req: Request): string | null {
 async function refundCredit(req: Request) {
   const id = callerId(req);
   if (!id) return;
-  const { data } = await admin().from("query_credits").select("used").eq("user_id", id).maybeSingle();
-  if (data?.used) await admin().from("query_credits").update({ used: data.used - 1 }).eq("user_id", id);
+  const { data } = await admin.from("query_credits").select("used").eq("user_id", id).maybeSingle();
+  if (data?.used) await admin.from("query_credits").update({ used: data.used - 1 }).eq("user_id", id);
 }
 
 function asCaller(req: Request) {
@@ -208,11 +197,7 @@ Deno.serve(async (req: Request) => {
   }
   const caller = asCaller(req);
   const key = JSON.stringify([text.toLowerCase(), ids]);
-  let cached = cache.get(key) ?? null;
-  if (!cached) {
-    cached = await storedReading(key);
-    if (cached) remember(key, cached);
-  }
+  const cached = await storedReading(key);
   if (cached) {
     const { data: left, error } = await caller.rpc("query_credits_left");
     if (error) return json({ error: "sign in to search" }, 401);
@@ -223,8 +208,8 @@ Deno.serve(async (req: Request) => {
   if (left === null) return json({ error: "no query credits left", credits_left: 0 }, 429);
   try {
     const parsed = await parse(text, await loadTopics(ids as string[]));
-    remember(key, parsed);
-    const { error } = await admin().from("query_readings").upsert({ key, reading: parsed }, { ignoreDuplicates: true });
+    storedReading.prime([key], parsed);
+    const { error } = await admin.from("query_readings").upsert({ key, reading: parsed }, { ignoreDuplicates: true });
     if (error) console.error("query_readings write failed", error);
     return json({ ...parsed, credits_left: left });
   } catch (e) {

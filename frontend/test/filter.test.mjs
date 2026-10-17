@@ -6,8 +6,8 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const source = readFileSync(new URL("../../src/seb_now/templates/filter.js", import.meta.url), "utf8");
-const { Filter, filterKey, filterPageKey, nextFilterCursor, memoizePages } = vm.runInNewContext(
-  `${source}\n;({ Filter, filterKey, filterPageKey, nextFilterCursor, memoizePages })`,
+const { Filter, filterKey, filterPageKey, nextFilterCursor, memoize } = vm.runInNewContext(
+  `${source}\n;({ Filter, filterKey, filterPageKey, nextFilterCursor, memoize })`,
   { setTimeout },
 );
 
@@ -69,7 +69,7 @@ test("pages of one filter have different keys", () => {
 
 test("a page in flight is shared, then served from the cache", async () => {
   let calls = 0;
-  const load = memoizePages((k) => k, async (k) => { calls++; return `page ${k}`; });
+  const load = memoize((k) => k, async (k) => { calls++; return `page ${k}`; });
   const [a, b] = await Promise.all([load("x"), load("x")]);
   assert.equal(a, "page x");
   assert.equal(b, "page x");
@@ -79,10 +79,10 @@ test("a page in flight is shared, then served from the cache", async () => {
 
 test("failed loads aren't cached", async () => {
   let calls = 0;
-  const load = memoizePages((k) => k, async () => { calls++; return calls === 1 ? null : "ok"; });
+  const load = memoize((k) => k, async () => { calls++; return calls === 1 ? null : "ok"; });
   assert.equal(await load("x"), null);
   assert.equal(await load("x"), "ok");
-  const rejecting = memoizePages((k) => k, async () => { calls++; throw new Error("down"); });
+  const rejecting = memoize((k) => k, async () => { calls++; throw new Error("down"); });
   await assert.rejects(rejecting("y"));
   await assert.rejects(rejecting("y"));
   assert.equal(calls, 4);
@@ -91,7 +91,7 @@ test("failed loads aren't cached", async () => {
 test("pages expire and the least recently used is evicted", async () => {
   let clock = 0;
   let calls = 0;
-  const load = memoizePages((k) => k, async (k) => { calls++; return k; }, { ttlMs: 10, maxEntries: 2, now: () => clock });
+  const load = memoize((k) => k, async (k) => { calls++; return k; }, { ttlMs: 10, maxEntries: 2, now: () => clock });
   await load("a");
   await load("b");
   await load("a"); // a is now the most recently used

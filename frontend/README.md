@@ -17,4 +17,4 @@ compiled file.
 
 - `src/filter.ts`: typed filter queries ("event paris") as a monoid of
   filter_links terms plus chips, and the page cache in front of filter_links
-  (`memoizePages`, keyed by the normalized filter and the keyset cursor).
+  (`memoize`, keyed by the normalized filter and the keyset cursor).

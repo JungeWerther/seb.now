@@ -617,7 +617,7 @@ Node), which `site.py` inlines at `__FILTER_JS__` at the top of the page's modul
 script (`compiled_script` refuses anything containing `</script`), so the CSP
 hash covers it. It holds `Filter` (`unit`/`term`/`concat`), the canonical
 `filterKey` (terms and senses deduplicated and sorted, log left out) and
-`memoizePages`. The database path, `fetchServerFiltered`, pages `filter_links` by
+`memoize`. The database path, `fetchServerFiltered`, pages `filter_links` by
 keyset (`before_created_at`, `before_id`, the last row's `created_at`/`link_id`;
 `20261017130000_filter_links_keyset.sql`) and caches each page by
 `filterPageKey` (5 min, 50 pages, a page in flight shared, failures not kept), so
