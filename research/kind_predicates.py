@@ -21,7 +21,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 
 from constants import KIND_PREDICATE_THRESHOLD, KIND_PREDICATE_TOP_COMBOS, KIND_PROBE_C, KIND_PROBE_CLASS_WEIGHT, KIND_PROBE_MAX_ITER, KIND_PROBE_MIN_EXAMPLES, KIND_PROBE_SEED, KIND_PROBE_TEST_FRACTION
-from kind_probe import embed_names, kind_at_depth, load_entities
+from kind_probe import Entity, embed_names, kind_at_depth, load_entities
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,7 @@ class Predicate:
     control_auc: float
 
 
-def kinds_by_name(entities, depth: int) -> dict[str, frozenset[str]]:
+def kinds_by_name(entities: list[Entity], depth: int) -> dict[str, frozenset[str]]:
     senses: dict[str, set[str]] = defaultdict(set)
     for e in entities:
         if (k := kind_at_depth(e.kind_path, depth)) is not None:
@@ -40,12 +40,12 @@ def kinds_by_name(entities, depth: int) -> dict[str, frozenset[str]]:
     return {n: frozenset(ks) for n, ks in senses.items()}
 
 
-def fit(x_train, y_train, x_test) -> np.ndarray:
+def fit(x_train: np.ndarray, y_train: np.ndarray, x_test: np.ndarray) -> np.ndarray:
     model = LogisticRegression(C=KIND_PROBE_C, max_iter=KIND_PROBE_MAX_ITER, class_weight=KIND_PROBE_CLASS_WEIGHT)
     return model.fit(x_train, y_train).predict_proba(x_test)[:, 1]
 
 
-def run_depth(entities, embed: dict, depth: int) -> None:
+def run_depth(entities: list[Entity], embed: dict[str, np.ndarray], depth: int) -> None:
     senses = kinds_by_name(entities, depth)
     counts = defaultdict(int)
     for ks in senses.values():
