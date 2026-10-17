@@ -1,9 +1,15 @@
 -- `%` is what lets entities_name_trgm_idx and link_entities_surface_trgm_idx
--- find the matches; it uses pg_trgm.similarity_threshold, 0.3 by default,
--- the same cut-off as below.
+-- find the matches. It reads pg_trgm.similarity_threshold, pinned to the
+-- cut-off below so a caller's own setting can't drop candidates; a function
+-- may only SET it once pg_trgm is loaded, which show_limit() does.
+select extensions.show_limit();
+
 create or replace function public.entity_candidates(phrase text, max_results integer default 8)
 returns table(id uuid, name text, kind text, description text, example_title text, similarity real)
-language sql stable set search_path = public, extensions as $$
+language sql stable
+set search_path = public, extensions
+set pg_trgm.similarity_threshold = 0.3
+as $$
   with hits as (
     select e.id, similarity(lower(e.name), lower(phrase)) as similarity
     from entities e
