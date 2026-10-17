@@ -55,8 +55,10 @@ no redeploy. A check constraint validates `identifier` per kind (a
 `UC…` channel id; `handle@instance` for Mastodon; an `https://` URL for
 `web_feed`/`ical_feed`), because the ingest
 functions build fetch URLs from it and a Mastodon instance becomes the request
-host. TechCrunch and Hacker News aren't rows: each is a single fixed API, and
-the function *is* the source.
+host. Hacker News isn't a row: it is a single fixed API, and the function *is*
+the source. TechCrunch is an ordinary `web_feed` row
+(`20261018000100_techcrunch_web_feed.sql`), which retired its own
+`techcrunch-ingest` function.
 
 - `fediverse-ingest` (`0 */6 * * *`) — pulls recent public posts from the
   enabled `mastodon_account` rows in `sources` (currently
@@ -71,10 +73,12 @@ the function *is* the source.
   `POSTS_PER_ACCOUNT = 10`.
 - `hn-ingest` (`15 */6 * * *`) — Hacker News's public Firebase API
   (`topstories.json` + `item/{id}.json`, no auth), top 25 stories.
-- `techcrunch-ingest` (`30 */6 * * *`) — TechCrunch's public RSS feed
-  (`techcrunch.com/feed/`), top 20 items, extracted with a small regex
-  (not a full XML parser — the feed's `<item>`/`<title>`/`<link>` shape
-  is stable and simple enough that a parser dependency isn't worth it).
+- `web-feed-ingest` (`0 3-23/6 * * *`) — any site's own RSS 2.0 or Atom feed
+  for the enabled `web_feed` rows in `sources` (TechCrunch's among them),
+  latest `ITEMS_PER_FEED` items each, extracted with a small regex (not a
+  full XML parser — the flat `<item>`/`<entry>` shape is stable and simple
+  enough that a parser dependency isn't worth it), with each item's summary
+  as `links.description`.
 - `youtube-ingest` (`45 */6 * * *`) — each channel's public Atom feed
   (`youtube.com/feeds/videos.xml?channel_id=…`, no auth, latest 15 uploads)
   for the enabled `youtube_channel` rows in `sources` (currently Channel 5
@@ -140,11 +144,10 @@ safe to ignore, or delete by hand from the Supabase dashboard.
 `fediverse-ingest` also populates `links.image_url`: Mastodon's own
 `status.card.image` when a card exists, else `fediverse-ingest` peeks at
 the target page itself (5s timeout) for `og:image`, falling back to the
-page's first `<img>`. `techcrunch-ingest` fetches each article page (5s
-timeout) for its `og:image`, since the RSS feed carries no images; a failed
-fetch leaves `image_url` out of the upsert so an earlier cover is kept.
-`hn-ingest` does the same for each story's linked page (not Ask HN threads),
-but since those are arbitrary sites it only takes a declared preview —
+page's first `<img>`. `web-feed-ingest` and `hn-ingest` fetch each item's
+linked page (5s timeout; not Ask HN threads) for its cover, since feeds
+carry no images; a failed fetch leaves `image_url` out of the upsert so an
+earlier cover is kept. Since those are arbitrary sites they only take a declared preview —
 `og:image`, else `twitter:image` — never a first-`<img>` guess, so pages
 without one stay imageless. YouTube doesn't serve `og:image` to those
 data-centre fetches, so a `links` trigger (`links_fill_youtube_thumbnail`,
@@ -164,8 +167,8 @@ After it comes the post's date, `links.created_at` (`posted_label` in
 `site.py`, `postedLabel` in the page script: "Sep 27", plus the year when it
 isn't this year's, in UTC), in a `<time class="posted">` that stays in the
 flex row even when empty, since it's what pushes the topic chips right.
-`created_at` is the original publication date for YouTube, `web_feed` and
-TechCrunch links (its RSS `pubDate`); for the other ingests it's when the link
+`created_at` is the original publication date for YouTube and `web_feed`
+links (the feed's `pubDate`/`published`); for the other ingests it's when the link
 was first ingested.
 
 Both upsert into `links` as `origin: 'feed'`, `onConflict: 'url'` (falling
@@ -182,7 +185,7 @@ The four schedules are staggered 15 minutes apart (`:00`/`:15`/`:30`/`:45`)
 so they don't all hit the DB/edge runtime at once.
 
 `origin` has three values: `local` (a user's own submission — none yet;
-no UI for it exists), `fediverse`, and `feed` (HN/TechCrunch). The
+no UI for it exists), `fediverse`, and `feed` (every other ingest). The
 original TechCrunch/HN seed rows were hand-picked once via web search
 before `hn-ingest`/`techcrunch-ingest` existed and were tagged `local`
 for lack of a better bucket at the time; they've since been reclassified

@@ -3,7 +3,7 @@ import { enabledSources, extractTag, mapSeries, present, serveIngest, upsertLink
 import { YOUTUBE } from "../_shared/constants.ts";
 
 // Each followed channel's public Atom feed (no auth) lists its latest 15
-// uploads. Regex-extracted like techcrunch-ingest: the <entry> shape is flat
+// uploads. Regex-extracted like web-feed-ingest: the <entry> shape is flat
 // and stable. The channels are the enabled youtube_channel rows in sources.
 
 const VIDEO_ID = /^https?:\/\/(?:[a-z0-9-]+\.)?(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
