@@ -4653,7 +4653,8 @@
       queryChips.classList.remove("pending");
       queryChips.replaceChildren(...filter.log.map((entry) => queryChip(`${entry.kind} `, entry.label)));
       queryChips.hidden = false;
-      renderSearchMarks(null, text ? matchTopics(text) : []);
+      // A filtered list is newest first, so a typed "newest" is tagged as that order.
+      renderSearchMarks({ sort: "latest" }, text ? matchTopics(text) : []);
     }
 
     // A query naming two or more filters (typedFilter: "event paris",
