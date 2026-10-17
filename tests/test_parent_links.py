@@ -8,6 +8,12 @@ so the tree can be walked up as well as down. The line never shows the page's
 raw id or path (`culture.styles.post_1945_architecture_design.brutalist`); the
 parent link is how the hierarchy shows. A page with no parent goes in
 `FLAT_PAGES` with a one-line reason; stale entries fail.
+
+A page that is itself a node of a tree (its parent link opens the same kind of
+page it is: a kind's parent is a kind, a topic's a topic) also lists its
+children, exactly one level below it, in its Kinds section via
+`showChildKinds`, the children taken from a one-level source
+(`ONE_LEVEL_SOURCES`).
 """
 
 import re
@@ -19,6 +25,9 @@ FLAT_PAGES = {
     "focusTerm": "a name's senses, each linked as a chip; the words have no parent",
     "focusOrder": "a sort order, which sits in no tree",
 }
+
+# Ways a page may find its children that only reach one level down.
+ONE_LEVEL_SOURCES = ("isChildPath(", 'rpc("topic_children"')
 
 # The identifiers a page function holds its own id or path in.
 RAW_IDS = ("path", "id", "term", "sort")
@@ -91,6 +100,48 @@ def test_meta_lines_show_no_raw_id() -> None:
             ]
     assert not leaks, "These meta lines show a page's raw id or path:\n" + "\n".join(
         leaks
+    )
+
+
+def _route(source: str, setter: str) -> str | None:
+    match = re.search(r"anchor\.href = `/(\w+)/", _function_body(source, setter))
+    return match and match.group(1)
+
+
+def _tree_pages(source: str) -> list[str]:
+    """The pages whose parent opens a page like their own (a kind's kind)."""
+    pages = []
+    for page in _page_functions(source):
+        body = _function_body(source, page)
+        own = re.search(r"enterFocus\(`/(\w+)/", body)
+        setters = {
+            re.split(r",\s*", link)[1]
+            for link in _calls(body, "parentLink")
+            if link.count(",") >= 2
+        }
+        if own and any(_route(source, setter) == own.group(1) for setter in setters):
+            pages.append(page)
+    return pages
+
+
+def test_every_tree_page_lists_its_children_one_level_down() -> None:
+    source = _source()
+    pages = _tree_pages(source)
+    assert {"focusKind", "focusTopic"} <= set(pages), (
+        f"tree pages not recognised: {pages}"
+    )
+    missing = [
+        page
+        for page in pages
+        if not (
+            _calls(body := _function_body(source, page), "showChildKinds")
+            and any(src in body for src in ONE_LEVEL_SOURCES)
+        )
+    ]
+    assert not missing, (
+        "These tree pages don't list their children one level below them: call "
+        "showChildKinds(children, chipKind) with children from one of "
+        f"{ONE_LEVEL_SOURCES}:\n" + "\n".join(missing)
     )
 
 

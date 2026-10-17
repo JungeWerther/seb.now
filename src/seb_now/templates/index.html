@@ -2578,6 +2578,17 @@
       document.getElementById(`${listId}-title`).hidden = items.length === 0;
     }
 
+    // Whether ltree path `child` is exactly one level under `parent`.
+    const isChildPath = (parent) => (child) =>
+      child.startsWith(`${parent}.`) && child.split(".").length === parent.split(".").length + 1;
+
+    // A tree page's children, one level below it (a kind's subkinds, a
+    // topic's subtopics), as chips in its Kinds section; `chipKind` is the
+    // tree, which picks the page each chip opens.
+    function showChildKinds(children, chipKind) {
+      showFocusSection("focus-kinds", children.map(({ label, id }) => tagItem(label, "", chipKind, id)));
+    }
+
     // The band's bottom, in page coordinates, where its fade begins.
     function updateFocusBand() {
       const end = focusSection.getBoundingClientRect().bottom + window.scrollY;
@@ -2785,12 +2796,13 @@
 
       const client = await supabaseReady;
       const parentPath = path.split(".").slice(0, -1).join(".");
-      const [{ data: topic, error }, { data: parent }, { data: count }] = await Promise.all([
+      const [{ data: topic, error }, { data: parent }, { data: count }, { data: children }] = await Promise.all([
         client.from("topics").select("name, description").eq("id", path).maybeSingle(),
         parentPath
           ? client.from("topics").select("id, name").eq("id", parentPath).maybeSingle()
           : Promise.resolve({ data: null }),
         client.rpc("topic_link_count", { topic: path }),
+        client.rpc("topic_children", { parent: path }),
       ]);
       if (generation !== focusGeneration) return;
       if (error || !topic) {
@@ -2805,6 +2817,7 @@
           count != null && countLabel(count, "post", "posts"),
         );
         document.getElementById("focus-topic-description").textContent = topic.description ?? "";
+        showChildKinds((children ?? []).map((c) => ({ label: c.name, id: c.id })), "topic");
         findSources.href = findSourcesUrl(FIND_SOURCES_PROMPT, {
           name: topic.name,
           path,
@@ -2858,7 +2871,7 @@
         return;
       }
       document.getElementById("focus-kind-name").textContent = kind.label;
-      const parent = kinds.find((k) => path.startsWith(`${k.path}.`) && k.path.split(".").length === path.split(".").length - 1);
+      const parent = kinds.find((k) => isChildPath(k.path)(path));
       const [count] = counts ?? [];
       showPageMeta(
         "focus-kind-meta",
@@ -2867,11 +2880,9 @@
         count && countLabel(count.posts, "post", "posts"),
       );
       document.getElementById("focus-kind-description").textContent = kind.description ?? "";
-      showFocusSection(
-        "focus-kinds",
-        kinds
-          .filter((k) => k.path.startsWith(`${path}.`) && k.path.split(".").length === path.split(".").length + 1)
-          .map((k) => tagItem(k.label, "", "kind", k.path)),
+      showChildKinds(
+        kinds.filter((k) => isChildPath(path)(k.path)).map((k) => ({ label: k.label, id: k.path })),
+        "kind",
       );
       // Indexicals that pick out things of this kind ("tonight", a Period)
       // are listed first, ahead of its entities.
