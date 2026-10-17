@@ -41,3 +41,7 @@ CHAR_NGRAM_ANALYZER = "char_wb"
 CHAR_NGRAM_MIN = 2
 CHAR_NGRAM_MAX = 4
 CHAR_NGRAM_LOWERCASE = False  # capitalisation is part of the signal
+
+# kind_predicates.py — one yes/no probe per kind
+KIND_PREDICATE_THRESHOLD = 0.5  # a predicate "fires" at or above this probability
+KIND_PREDICATE_TOP_COMBOS = 6
