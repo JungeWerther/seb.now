@@ -153,6 +153,11 @@ export const ENTITY_EXTRACT = Object.freeze({
   RUN_BUDGET_MS: 100_000,
   MAX_LINK_IDS: 50,
   SAME_PASS_OPTIONS: 4,
+  // How sure Jev must be that a longer name runs several things together
+  // before its parts are read instead of it.
+  SPAN_PARTS_MIN_P: 0.5,
+  // An `entity_edits.batch` label (same check as the table's).
+  BATCH_PATTERN: /^[a-z0-9][a-z0-9-]{2,63}$/,
 });
 
 // entity-extract/candidates.ts: phrases proposed from a title.
