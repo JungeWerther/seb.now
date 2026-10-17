@@ -264,4 +264,21 @@ await db.query(`select undo_entity_edit($1)`, [pToR]);
 await db.query(`select undo_entity_edit($1)`, [aToB]);
 assert.equal((await one(`select place_within($1, $2) b`, [await id("AA"), await id("PP")])).b, true, "AA is back inside PP");
 
+// Merging into an unplaced grandparent doesn't try to place it inside its own child.
+await db.exec(`insert into entities (name, kind) values ('Bourg','place'), ('Hameau','place'), ('Ruelle','place')`);
+await place(await id("Hameau"), await id("Bourg"));
+await place(await id("Ruelle"), await id("Hameau"));
+const intoGrand = (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by) values ('qa-grand', 'merge', $1, 'Ruelle', $2, 'Bourg', 'claude') returning id`, [await id("Ruelle"), await id("Bourg")])).id;
+await db.query(`select apply_entity_edit($1)`, [intoGrand]);
+await db.query(`select undo_entity_edit($1)`, [intoGrand]);
+assert.equal((await one(`select place_within($1, $2) b`, [await id("Ruelle"), await id("Hameau")])).b, true, "merge into a grandparent applies and undoes");
+
+// A later change of who placed a moved place blocks undo, even with the same path.
+const intoHameau = (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by) values ('qa-attr', 'merge', $1, 'Ruelle', $2, 'Hameau', 'claude') returning id`, [await id("Ruelle"), await id("Hameau")])).id;
+await db.exec(`insert into entities (name, kind) values ('Impasse','place')`);
+await place(await id("Impasse"), await id("Ruelle"));
+await db.query(`select apply_entity_edit($1)`, [intoHameau]);
+await db.query(`select set_place_parent($1, $2, 'wikidata')`, [await id("Impasse"), await id("Hameau")]);
+await assert.rejects(db.query(`select undo_entity_edit($1)`, [intoHameau]), /changed since/, "attribution counts as a change");
+
 console.log("entity_sense: all checks pass");

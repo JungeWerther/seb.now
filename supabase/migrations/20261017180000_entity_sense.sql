@@ -200,8 +200,9 @@ begin
   where c.id <> f and (c.id = t
     or c.place_path operator(extensions.<@) public.place_self(f)
     or c.place_path operator(extensions.<@) public.place_self(t));
+  -- (not when the target is one of the places the merged-away one is in)
   if (select place_path is null from public.entities where id = t) and public.place_parent(f) is not null
-     and public.place_parent(f) <> t then
+     and not (public.place_self(f) operator(extensions.<@) public.place_self(t)) then
     perform public.set_place_parent(t, public.place_parent(f), (snap -> 'entity' ->> 'place_labeled_by'));
   end if;
   update public.entities c
@@ -403,7 +404,7 @@ $$;
 -- `entity`'s own path and those of every place inside it, sorted, as jsonb.
 create or replace function public.place_subtree(entity uuid)
 returns jsonb language sql stable set search_path = '' as $$
-  select coalesce(jsonb_agg(jsonb_build_array(c.id, c.place_path::text) order by c.id), '[]')
+  select coalesce(jsonb_agg(jsonb_build_array(c.id, c.place_path::text, c.place_labeled_by) order by c.id), '[]')
   from public.entities c
   where c.id = entity or c.place_path operator(extensions.<@) public.place_self(entity)
 $$;
@@ -491,8 +492,9 @@ as $$
   limit max_results
 $$;
 
--- A merged-away name stays findable: entity_candidates also scores the label
--- witnesses a merge keeps (labeled_by 'merge'), not only names and surfaces.
+-- A merged-away name stays findable: entity_candidates also scores label
+-- witnesses not tied to a post (a merge's, or one given by hand), not only names
+-- and surfaces.
 create or replace function public.entity_candidates(phrase text, max_results integer default 8)
 returns table(id uuid, name text, kind text, description text, example_title text, similarity real)
 language sql stable set search_path = public, extensions as $$
@@ -503,7 +505,7 @@ language sql stable set search_path = public, extensions as $$
                 from link_entities m where m.entity_id = e.id and m.surface is not null), 0),
       coalesce((select max(similarity(w.value, lower(phrase)))
                 from identity_witnesses w
-                where w.entity_id = e.id and w.sense = 'label' and w.labeled_by = 'merge'), 0)
+                where w.entity_id = e.id and w.sense = 'label' and (w.link_id is null or w.labeled_by = 'merge')), 0)
     ) as similarity
     from entities e
     where e.kind <> 'source'
