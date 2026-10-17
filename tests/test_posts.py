@@ -1,31 +1,29 @@
-from datetime import datetime, timezone
-from uuid import uuid4
-
 import pytest
 
 from seb_now import posts
-from seb_now.domain.models import Link
-from seb_now.posts import post_from_link, render_post
+from seb_now.posts import Post, PostRow, post_from_link, render_post
 
 
-def _link(**overrides: object) -> Link:
-    fields = {
-        "id": uuid4(),
-        "url": "https://seb.now/posts/a-test-post/",
+def _link(**overrides: object) -> PostRow:
+    fields: PostRow = {
         "title": "A Test Post",
         "description": "A short description.",
-        "origin": "local",
         "slug": "a-test-post",
         "image_url": "https://example.com/cover.jpg",
         "body_markdown": "# Heading\n\nSome *body* text with a [link](https://example.com).",
-        "created_at": datetime(2026, 1, 5, tzinfo=timezone.utc),
+        "created_at": "2026-01-05T00:00:00+00:00",
     }
-    fields.update(overrides)
-    return Link.model_validate(fields)
+    return {**fields, **overrides}
+
+
+def _post(**overrides: object) -> Post:
+    post = post_from_link(_link(**overrides))
+    assert post is not None
+    return post
 
 
 def test_post_from_link_renders_markdown_body() -> None:
-    post = post_from_link(_link())
+    post = _post()
 
     assert post.slug == "a-test-post"
     assert post.title == "A Test Post"
@@ -38,20 +36,20 @@ def test_post_from_link_renders_markdown_body() -> None:
 
 
 def test_post_from_link_defaults_description_to_empty_and_image_to_none() -> None:
-    post = post_from_link(_link(description=None, image_url=None))
+    post = _post(description=None, image_url=None)
 
     assert post.description == ""
     assert post.image is None
 
 
 def test_post_url_is_under_posts_path() -> None:
-    post = post_from_link(_link())
+    post = _post()
 
     assert post.url == "https://seb.now/posts/a-test-post/"
 
 
 def test_render_post_includes_title_og_tags_and_body() -> None:
-    post = post_from_link(_link())
+    post = _post()
 
     html = render_post(post)
 
@@ -63,7 +61,7 @@ def test_render_post_includes_title_og_tags_and_body() -> None:
 
 
 def test_render_post_shows_cover_image_above_title_when_present() -> None:
-    post = post_from_link(_link())
+    post = _post()
 
     html = render_post(post)
 
@@ -74,7 +72,7 @@ def test_render_post_shows_cover_image_above_title_when_present() -> None:
 
 
 def test_render_post_omits_cover_and_og_image_when_no_image() -> None:
-    post = post_from_link(_link(image_url=None))
+    post = _post(image_url=None)
 
     html = render_post(post)
 
@@ -83,23 +81,29 @@ def test_render_post_omits_cover_and_og_image_when_no_image() -> None:
 
 
 def test_render_post_forbids_all_script_via_csp() -> None:
-    html = render_post(post_from_link(_link()))
+    html = render_post(_post())
 
-    assert '<meta http-equiv="Content-Security-Policy" content="default-src &#x27;none&#x27;; script-src &#x27;none&#x27;;' in html
+    assert (
+        '<meta http-equiv="Content-Security-Policy" content="default-src &#x27;none&#x27;; script-src &#x27;none&#x27;;'
+        in html
+    )
+
+
+def test_post_from_link_skips_links_without_a_body_or_a_safe_slug() -> None:
+    assert post_from_link(_link(body_markdown=None)) is None
+    assert post_from_link(_link(slug=None)) is None
+    assert post_from_link(_link(slug="../../evil")) is None
 
 
 def test_render_post_strips_script_from_markdown_body() -> None:
-    post = post_from_link(_link(body_markdown='hi <script>alert(1)</script> <a href="javascript:alert(1)">x</a>'))
+    post = _post(body_markdown='hi <script>alert(1)</script> <a href="javascript:alert(1)">x</a>')
 
     assert "<script" not in post.body_html
     assert "javascript:" not in post.body_html
 
 
 def test_load_posts_skips_slugs_that_are_not_plain_path_segments(monkeypatch: pytest.MonkeyPatch) -> None:
-    rows = [
-        _link(slug="../../evil").model_dump(mode="json"),
-        _link(slug="fine-post").model_dump(mode="json"),
-    ]
+    rows = [_link(slug="../../evil"), _link(slug="fine-post")]
 
     class _Query:
         def __getattr__(self, _name: str) -> object:

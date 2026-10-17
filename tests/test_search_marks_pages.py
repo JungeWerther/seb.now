@@ -80,7 +80,8 @@ def test_every_page_a_tag_opens_is_routed() -> None:
         pattern = pattern.group(1)
         # Routed directly, or through a helper like kindPathFromPath().
         readers = {pattern} | {
-            m.group(1) for m in re.finditer(r"function (\w+)\(\)\s*\{\s*return location\.pathname\.match\((\w+)\)", source)
+            m.group(1)
+            for m in re.finditer(r"function (\w+)\(\)\s*\{\s*return location\.pathname\.match\((\w+)\)", source)
             if m.group(2) == pattern
         }
         assert any(reader in link_page for reader in readers), f"setupLinkPage never opens /{prefix}/ pages"

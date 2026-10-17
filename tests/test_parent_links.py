@@ -31,9 +31,7 @@ RAW_IDS = ("path", "id", "term", "sort")
 
 
 def _page_functions(source: str) -> list[str]:
-    return re.findall(
-        r"^\s*(?:async )?function (focus[A-Z]\w*)\(", source, re.MULTILINE
-    )
+    return re.findall(r"^\s*(?:async )?function (focus[A-Z]\w*)\(", source, re.MULTILINE)
 
 
 def _calls(body: str, name: str) -> list[str]:
@@ -52,17 +50,12 @@ def _calls(body: str, name: str) -> list[str]:
 def test_every_page_links_its_parent() -> None:
     source = _source()
     pages = _page_functions(source)
-    assert pages, (
-        "no focus* page functions found in index.html — have they been renamed?"
-    )
+    assert pages, "no focus* page functions found in index.html — have they been renamed?"
     missing = [
         page
         for page in pages
         if page not in FLAT_PAGES
-        and not any(
-            "parentLink(" in call
-            for call in _calls(_function_body(source, page), "showPageMeta")
-        )
+        and not any("parentLink(" in call for call in _calls(_function_body(source, page), "showPageMeta"))
     ]
     assert not missing, (
         "These pages don't link their parent: draw the meta line with "
@@ -77,9 +70,7 @@ def test_meta_lines_are_drawn_by_show_page_meta() -> None:
         r"""getElementById\("focus-\w+-meta"\)\.(?:replaceChildren\([^)]+\)|textContent = (?!"")[^;]+)""",
         source,
     )
-    assert not writes, (
-        "A page's meta line is filled outside showPageMeta:\n" + "\n".join(writes)
-    )
+    assert not writes, "A page's meta line is filled outside showPageMeta:\n" + "\n".join(writes)
 
 
 def test_meta_lines_show_no_raw_id() -> None:
@@ -90,14 +81,8 @@ def test_meta_lines_show_no_raw_id() -> None:
             shown = call
             for link in _calls(call, "parentLink"):
                 shown = shown.replace(link, "")
-            leaks += [
-                f"{page}: showPageMeta({call})"
-                for raw in RAW_IDS
-                if re.search(rf"(?<![.\w]){raw}\b", shown)
-            ]
-    assert not leaks, "These meta lines show a page's raw id or path:\n" + "\n".join(
-        leaks
-    )
+            leaks += [f"{page}: showPageMeta({call})" for raw in RAW_IDS if re.search(rf"(?<![.\w]){raw}\b", shown)]
+    assert not leaks, "These meta lines show a page's raw id or path:\n" + "\n".join(leaks)
 
 
 def _route(source: str, setter: str) -> str | None:
@@ -111,11 +96,7 @@ def _tree_pages(source: str) -> list[str]:
     for page in _page_functions(source):
         body = _function_body(source, page)
         own = re.search(r"enterFocus\(`/(\w+)/", body)
-        setters = {
-            re.split(r",\s*", link)[1]
-            for link in _calls(body, "parentLink")
-            if link.count(",") >= 2
-        }
+        setters = {re.split(r",\s*", link)[1] for link in _calls(body, "parentLink") if link.count(",") >= 2}
         if own and any(_route(source, setter) == own.group(1) for setter in setters):
             pages.append(page)
     return pages
@@ -127,9 +108,7 @@ def test_child_kinds_are_one_level_below_the_page() -> None:
         r"\.filter\(\(\{ id \}\) => isChildPath\(path\)\(id\)\)",
         _function_body(source, "showChildKinds"),
     ), "showChildKinds no longer keeps only the nodes one level below the page's path"
-    one_level = re.search(
-        r"const isChildPath = \(parent\) => \(child\) =>([^;]+);", source
-    )
+    one_level = re.search(r"const isChildPath = \(parent\) => \(child\) =>([^;]+);", source)
     assert one_level and 'split(".").length + 1' in one_level.group(1), (
         "isChildPath no longer means exactly one level down"
     )
@@ -138,16 +117,11 @@ def test_child_kinds_are_one_level_below_the_page() -> None:
 def test_every_tree_page_lists_its_children() -> None:
     source = _source()
     pages = _tree_pages(source)
-    assert {"focusKind", "focusTopic"} <= set(pages), (
-        f"tree pages not recognised: {pages}"
-    )
+    assert {"focusKind", "focusTopic"} <= set(pages), f"tree pages not recognised: {pages}"
     missing = [
         page
         for page in pages
-        if not any(
-            re.match(r"\s*path\s*,", call)
-            for call in _calls(_function_body(source, page), "showChildKinds")
-        )
+        if not any(re.match(r"\s*path\s*,", call) for call in _calls(_function_body(source, page), "showChildKinds"))
     ]
     assert not missing, (
         "These tree pages don't list their children: call showChildKinds(path, nodes, chipKind) "

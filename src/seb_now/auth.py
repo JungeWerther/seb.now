@@ -19,7 +19,5 @@ def get_unauthenticated_client() -> Client:
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_ANON_KEY")
     if not url or not key:
-        raise RuntimeError(
-            "SUPABASE_URL and SUPABASE_ANON_KEY must be set (see .env)."
-        )
+        raise RuntimeError("SUPABASE_URL and SUPABASE_ANON_KEY must be set (see .env).")
     return create_client(url, key)

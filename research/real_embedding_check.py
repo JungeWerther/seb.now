@@ -12,10 +12,9 @@ Run with:
 
 from itertools import product
 
-from sentence_transformers import SentenceTransformer
-
 from algebra import Combinable, Embed, LawCheckKind, SampleTriple, Vector, vec_add, vec_isclose
-from constants import ModelName, REAL_EMBEDDING_LAW_CHECK_TOLERANCE
+from constants import REAL_EMBEDDING_LAW_CHECK_TOLERANCE, ModelName
+from sentence_transformers import SentenceTransformer
 
 
 def real_embed(model: SentenceTransformer) -> Embed[Vector]:

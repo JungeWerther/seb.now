@@ -27,7 +27,7 @@ from seb_now.constants import (
 )
 
 PAGE_SCRIPT_PATTERN = re.compile(r'<script type="module">(.*?)</script>', re.DOTALL)
-_SCRIPT_JSON_ESCAPES = {"<": "\\u003c", ">": "\\u003e", "&": "\\u0026", " ": "\\u2028", " ": "\\u2029"}
+_SCRIPT_JSON_ESCAPES = {"<": "\\u003c", ">": "\\u003e", "&": "\\u0026", "\u2028": "\\u2028", "\u2029": "\\u2029"}
 
 
 def safe_http_url(url: str | None) -> str | None:
@@ -47,7 +47,7 @@ def is_safe_slug(slug: str) -> bool:
 
 def script_json(value: object) -> str:
     """JSON for a JS literal inside an inline <script>: can't close the tag."""
-    return re.sub("[<>&  ]", lambda m: _SCRIPT_JSON_ESCAPES[m.group()], json.dumps(value))
+    return re.sub("[<>&\u2028\u2029]", lambda m: _SCRIPT_JSON_ESCAPES[m.group()], json.dumps(value))
 
 
 def script_hash(script: str) -> str:

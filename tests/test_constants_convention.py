@@ -58,7 +58,9 @@ def _literal_instantiation_args(source: str) -> list[str]:
 def _scanned_files() -> list[Path]:
     files = []
     for directory in SCANNED_DIRS:
-        files.extend(sorted(p for p in directory.glob("*.py") if p.name not in EXCLUDED_FILES and not p.name.startswith("test_")))
+        files.extend(
+            sorted(p for p in directory.glob("*.py") if p.name not in EXCLUDED_FILES and not p.name.startswith("test_"))
+        )
     return files
 
 
