@@ -103,31 +103,22 @@ export async function readSpans<N extends Span>(
   };
 }
 
-// A page's declared language isn't always a valid locale ("en_US"); then the
-// default one reads its sentences.
-function sentenceSegmenter(lang?: string | null): Intl.Segmenter {
-  try {
-    return new Intl.Segmenter(lang ?? undefined, { granularity: "sentence" });
-  } catch {
-    return new Intl.Segmenter(undefined, { granularity: "sentence" });
-  }
-}
+// The sentences of `text`, split where the span rule splits them (so an initial
+// or a title like "Dr." never starts a new one).
+const sentences = (text: string): string[] => text.split(BOUNDARY).map((t) => t.trim()).filter(Boolean);
 
 // The first sentence of `text` that says `surface` outside every one of
 // `wholes` (the sentence that makes it stand alone), else null.
-export function aloneSentence(text: string, surface: string, wholes: string[], lang?: string | null): string | null {
-  for (const { segment } of sentenceSegmenter(lang).segment(text)) {
-    if (occurrences(spanTokens(segment), spanTokens(surface)).length && standsAlone(surface, wholes, segment)) return segment.trim();
-  }
-  return null;
+export function aloneSentence(text: string, surface: string, wholes: string[]): string | null {
+  const own = spanTokens(surface);
+  return sentences(text).find((segment) =>
+    occurrences(spanTokens(segment), own).length > 0 && standsAlone(surface, wholes, segment)
+  ) ?? null;
 }
 
 // The first sentence of `text` that says `surface`, for asking about a name
 // read back from storage.
-export function sentenceWith(text: string, surface: string, lang?: string | null): string | null {
+export function sentenceWith(text: string, surface: string): string | null {
   const own = spanTokens(surface);
-  for (const { segment } of sentenceSegmenter(lang).segment(text)) {
-    if (occurrences(spanTokens(segment), own).length) return segment.trim();
-  }
-  return null;
+  return sentences(text).find((segment) => occurrences(spanTokens(segment), own).length > 0) ?? null;
 }

@@ -9,7 +9,7 @@ import { fold, NameHints, pageCandidates, WORD } from "../_shared/names.ts";
 import { fetchHtml, fetchPage, PageContent, pageText, readPage } from "../_shared/page.ts";
 import { candidates } from "./candidates.ts";
 import { aloneSentence, contains, containsName, nameWords, readSpans, sentenceWith, SpanReading } from "../_shared/spans.ts";
-import { ENTITY_EXTRACT, JEV, PAGE } from "../_shared/constants.ts";
+import { ENTITY_EXTRACT, JEV } from "../_shared/constants.ts";
 
 // Finds the named entities a link mentions and links each to a row in
 // `entities`, creating it when it's new. Two passes, each marked in
@@ -398,7 +398,7 @@ async function titleFragmentsOnPage(db: SupabaseClient, link: Link, known: Menti
   const titlePhrases = candidates(link.title, await nameHints(db, [link.title], null));
   return titlePhrases.flatMap((surface) => {
     const holders = known.filter((k) => contains(k, { surface }));
-    const sentence = holders.length ? aloneSentence(body, surface, holders.map((h) => h.surface), lang) : null;
+    const sentence = holders.length ? aloneSentence(body, surface, holders.map((h) => h.surface)) : null;
     return sentence ? [{ surface, sentence }] : [];
   });
 }
@@ -463,8 +463,9 @@ async function storedMentions(db: SupabaseClient, linkId: string, foundIn?: Foun
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   return (data as unknown as StoredMention[]).flatMap(({ entity_id, surface, p, found_in, entities }) =>
-    surface && entities
-      ? [{ surface, sentence: null, p, kind: entities.kind, entity_id, entity_name: entities.name, decision: "known" as const, found_in }]
+    entities
+      // A hand row may have no surface: it names its entity by the entity's name.
+      ? [{ surface: surface ?? entities.name, sentence: null, p, kind: entities.kind, entity_id, entity_name: entities.name, decision: "known" as const, found_in }]
       : []
   );
 }
@@ -485,47 +486,44 @@ async function entityLabels(db: SupabaseClient, ids: string[]): Promise<Map<stri
 // Re-reads the mentions stored for `link` with the span rule, pass by pass,
 // and returns those it would drop with their entities.
 async function respanLink(db: SupabaseClient, jev: JevClient, link: Link) {
-  const stored = await storedMentions(db, link.id, undefined, true);
-  const context = await storedMentions(db, link.id, "title");
   // The page is read again, so the span rule sees what extraction saw: every
   // section in full and the names the page declares in its structured data,
-  // neither of which the stored (capped) text keeps. If it can't be read, only
-  // title drops the stored text fully supports are staged; no page drops.
+  // neither of which the stored text keeps. Without it there is no such
+  // evidence, so nothing is judged or staged (and no Jev call is made).
   const page = await fetchPage(link.url).catch(() => null);
-  const live = page !== null && page.sections.length > 0;
-  const { data: content, error } = await db.from("link_content").select("text, lang").eq("link_id", link.id).maybeSingle();
-  if (error) throw new Error(error.message);
-  const storedText = content?.text ?? "";
-  const text = live ? readText(link, page) : [link.title, storedText].join("\n");
-  const lang = live ? page.lang : content?.lang;
+  if (page === null || !page.sections.length) {
+    return { link_id: link.id, title: link.title, read_page: false, drops: [] as { mention: Mention; reason: string }[], inputTokens: 0 };
+  }
+  const stored = await storedMentions(db, link.id, undefined, true);
+  const context = await storedMentions(db, link.id, "title");
+  const text = readText(link, page);
   const titles = stored.filter((m) => m.found_in === "title");
   const pages = stored.filter((m) => m.found_in === "page")
-    .map((m) => ({ ...m, sentence: sentenceWith(text, m.surface, lang) ?? m.surface }));
+    .map((m) => ({ ...m, sentence: sentenceWith(text, m.surface) ?? m.surface }));
   const state = { link: { title: link.title, site: hostOf(link.url) } };
   let inputTokens = 0;
   const ask = askRunTogether(jev, link.id, state, (n) => inputTokens += n);
-  // A title name is a fragment only if the page doesn't say it on its own either.
+  // A title name is a fragment only if the page doesn't say it on its own
+  // either; hand-labelled title rows count as names read whole.
   const handTitles = context.filter((c) => !titles.some((t) => t.entity_id === c.entity_id));
   const title = await readSpans(titles, handTitles, text, ask);
-  const pageSpans = live ? await readSpans(pages, [...title.kept, ...handTitles], text, ask) : null;
-  const titleTrusted = live || storedText.length < PAGE.MAX_TEXT_CHARS;
+  const pageSpans = await readSpans(pages, [...title.kept, ...handTitles], text, ask);
   // A mention's entity may be named elsewhere on the page in other words ("New
   // York" besides a fragment "NYC" in "NYC Ballet"): its other labels standing
-  // alone keep the association.
+  // alone keep the association, as does a run-together surface that holds one
+  // of them ("Ledger Flex and Ledger Stax" stored as Ledger Flex).
   const labels = await entityLabels(db, stored.map((m) => m.entity_id!));
+  const namesOf = (m: Mention) => [m.entity_name, ...(labels.get(m.entity_id!) ?? [])];
   const wholes = [...stored, ...context].map((m) => m.surface);
   const namedOtherwise = (m: Mention) =>
-    [m.entity_name, ...(labels.get(m.entity_id!) ?? [])]
-      .some((label) => label.toLowerCase() !== m.surface.toLowerCase() && aloneSentence(text, label, wholes, lang) !== null);
-  const drops = [...(titleTrusted ? [title] : []), ...(pageSpans ? [pageSpans] : [])].flatMap((spans) => [
+    namesOf(m).some((label) => label.toLowerCase() !== m.surface.toLowerCase() && aloneSentence(text, label, wholes) !== null);
+  const drops = [title, pageSpans].flatMap((spans) => [
     ...spans.parts.filter((m) => !namedOtherwise(m)).map((m) => ({ mention: m, reason: "only part of a longer name here" })),
-    // A run-together surface that resolved to one of its own parts ("Ledger
-    // Flex and Ledger Stax" stored as Ledger Flex) still names that entity.
     ...spans.runTogether
-      .filter((m) => !contains(m, { surface: m.entity_name }))
+      .filter((m) => !namesOf(m).some((label) => contains(m, { surface: label })) && !namedOtherwise(m))
       .map((m) => ({ mention: m, reason: "runs several names together" })),
   ]);
-  return { link_id: link.id, title: link.title, read_page: live, drops, inputTokens };
+  return { link_id: link.id, title: link.title, read_page: true, drops, inputTokens };
 }
 
 // Stages each drop as an `entity_edits` row, skipping mentions already staged
