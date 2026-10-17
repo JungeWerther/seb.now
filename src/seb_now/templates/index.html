@@ -3603,7 +3603,28 @@
       return item;
     }
 
+    // Unread ones come first, so every unread notification the count includes
+    // is shown on some open, however many there are.
+    const notificationPage = (client, unread, limit) => {
+      const query = client.from("notifications").select(NOTIFICATION_SELECT);
+      return (unread ? query.is("read_at", null) : query.not("read_at", "is", null))
+        .order("created_at", { ascending: false }).limit(limit);
+    };
+
+    async function fetchInbox(client) {
+      const unread = await notificationPage(client, true, NOTIFICATIONS_SHOWN);
+      const room = NOTIFICATIONS_SHOWN - (unread.data?.length ?? 0);
+      if (unread.error || room <= 0) return unread;
+      const read = await notificationPage(client, false, room);
+      return read.error ? read : { data: [...unread.data, ...read.data], error: null };
+    }
+
+    let inboxLoad = 0;
+
     async function loadInbox() {
+      const load = ++inboxLoad;
+      const overlay = document.getElementById("inbox-overlay");
+      const current = () => load === inboxLoad && overlay.open;
       const list = document.getElementById("inbox-list");
       const status = document.getElementById("inbox-status");
       list.replaceChildren();
@@ -3614,9 +3635,8 @@
         return;
       }
       const client = await supabaseReady;
-      const { data, error } = await client
-        .from("notifications").select(NOTIFICATION_SELECT)
-        .order("created_at", { ascending: false }).limit(NOTIFICATIONS_SHOWN);
+      const { data, error } = await fetchInbox(client);
+      if (!current()) return;
       if (error) {
         status.textContent = "Couldn't load your inbox.";
         return;

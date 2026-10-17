@@ -771,7 +771,7 @@ own and may update only `read_at`; no client inserts or deletes.
 caller's read. The page shows a red dot (`#menu-unread-dot`) on the menu icon
 while any are unread (counted on start, on each menu open and when the page
 becomes visible again), and an **Inbox** bubble (`#inbox-bubble`, its count and
-dot) opening `#inbox-overlay`: the newest `NOTIFICATIONS_SHOWN`, unread ones
+dot) opening `#inbox-overlay`: up to `NOTIFICATIONS_SHOWN`, unread first (so every unread one is reachable) then read, newest first in each, unread ones
 outlined, text only via `textContent`; tapping one opens its link's page. Opening
 it marks exactly the ones it showed read. Deploy `activitypub` only after this
 migration has applied, since it now writes `in_reply_to_id`.
