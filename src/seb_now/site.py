@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from functools import reduce
 from html import escape
 from pathlib import Path
 from typing import Mapping, NamedTuple, NotRequired, Sequence, TypedDict
@@ -34,8 +35,11 @@ from seb_now.constants import (
     FIND_SOURCES_URL_TEMPLATE,
     FEED_PAGE_SIZE,
     FEED_SKELETON_ROWS,
+    REPLY_ICON_SIZE,
+    SCORE_ICON_SIZE,
     SOURCE_FOUND_IN,
     SUPABASE_JS_MODULE_URL,
+    SWIPE_ICON_SIZE,
     TEMPLATE_ARTICLE_BLANK,
     SourceType,
 )
@@ -68,6 +72,27 @@ CSP_PLACEHOLDER = "__CONTENT_SECURITY_POLICY__"
 FILTER_JS_PLACEHOLDER = "__FILTER_JS__"
 
 FEED_COLUMNS = "id, title, url, image_url, author, created_at"
+
+
+# Lucide icon bodies (24x24 viewBox), drawn by _lucide at each use's size.
+TRASH_ICON = (
+    '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>'
+    '<path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>'
+    '<line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>'
+)
+THUMBS_UP_ICON = (
+    '<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 '
+    '1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/>'
+)
+MESSAGE_ICON = '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>'
+
+
+def _lucide(body: str, size: int) -> str:
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" '
+        f'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        f"{body}</svg>"
+    )
 
 
 class Chip(NamedTuple):
@@ -140,11 +165,35 @@ def _top_entities(link_entities: Sequence[dict]) -> list[Chip]:
 
 def _source(link_entities: Sequence[dict]) -> Chip | None:
     """The source entity the link is tagged with (found_in 'source'), if any."""
-    for label in link_entities:
-        entity = label.get(Entity.__tablename__)
-        if label.get("found_in") == SOURCE_FOUND_IN and entity:
-            return Chip(entity["id"], entity["name"])
-    return None
+    return next(
+        (
+            Chip(entity["id"], entity["name"])
+            for label in link_entities
+            if label.get("found_in") == SOURCE_FOUND_IN and (entity := label.get(Entity.__tablename__))
+        ),
+        None,
+    )
+
+
+def _feed_item(row: dict) -> FeedItem | None:
+    """A links row as a feed item, or None when its url isn't http(s)."""
+    url = safe_http_url(row["url"])
+    if url is None:
+        return None
+    entities = row.get(LinkEntity.__tablename__) or []
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "url": url,
+        "image_url": safe_http_url(row["image_url"]) or "",
+        "author": row.get("author") or "",
+        "topics": _top_topics(row[LinkTopic.__tablename__]),
+        "entities": _top_entities(entities),
+        "source": _source(entities),
+        # Kept as PostgREST's own string so the page's pagination
+        # cursor round-trips it exactly (microseconds included).
+        "created_at": row["created_at"],
+    }
 
 
 def load_feed() -> list[FeedItem]:
@@ -160,27 +209,7 @@ def load_feed() -> list[FeedItem]:
         .limit(FEED_PAGE_SIZE)
         .execute()
     )
-    feed: list[FeedItem] = []
-    for row in response.data:
-        url = safe_http_url(row["url"])
-        if url is None:
-            continue
-        feed.append(
-            {
-                "id": row["id"],
-                "title": row["title"],
-                "url": url,
-                "image_url": safe_http_url(row["image_url"]) or "",
-                "author": row.get("author") or "",
-                "topics": _top_topics(row[LinkTopic.__tablename__]),
-                "entities": _top_entities(row.get(LinkEntity.__tablename__) or []),
-                "source": _source(row.get(LinkEntity.__tablename__) or []),
-                # Kept as PostgREST's own string so the page's pagination
-                # cursor round-trips it exactly (microseconds included).
-                "created_at": row["created_at"],
-            }
-        )
-    return feed
+    return [item for row in response.data if (item := _feed_item(row)) is not None]
 
 
 def load_domain_source_types() -> dict[str, SourceType]:
@@ -280,19 +309,11 @@ def _render_article(article: Article) -> str:
         f'<div class="post-swipe">'
         f'<div class="swipe-bg">'
         f'<span class="tint tint-down">'
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" '
-        f'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-        f'<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>'
-        f'<path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>'
-        f'<line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>'
-        f"</svg>"
+        f"{_lucide(TRASH_ICON, SWIPE_ICON_SIZE)}"
         f"<span>Not interested</span>"
         f"</span>"
         f'<span class="tint tint-up">'
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" '
-        f'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-        f'<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/>'
-        f"</svg>"
+        f"{_lucide(THUMBS_UP_ICON, SWIPE_ICON_SIZE)}"
         f"<span>Upvote</span>"
         f"</span>"
         f"</div>"
@@ -306,18 +327,12 @@ def _render_article(article: Article) -> str:
         f'<div class="post-footer">'
         f"{entities}"
         f'<span class="score">'
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" '
-        f'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-        f'<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/>'
-        f"</svg>"
+        f"{_lucide(THUMBS_UP_ICON, SCORE_ICON_SIZE)}"
         f'<span class="score-value">0</span>'
         f"</span>"
         f'<span class="reply-count" hidden></span>'
         f'<button type="button" class="reply-btn" aria-label="Reply">'
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" '
-        f'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-        f'<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>'
-        f"</svg>"
+        f"{_lucide(MESSAGE_ICON, REPLY_ICON_SIZE)}"
         f"</button>"
         f"</div>"
         f'<ol class="replies" hidden></ol>'
@@ -360,18 +375,22 @@ def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon
         f'    <div id="feed-sentinel" aria-hidden="true"></div>\n'
         f'    <template id="article-template">\n{_render_article(TEMPLATE_ARTICLE)}\n    </template>'
     )
-    html = TEMPLATE_PATH.read_text().replace(ARTICLES_PLACEHOLDER, list_html)
-    html = html.replace(FILTER_JS_PLACEHOLDER, compiled_script(FILTER_JS_PATH))
-    html = html.replace(SUPABASE_URL_PLACEHOLDER, script_json(supabase_url))
-    html = html.replace(SUPABASE_ANON_KEY_PLACEHOLDER, script_json(supabase_anon_key))
-    html = html.replace(FEED_PAGE_SIZE_PLACEHOLDER, script_json(FEED_PAGE_SIZE))
-    html = html.replace(ARTICLE_TOPIC_CHIPS_PLACEHOLDER, script_json(ARTICLE_TOPIC_CHIPS))
-    html = html.replace(ARTICLE_ENTITY_CHIPS_PLACEHOLDER, script_json(ARTICLE_ENTITY_CHIPS))
-    html = html.replace(FAVICON_URL_TEMPLATE_PLACEHOLDER, script_json(FAVICON_URL_TEMPLATE))
-    html = html.replace(FIND_SOURCES_URL_TEMPLATE_PLACEHOLDER, script_json(FIND_SOURCES_URL_TEMPLATE))
-    html = html.replace(FIND_SOURCES_PROMPT_PLACEHOLDER, script_json(FIND_SOURCES_PROMPT))
-    html = html.replace(FIND_ENTITY_SOURCES_PROMPT_PLACEHOLDER, script_json(FIND_ENTITY_SOURCES_PROMPT))
-    html = html.replace(SUPABASE_JS_MODULE_URL_PLACEHOLDER, script_json(SUPABASE_JS_MODULE_URL))
+    substitutions = {
+        ARTICLES_PLACEHOLDER: list_html,
+        FILTER_JS_PLACEHOLDER: compiled_script(FILTER_JS_PATH),
+        SUPABASE_URL_PLACEHOLDER: script_json(supabase_url),
+        SUPABASE_ANON_KEY_PLACEHOLDER: script_json(supabase_anon_key),
+        FEED_PAGE_SIZE_PLACEHOLDER: script_json(FEED_PAGE_SIZE),
+        ARTICLE_TOPIC_CHIPS_PLACEHOLDER: script_json(ARTICLE_TOPIC_CHIPS),
+        ARTICLE_ENTITY_CHIPS_PLACEHOLDER: script_json(ARTICLE_ENTITY_CHIPS),
+        FAVICON_URL_TEMPLATE_PLACEHOLDER: script_json(FAVICON_URL_TEMPLATE),
+        FIND_SOURCES_URL_TEMPLATE_PLACEHOLDER: script_json(FIND_SOURCES_URL_TEMPLATE),
+        FIND_SOURCES_PROMPT_PLACEHOLDER: script_json(FIND_SOURCES_PROMPT),
+        FIND_ENTITY_SOURCES_PROMPT_PLACEHOLDER: script_json(FIND_ENTITY_SOURCES_PROMPT),
+        SUPABASE_JS_MODULE_URL_PLACEHOLDER: script_json(SUPABASE_JS_MODULE_URL),
+    }
+    # The CSP hashes the finished script, so it's filled in last.
+    html = reduce(lambda page, sub: page.replace(*sub), substitutions.items(), TEMPLATE_PATH.read_text())
     return html.replace(CSP_PLACEHOLDER, escape(page_csp(html, supabase_url)))
 
 
