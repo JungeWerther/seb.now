@@ -10,6 +10,10 @@ from here.
   sentence-transformer (downloads ~90MB).
 - `train_compositional_embedding.py` — trains a tiny attention model with the
   homomorphism law as its loss, then re-checks it.
+- `kind_probe.py` — linear probe: how much of an entity's kind (`kind_path`)
+  is readable from its bare name, by character n-grams and by a frozen
+  multilingual embedding, per depth of the kind tree, against a shuffled-label
+  control. Reads `public.entities` with the anon key from `.env`.
 - `test_*.py` — collected by the normal `pytest` run.
 - `jev/` — prototype: noun-phrase relations judged by TypeSafe's Jev, emitted
   as PLN links in MeTTa. See its own README.
