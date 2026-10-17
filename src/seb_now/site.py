@@ -55,6 +55,8 @@ TEMPLATE_PATH = TEMPLATES_DIR / "index.html"
 # Compiled from frontend/src/filter.ts by `npm run build` in frontend/; CI
 # fails if it's out of date with its source.
 FILTER_JS_PATH = TEMPLATES_DIR / "filter.js"
+# Compiled from frontend/src/senses.ts the same way.
+SENSES_JS_PATH = TEMPLATES_DIR / "senses.js"
 OUTPUT_PATH = Path(__file__).parent.parent.parent / "dist" / "index.html"
 
 ARTICLES_PLACEHOLDER = "<!--ARTICLES-->"
@@ -70,6 +72,7 @@ FIND_ENTITY_SOURCES_PROMPT_PLACEHOLDER = "__FIND_ENTITY_SOURCES_PROMPT__"
 SUPABASE_JS_MODULE_URL_PLACEHOLDER = "__SUPABASE_JS_MODULE_URL__"
 CSP_PLACEHOLDER = "__CONTENT_SECURITY_POLICY__"
 FILTER_JS_PLACEHOLDER = "__FILTER_JS__"
+SENSES_JS_PLACEHOLDER = "__SENSES_JS__"
 
 FEED_COLUMNS = "id, title, url, image_url, author, created_at"
 
@@ -378,6 +381,7 @@ def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon
     substitutions = {
         ARTICLES_PLACEHOLDER: list_html,
         FILTER_JS_PLACEHOLDER: compiled_script(FILTER_JS_PATH),
+        SENSES_JS_PLACEHOLDER: compiled_script(SENSES_JS_PATH),
         SUPABASE_URL_PLACEHOLDER: script_json(supabase_url),
         SUPABASE_ANON_KEY_PLACEHOLDER: script_json(supabase_anon_key),
         FEED_PAGE_SIZE_PLACEHOLDER: script_json(FEED_PAGE_SIZE),
