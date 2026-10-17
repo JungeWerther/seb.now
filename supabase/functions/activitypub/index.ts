@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { memoize, once } from "../_shared/memo.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { constant, retry } from "../_shared/retry.ts";
 
 // Real ActivityPub backend for the site: the DO Functions proxy forwards
 // <site>/.well-known/webfinger and <site>/ap/inbox here, and a DO ingress
@@ -52,14 +53,13 @@ const BOOT_RETRY_DELAY_MS = 500;
 // runtime's service_role JWT can be minted a moment ahead of PostgREST's clock
 // ("JWT issued at future"), which resolves itself within a second.
 async function withBootRetry<T>(what: string, query: () => PromiseLike<{ data: T | null; error: { message: string } | null }>): Promise<T> {
-  let lastError = "";
-  for (let attempt = 1; attempt <= BOOT_RETRY_ATTEMPTS; attempt++) {
-    const { data, error } = await query();
-    if (!error && data) return data;
-    lastError = error?.message ?? "no data";
-    if (attempt < BOOT_RETRY_ATTEMPTS) await new Promise((r) => setTimeout(r, BOOT_RETRY_DELAY_MS));
-  }
-  throw new Error(`${what} failed: ${lastError}`);
+  const { outcome: { data, error } } = await retry<{ data: T | null; error: { message: string } | null }>({
+    attempts: BOOT_RETRY_ATTEMPTS,
+    delayMs: constant(BOOT_RETRY_DELAY_MS),
+    retryIf: ({ data, error }) => !!error || !data,
+  })(async () => await query());
+  if (error || !data) throw new Error(`${what} failed: ${error?.message ?? "no data"}`);
+  return data;
 }
 
 const settingRows = await withBootRetry("reading app_settings", () => supabase.from("app_settings").select("key, value"));
