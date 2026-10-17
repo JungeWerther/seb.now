@@ -752,6 +752,29 @@ replies and the reader's fediverse username (`@handle@seb.now`, previewed live
 under the field); the page lowercases it and checks the same pattern as the
 DB before saving.
 
+**Inbox — notifications** (`20261017234700_notifications.sql`, QA: `tests/qa`,
+`npm run notifications`). `public.notifications` (`recipient_id` → `profiles`,
+`kind`, `reply_id` → `replies`, `created_at`, `read_at`) holds one row per
+reply someone else posted that concerns a reader, written only by the
+`replies_notify` insert trigger (`notify_reply`, security definer, since replies
+are inserted through RLS) and cascaded away with its reply. Two kinds:
+`reply_to_you` (a reply whose `replies.in_reply_to_id` is yours: today only a
+fediverse note whose `inReplyTo` is your comment's note, set by `activitypub`,
+since the page has no threaded replies) and `reply_on_thread` (a reply, local or
+remote, on a link you replied on); a reply that is both is `reply_to_you` once
+(unique index on `(recipient_id, reply_id)` — an index, not a constraint, which
+PostgREST would read as a profiles↔replies many-to-many and make
+`replies`'s `profiles(handle)` embed ambiguous). RLS: readers select only their
+own and may update only `read_at`; no client inserts or deletes.
+`mark_notifications_read(ids)` (security invoker) marks the given ones of the
+caller's read. The page shows a red dot (`#menu-unread-dot`) on the menu icon
+while any are unread (counted on start, on each menu open and when the page
+becomes visible again), and an **Inbox** bubble (`#inbox-bubble`, its count and
+dot) opening `#inbox-overlay`: the newest `NOTIFICATIONS_SHOWN`, unread ones
+outlined, text only via `textContent`; tapping one opens its link's page. Opening
+it marks exactly the ones it showed read. Deploy `activitypub` only after this
+migration has applied, since it now writes `in_reply_to_id`.
+
 **Wordmark.** The header's SVG wordmark has its `viewBox` trimmed to the
 glyphs; its ink (`--brand-ink-height`, lifted by `--brand-ink-offset`) is
 centred in the header with `--header-brand-gap` above and below it, and the
