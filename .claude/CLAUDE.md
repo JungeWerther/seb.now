@@ -264,7 +264,22 @@ in the same pass contains or respells ("Pusateri" in "Drew Pusateri", "Sean
 O'Kane"/"Sean O’Kane") is always asked, never taken on an exact match, with
 those longer names as extra options; picking one gives it that name's entity,
 so a page's short forms don't become entities of their own (a bare "Sarah"
-would otherwise exact-match one global "Sarah" for every Sarah). Links run one at a time so
+would otherwise exact-match one global "Sarah" for every Sarah). A name the text
+only ever says inside a longer name it also read ("Tokyo" in "Palais de Tokyo",
+"Louis Vuitton" in "Fondation Louis Vuitton") is a fragment (`_shared/spans.ts`)
+and never a mention of its own: if it meant the longer name's thing that is
+already a mention, and if it didn't it isn't one. Before resolving, one more Jev
+question asks of each longer name holding a fragment whether it is one name or
+runs several things together ("Ledger Flex and Ledger Stax", "After World War
+II"); a run-together name (p of "parts" ≥ `SPAN_PARTS_MIN_P`) gives way to its
+parts, and every other fragment is dropped. Each result lists its `dropped`
+names. The page pass counts the title's names as read whole and offers them as
+longer names a page's short form can stand for (taking that entity). `POST
+{"respan": true, "link_ids": [...], "batch": "<label>"}` re-reads mentions already
+stored with the same rule and stages each drop as a `drop_mention` row in
+`entity_edits` (see "Reversible graph edits"), applying nothing; with `"decide":
+true` the eval also reports `mention_fragments`, mentions that are only part of a
+labelled name, which its overlap-based precision counts as relevant. Links run one at a time so
 a new entity is matchable by the next link. After the title, a second pass
 reads the page the link points to (one question per phrase asks name-and-kind
 at once), marked by `link_enrichment.page_entities_at`. `_shared/names.ts`

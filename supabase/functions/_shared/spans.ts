@@ -1,0 +1,92 @@
+// Which names in a pass stand for something themselves, and which are only
+// words inside a longer name ("Tokyo" in "Palais de Tokyo", "Louis Vuitton" in
+// "Fondation Louis Vuitton"). The text decides, not the names: a name is a
+// fragment when every place the text says it is inside a longer name read as
+// whole. A fragment is never a mention of its own: if it meant the longer
+// name's thing, that is already a mention, and if it didn't, it isn't one.
+
+export interface Span {
+  surface: string;
+}
+
+// A name's words, for finding the same name inside a longer one: case, curly
+// apostrophes and a possessive 's don't count.
+export function nameWords(surface: string): string[] {
+  return surface.toLowerCase().replace(/’/g, "'").replace(/'s\b/g, "").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+// Where `name`'s words start in `words`.
+function occurrences(words: string[], name: string[]): number[] {
+  if (!name.length) return [];
+  return words.flatMap((_, i) => (i + name.length <= words.length && name.every((w, j) => words[i + j] === w) ? [i] : []));
+}
+
+// Whether `longer`'s words hold `shorter`'s, in order, and more besides.
+export function containsName(longer: string[], shorter: string[]): boolean {
+  return shorter.length < longer.length && occurrences(longer, shorter).length > 0;
+}
+
+export const contains = (longer: Span, shorter: Span): boolean =>
+  containsName(nameWords(longer.surface), nameWords(shorter.surface));
+
+// Whether `text` says `name` anywhere outside every one of `wholes`. A name the
+// text doesn't say as such (spelled otherwise) is taken to stand alone.
+export function standsAlone(name: string, wholes: string[], text: string): boolean {
+  const words = nameWords(text);
+  const own = nameWords(name);
+  const covered = wholes.map(nameWords).filter((whole) => containsName(whole, own))
+    .flatMap((whole) => occurrences(words, whole).map((start) => [start, start + whole.length] as const));
+  const said = occurrences(words, own);
+  return !said.length || said.some((i) => !covered.some(([start, end]) => start <= i && i + own.length <= end));
+}
+
+// The names of `names` that only ever appear inside one of `wholes` in `text`.
+export function fragments<N extends Span>(names: N[], wholes: Span[], text: string): N[] {
+  return names.filter((name) => {
+    const holders = wholes.filter((whole) => contains(whole, name));
+    return holders.length > 0 && !standsAlone(name.surface, holders.map((h) => h.surface), text);
+  });
+}
+
+export interface SpanReading<N extends Span> {
+  kept: N[];
+  // Names that ran several things together, so their parts were read instead.
+  runTogether: N[];
+  // Names that were only part of a longer name.
+  parts: N[];
+}
+
+// Reads a pass's names once it is known which longer names run several things
+// together (`isRunTogether`, asked only of names holding a fragment):
+// those are dropped and their parts kept; any other fragment is dropped.
+// `context` are names already read whole elsewhere (the title, for a page).
+export async function readSpans<N extends Span>(
+  names: N[],
+  context: Span[],
+  text: string,
+  isRunTogether: (holders: { name: N; parts: N[] }[]) => Promise<Set<N>>,
+): Promise<SpanReading<N>> {
+  const found = fragments(names, [...names, ...context], text);
+  if (!found.length) return { kept: names, runTogether: [], parts: [] };
+  const holders = names
+    .map((name) => ({ name, parts: found.filter((part) => contains(name, part)) }))
+    .filter(({ parts }) => parts.length);
+  const runTogether = holders.length ? await isRunTogether(holders) : new Set<N>();
+  const remaining = names.filter((name) => !runTogether.has(name));
+  const parts = new Set(fragments(remaining, [...remaining, ...context], text));
+  return {
+    kept: remaining.filter((name) => !parts.has(name)),
+    runTogether: names.filter((name) => runTogether.has(name)),
+    parts: [...parts],
+  };
+}
+
+// The first sentence of `text` that says `surface`, for asking about a name
+// read back from storage.
+export function sentenceWith(text: string, surface: string, lang?: string | null): string | null {
+  const own = nameWords(surface);
+  for (const { segment } of new Intl.Segmenter(lang ?? undefined, { granularity: "sentence" }).segment(text)) {
+    if (occurrences(nameWords(segment), own).length) return segment.trim();
+  }
+  return null;
+}
