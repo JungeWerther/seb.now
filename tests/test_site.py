@@ -803,7 +803,7 @@ def test_render_inlines_the_compiled_filter_script_into_the_page_script() -> Non
 
     assert "__FILTER_JS__" not in html
     assert "function filterKey(" in script and "const Filter = {" in script
-    assert "const fetchServerFiltered = memoizePages(filterPageKey" in script
+    assert "const fetchServerFiltered = memoize(filterPageKey" in script
     # The local index keeps its own offset-based path; filter_links pages by keyset.
     assert "if (entityIndex.ready && filter.local) return fetchLocalFiltered(client, filter.local, offset);" in script
     assert "before_created_at: cursor?.createdAt ?? null" in script

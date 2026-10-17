@@ -1153,7 +1153,7 @@
   <script type="module">
 
     // Compiled from frontend/src/*.ts (tsc, see frontend/README.md); site.py
-    // inlines it here. Filter, filterKey, nextFilterCursor, memoizePages...
+    // inlines it here. Filter, filterKey, nextFilterCursor, memoize...
     __FILTER_JS__
 
     // Loaded without blocking the rest of this script, so swiping and the
@@ -2234,10 +2234,10 @@
 
     // One page of filter_links older than `cursor` (all when null), with the
     // cursor the next page starts from. Keyset pages don't shift as links
-    // are added, so they're cached by filterPageKey (memoizePages): "paris
+    // are added, so they're cached by filterPageKey (memoize): "paris
     // event" reuses "event paris", and going back to a filter lists it again
     // without asking the server.
-    const fetchServerFiltered = memoizePages(filterPageKey, async (filter, cursor) => {
+    const fetchServerFiltered = memoize(filterPageKey, async (filter, cursor) => {
       const client = await supabaseReady;
       const { data: ids, error } = await client.rpc("filter_links", {
         filters: filter.terms,
@@ -3606,6 +3606,10 @@
     const QUERY_TOPIC_CANDIDATES = 8;
     const QUERY_TOPIC_SUGGESTIONS = 3;
     const QUERY_ENTITY_SUGGESTIONS = 3;
+    // Readings and entity matches kept per page (both are asked for again as
+    // the same text is retyped); the least recently used goes first.
+    const QUERY_READ_CACHE_SIZE = 200;
+    const ENTITY_MATCH_CACHE_SIZE = 200;
     // Entity matches wait for this pause in typing (each is a request).
     const QUERY_ENTITY_PAUSE_MS = 150;
     // The word still being typed matches topic-name words it begins once it's
@@ -4257,35 +4261,32 @@
       const typed = queryWords(text);
       if (!typed.length) return Promise.resolve([]);
       const partial = /[a-z0-9]$/i.test(text) ? typed.pop() : null;
-      if (entityIndex.ready) {
-        const key = JSON.stringify(["local", entityIndex.version, typed, partial]);
-        if (!entityMatches.has(key)) {
-          entityMatches.set(key, withEntityIds(matchLocalEntities(typed, partial, QUERY_ENTITY_SUGGESTIONS)).catch((error) => {
-            console.error("failed to match entities", error);
-            entityMatches.delete(key);
-            return [];
-          }));
-        }
-        return entityMatches.get(key);
-      }
-      const key = JSON.stringify([typed, partial]);
-      if (!entityMatches.has(key)) {
-        entityMatches.set(key, (async () => {
-          const { data, error } = await (await supabaseReady).rpc("match_entities", {
-            words: typed,
-            partial,
-            max_results: QUERY_ENTITY_SUGGESTIONS,
-          });
-          if (error) throw error;
-          return withKindPaths(data);
-        })().catch((error) => {
-          console.error("failed to match entities", error);
-          entityMatches.delete(key);
-          return [];
-        }));
-      }
-      return entityMatches.get(key);
+      const matched = entityIndex.ready ? matchIndexedEntities(entityIndex.version, typed, partial) : matchServerEntities(typed, partial);
+      return matched.then((entities) => entities ?? [], (error) => {
+        console.error("failed to match entities", error);
+        return [];
+      });
     }
+
+    const matchIndexedEntities = memoize(
+      (version, typed, partial) => JSON.stringify(["local", version, typed, partial]),
+      (_version, typed, partial) => withEntityIds(matchLocalEntities(typed, partial, QUERY_ENTITY_SUGGESTIONS)),
+      { ttlMs: Infinity, maxEntries: ENTITY_MATCH_CACHE_SIZE },
+    );
+
+    const matchServerEntities = memoize(
+      (typed, partial) => JSON.stringify([typed, partial]),
+      async (typed, partial) => {
+        const { data, error } = await (await supabaseReady).rpc("match_entities", {
+          words: typed,
+          partial,
+          max_results: QUERY_ENTITY_SUGGESTIONS,
+        });
+        if (error) throw error;
+        return withKindPaths(data);
+      },
+      { ttlMs: Infinity, maxEntries: ENTITY_MATCH_CACHE_SIZE },
+    );
 
     // `entities` with each one's place in the kind tree, for its search-box tag.
     // A failed lookup leaves them tagged with their flat kind.
@@ -4311,32 +4312,32 @@
       else showQueryChips(text, feed.intent);
     }
 
-    const readQueries = new Map();
-
     // What query-parse makes of `text` with these candidate topics, or null.
+    // Each reading costs a credit, so one is never asked for twice.
+    const readQueryOnce = memoize(
+      (text, topicIds) => JSON.stringify([text.toLowerCase(), topicIds]),
+      async (text, topicIds) => {
+        const client = await supabaseReady;
+        // Reads are charged to the session's account.
+        await pendingSession;
+        const { data, error } = await client.functions.invoke("query-parse", { body: { text, topic_ids: topicIds } });
+        if (error) {
+          if (error.context?.status === 429) showQueryBalance(0);
+          throw error;
+        }
+        showQueryBalance(data.credits_left);
+        return { sort: data.sort, topic: data.topic, search: data.search };
+      },
+      { ttlMs: Infinity, maxEntries: QUERY_READ_CACHE_SIZE },
+    );
+
     function readQuery(text, topicIds) {
       // Out of reads: the box is a plain title search from here on.
       if (queryCreditsLeft === 0) return Promise.resolve(null);
-      const key = JSON.stringify([text.toLowerCase(), topicIds]);
-      if (!readQueries.has(key)) {
-        readQueries.set(key, (async () => {
-          const client = await supabaseReady;
-          // Reads are charged to the session's account.
-          await pendingSession;
-          const { data, error } = await client.functions.invoke("query-parse", { body: { text, topic_ids: topicIds } });
-          if (error) {
-            if (error.context?.status === 429) showQueryBalance(0);
-            throw error;
-          }
-          showQueryBalance(data.credits_left);
-          return { sort: data.sort, topic: data.topic, search: data.search };
-        })().catch((error) => {
-          console.error("failed to read query", error);
-          readQueries.delete(key);
-          return null;
-        }));
-      }
-      return readQueries.get(key);
+      return readQueryOnce(text, topicIds).catch((error) => {
+        console.error("failed to read query", error);
+        return null;
+      });
     }
 
     const queryBalance = document.getElementById("query-balance");
@@ -4404,7 +4405,6 @@
     // The latest entity matches, shown until the next ones arrive so the chips
     // don't flicker while typing.
     let entitySuggestions = [];
-    const entityMatches = new Map();
     let lastQueryText = null;
 
     function queryChip(kind, label) {

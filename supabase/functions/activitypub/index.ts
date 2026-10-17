@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { memoize, once } from "../_shared/memo.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 // Real ActivityPub backend for the site: the DO Functions proxy forwards
@@ -43,6 +44,8 @@ const supabase = createClient(
 );
 
 const BOOT_RETRY_ATTEMPTS = 4;
+// Reader accounts whose signing keys an isolate keeps imported.
+const ACCOUNT_KEYS_CACHED = 500;
 const BOOT_RETRY_DELAY_MS = 500;
 
 // Runs a service_role query, retrying briefly: on a cold boot the edge
@@ -120,21 +123,17 @@ function buildSigningString(headerNames: string[], values: Record<string, string
   return headerNames.map((name) => `${name}: ${values[name] ?? ""}`).join("\n");
 }
 
-let cachedKeys: { privateKey: CryptoKey; publicKeyPem: string } | null = null;
-
 async function fetchVaultSecret(name: string): Promise<string> {
   return await withBootRetry(`reading vault secret ${name}`, () => supabase.rpc("get_vault_secret", { secret_name: name }));
 }
 
-async function getKeys(): Promise<{ privateKey: CryptoKey; publicKeyPem: string }> {
-  if (cachedKeys) return cachedKeys;
+const getKeys = once(async (): Promise<{ privateKey: CryptoKey; publicKeyPem: string }> => {
   const [privatePem, publicPem] = await Promise.all([
     fetchVaultSecret("ap-actor-private-key"),
     fetchVaultSecret("ap-actor-public-key"),
   ]);
-  cachedKeys = { privateKey: await importPrivateKey(privatePem), publicKeyPem: publicPem };
-  return cachedKeys;
-}
+  return { privateKey: await importPrivateKey(privatePem), publicKeyPem: publicPem };
+});
 
 type Signer = { keyId: string; privateKey: CryptoKey };
 
@@ -202,14 +201,10 @@ async function exportPem(key: CryptoKey, format: "pkcs8" | "spki", label: string
   return `-----BEGIN ${label}-----\n${b64.match(/.{1,64}/g)!.join("\n")}\n-----END ${label}-----\n`;
 }
 
-const accountKeys = new Map<string, { privateKey: CryptoKey; publicKeyPem: string }>();
-
 // An account's keypair, generated and stored the first time it's needed. If
-// two requests race, the insert that loses is ignored and both use the stored
+// two isolates race, the insert that loses is ignored and both use the stored
 // pair.
-async function getAccountKeys(profileId: string): Promise<{ privateKey: CryptoKey; publicKeyPem: string }> {
-  const cached = accountKeys.get(profileId);
-  if (cached) return cached;
+const getAccountKeys = memoize((profileId: string) => profileId, async (profileId: string) => {
   let { data } = await supabase.from("ap_actor_keys").select("public_key_pem, private_key_pem").eq("profile_id", profileId).maybeSingle();
   if (!data) {
     const pair = await crypto.subtle.generateKey(
@@ -225,10 +220,8 @@ async function getAccountKeys(profileId: string): Promise<{ privateKey: CryptoKe
     await supabase.from("ap_actor_keys").upsert(generated, { onConflict: "profile_id", ignoreDuplicates: true });
     ({ data } = await supabase.from("ap_actor_keys").select("public_key_pem, private_key_pem").eq("profile_id", profileId).single());
   }
-  const keys = { privateKey: await importPrivateKey(data!.private_key_pem), publicKeyPem: data!.public_key_pem };
-  accountKeys.set(profileId, keys);
-  return keys;
-}
+  return { privateKey: await importPrivateKey(data!.private_key_pem), publicKeyPem: data!.public_key_pem };
+}, { maxEntries: ACCOUNT_KEYS_CACHED });
 
 async function accountSigner(profileId: string): Promise<Signer> {
   return { keyId: `${userActorId(profileId)}#main-key`, privateKey: (await getAccountKeys(profileId)).privateKey };

@@ -71,7 +71,7 @@ const FILTER_CACHE_MAX_PAGES = 50;
 // `load` memoized by key. The promise is what's kept, so a second request for
 // a page still in flight shares the first; a load that fails (null or a
 // rejection) is dropped so the next request tries again.
-function memoizePages(key, load, { ttlMs = FILTER_CACHE_TTL_MS, maxEntries = FILTER_CACHE_MAX_PAGES, now = () => Date.now() } = {}) {
+function memoize(key, load, { ttlMs = FILTER_CACHE_TTL_MS, maxEntries = FILTER_CACHE_MAX_PAGES, now = () => Date.now() } = {}) {
     const entries = new Map();
     return (...args) => {
         const k = key(...args);
