@@ -689,7 +689,9 @@ Postgres) next to #81's `db` and `page`. Order names live in `SORTS` (the functi
 (user_id, used)` counts them (readers see only their own row; no client
 writes). `query-parse` calls `spend_query_credit()` as the caller (security
 definer, takes one only while `used` is under the limit, returns what's left or
-null) before each Jev request, and gives the credit back if Jev fails; a stored
+null) before each Jev request, and gives the credit back if Jev fails
+(`refund_query_credit(user)`, one atomic decrement floored at 0, service_role
+only, since a reader who could call it would refund themselves); a stored
 answer costs nothing and reports `query_credits_left()`. No session → 401, none left → 429. Every
 reply carries `credits_left`, which the page shows as "N credits" in
 `#query-balance`, the first (non-tappable) bubble of the header menu, so it
