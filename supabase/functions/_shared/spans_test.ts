@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { fragments, readSpans, sentenceWith, Span, standsAlone } from "./spans.ts";
+import { aloneSentence, fragments, readSpans, sentenceWith, Span, standsAlone } from "./spans.ts";
 
 const span = (surface: string): Span => ({ surface });
 const surfaces = (spans: Span[]) => spans.map((s) => s.surface);
@@ -78,7 +78,7 @@ Deno.test("no fragment means no question", async () => {
 });
 
 Deno.test("the sentence that says a name", () => {
-  assertEquals(sentenceWith("Il pleut. Le Palais de Tokyo ouvre. Fin.", "palais de tokyo", "fr"), "Le Palais de Tokyo ouvre.");
+  assertEquals(sentenceWith("Il pleut. Le Palais de Tokyo ouvre. Fin.", "palais de tokyo"), "Le Palais de Tokyo ouvre");
   assertEquals(sentenceWith("Il pleut.", "Tokyo"), null);
 });
 
@@ -87,6 +87,24 @@ Deno.test("a name is never matched across a sentence end", () => {
   assert(!standsAlone("New York", ["New York Times"], "The New York Times reported.\nThe New York Times again."));
 });
 
-Deno.test("an invalid page language falls back to the default locale", () => {
-  assertEquals(sentenceWith("Il pleut. Tokyo dort.", "Tokyo", "en_US"), "Tokyo dort.");
+Deno.test("sentences split like the span rule: a title doesn't start one", () => {
+  assertEquals(aloneSentence("We met Dr. Smith today.", "Smith", ["Dr. Smith"]), null);
+  assertEquals(sentenceWith("Il pleut. Tokyo dort.", "Tokyo"), "Tokyo dort");
+});
+
+Deno.test("initials and short abbreviations don't end a sentence", () => {
+  assert(!standsAlone("Thi Nguyen", ["C. Thi Nguyen"], "C. Thi Nguyen spoke."));
+  assert(!standsAlone("Smith", ["Dr. Smith"], "We met Dr. Smith today."));
+  assert(standsAlone("New York", ["New York Times"], "He lives in New York. Times change."));
+});
+
+Deno.test("the sentence offered is the one where the name stands alone", () => {
+  const body = "The Palais de Tokyo opens tomorrow. She then flew to Tokyo.";
+  assertEquals(aloneSentence(body, "Tokyo", ["Palais de Tokyo"]), "She then flew to Tokyo");
+  assertEquals(aloneSentence("The Palais de Tokyo opens.", "Tokyo", ["Palais de Tokyo"]), null);
+});
+
+Deno.test("a comma between two names keeps them apart", () => {
+  assert(standsAlone("New York", ["New York Times"], "The New York Times lists New York, Times Square and Central Park."));
+  assert(!standsAlone("Straus", ["Farrar, Straus and Giroux"], "Farrar, Straus and Giroux published it."));
 });

@@ -15,6 +15,14 @@ export function nameWords(surface: string): string[] {
   return surface.toLowerCase().replace(/’/g, "'").replace(/'s\b/g, "").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 }
 
+// Words and commas, for finding where names stand in a text: a comma between
+// two names keeps them apart ("New York, Times Square" holds no "New York
+// Times"), and a name written with one ("Farrar, Straus and Giroux") still
+// matches itself.
+function spanTokens(text: string): string[] {
+  return text.toLowerCase().replace(/’/g, "'").replace(/'s\b/g, "").match(/[\p{L}\p{N}]+|,/gu) ?? [];
+}
+
 // Where `name`'s words start in `words`.
 function occurrences(words: string[], name: string[]): number[] {
   if (!name.length) return [];
@@ -29,19 +37,22 @@ export function containsName(longer: string[], shorter: string[]): boolean {
 export const contains = (longer: Span, shorter: Span): boolean =>
   containsName(nameWords(longer.surface), nameWords(shorter.surface));
 
-// A name never runs across a sentence end or a line break.
-const BOUNDARY = /[.!?;]+(?:\s+|$)|\n+/u;
+// A name never runs across a sentence end or a line break. A period after an
+// initial or a short capitalised abbreviation ("C. Thi Nguyen", "Dr. Smith",
+// "U.S. Army") doesn't end a sentence.
+const BOUNDARY =
+  /(?<!(?:^|[^\p{L}])(?:\p{Lu}|Dr|Mr|Mrs|Ms|Mme|Mlle|St|Ste|Jr|Sr|Prof|Gen|Gov|Sen|Rep|Lt|Col|Capt|Inc|Ltd|Co|Corp|vs|No))\.+(?:\s+|$)|[!?;]+(?:\s+|$)|\n+/u;
 
 // Whether `text` says `name` anywhere outside every one of `wholes`, reading
 // sentence by sentence so a name is never matched across a boundary ("New York.
 // Times are hard" holds no "New York Times"). A name the text doesn't say as
 // such (spelled otherwise) is taken to stand alone.
 export function standsAlone(name: string, wholes: string[], text: string): boolean {
-  const own = nameWords(name);
-  const holders = wholes.map(nameWords).filter((whole) => containsName(whole, own));
+  const own = spanTokens(name);
+  const holders = wholes.filter((whole) => containsName(nameWords(whole), nameWords(name))).map(spanTokens);
   let said = false;
   for (const segment of text.split(BOUNDARY)) {
-    const words = nameWords(segment);
+    const words = spanTokens(segment);
     const covered = holders.flatMap((whole) => occurrences(words, whole).map((start) => [start, start + whole.length] as const));
     for (const i of occurrences(words, own)) {
       said = true;
@@ -92,22 +103,22 @@ export async function readSpans<N extends Span>(
   };
 }
 
-// A page's declared language isn't always a valid locale ("en_US"); then the
-// default one reads its sentences.
-function sentenceSegmenter(lang?: string | null): Intl.Segmenter {
-  try {
-    return new Intl.Segmenter(lang ?? undefined, { granularity: "sentence" });
-  } catch {
-    return new Intl.Segmenter(undefined, { granularity: "sentence" });
-  }
+// The sentences of `text`, split where the span rule splits them (so an initial
+// or a title like "Dr." never starts a new one).
+const sentences = (text: string): string[] => text.split(BOUNDARY).map((t) => t.trim()).filter(Boolean);
+
+// The first sentence of `text` that says `surface` outside every one of
+// `wholes` (the sentence that makes it stand alone), else null.
+export function aloneSentence(text: string, surface: string, wholes: string[]): string | null {
+  const own = spanTokens(surface);
+  return sentences(text).find((segment) =>
+    occurrences(spanTokens(segment), own).length > 0 && standsAlone(surface, wholes, segment)
+  ) ?? null;
 }
 
 // The first sentence of `text` that says `surface`, for asking about a name
 // read back from storage.
-export function sentenceWith(text: string, surface: string, lang?: string | null): string | null {
-  const own = nameWords(surface);
-  for (const { segment } of sentenceSegmenter(lang).segment(text)) {
-    if (occurrences(nameWords(segment), own).length) return segment.trim();
-  }
-  return null;
+export function sentenceWith(text: string, surface: string): string | null {
+  const own = spanTokens(surface);
+  return sentences(text).find((segment) => occurrences(spanTokens(segment), own).length > 0) ?? null;
 }
