@@ -48,6 +48,9 @@ interface Filter {
   log: FilterChip[];
 }
 
+// Between a chip's kinds, when its senses are of several.
+const CHIP_KIND_SEPARATOR = " / ";
+
 const Filter = {
   unit: (): Filter => ({ terms: [], local: [], log: [] }),
   // One term with all its senses; `localSenses` is null when one of them
@@ -55,7 +58,7 @@ const Filter = {
   term: (senses: FilterSense[], label: string, kinds: string[], localSenses: LocalSense[] | null): Filter => ({
     terms: [oneOrAny(senses)],
     local: localSenses && [oneOrAny(localSenses)],
-    log: [{ kind: [...new Set(kinds)].join(" / "), label }],
+    log: [{ kind: [...new Set(kinds)].join(CHIP_KIND_SEPARATOR), label }],
   }),
   concat: (a: Filter, b: Filter): Filter => ({
     terms: [...a.terms, ...b.terms],
@@ -69,29 +72,54 @@ function oneOrAny<S>(senses: S[]): S | { any: S[] } {
   return senses.length === 1 && only !== undefined ? only : { any: senses };
 }
 
-// One sense in a canonical spelling: entity ids sorted, since a sense with
+// The seams of a cache key: between a sense's field and its spelling, the
+// ids of one sense, a period's ends, an indexical and what it is read on,
+// the senses of a term, the terms of a filter, a filter and its cursor, and
+// the cursor's two halves.
+type KeyPart = "field" | "entity" | "period" | "reading" | "sense" | "term" | "page" | "cursor";
+
+const separatorByKeyPart: Mapping<KeyPart, string> = {
+  field: ":",
+  entity: ",",
+  period: "/",
+  reading: "@",
+  sense: "|",
+  term: "&",
+  page: "@",
+  cursor: "|",
+};
+
+// A sense's field, as fieldOf finds it: an indexical by what it is read on.
+type SenseField = "kind" | "entities" | "topic" | "period" | "at" | "focus";
+
+// Each sense's spelling, canonical: entity ids sorted, since a sense with
 // several entities passes through any of them.
+const spellingBySenseField: Cases<SenseField, FilterSense, string> = {
+  kind: ({ kind }) => kind,
+  entities: ({ entities }) => [...entities].sort().join(separatorByKeyPart.entity),
+  topic: ({ topic }) => topic,
+  period: ({ period }) => period.join(separatorByKeyPart.period),
+  at: ({ indexical, at }) => [indexical, at].join(separatorByKeyPart.reading),
+  focus: ({ indexical, focus }) => [indexical, JSON.stringify(Object.entries(focus).sort())].join(separatorByKeyPart.reading),
+};
+
+// One sense in a canonical spelling, under its field.
 function senseKey(sense: FilterSense): string {
-  if ("kind" in sense) return `k:${sense.kind}`;
-  if ("entities" in sense) return `e:${[...sense.entities].sort().join(",")}`;
-  if ("topic" in sense) return `t:${sense.topic}`;
-  if ("period" in sense) return `p:${sense.period[0]}/${sense.period[1]}`;
-  if ("at" in sense) return `i:${sense.indexical}@${sense.at}`;
-  return `i:${sense.indexical}#${JSON.stringify(Object.entries(sense.focus).sort())}`;
+  return [fieldOf(spellingBySenseField, sense), match(spellingBySenseField, sense)].join(separatorByKeyPart.field);
 }
 
 // One term in a canonical spelling: its senses deduplicated and sorted, since
 // disjunction doesn't care about order or repeats.
 function termKey(term: FilterTerm): string {
   const senses = "any" in term ? term.any : [term];
-  return [...new Set(senses.map(senseKey))].sort().join("|");
+  return [...new Set(senses.map(senseKey))].sort().join(separatorByKeyPart.sense);
 }
 
 // The filter's cache key. Conjunction is commutative and idempotent, so
 // terms are deduplicated and sorted: "paris event" and "event paris" are the
 // same filter. The log is left out; it only decides what the chips say.
 function filterKey(filter: Pick<Filter, "terms">): string {
-  return [...new Set(filter.terms.map(termKey))].sort().join("&");
+  return [...new Set(filter.terms.map(termKey))].sort().join(separatorByKeyPart.term);
 }
 
 // Where the next page starts: links strictly older than this one, by
@@ -116,7 +144,8 @@ function nextFilterCursor(rows: readonly FilterRow[]): FilterCursor | null {
 
 // The key of one page of `filter`: its filter's key and where it starts.
 function filterPageKey(filter: Pick<Filter, "terms">, cursor: FilterCursor | null): string {
-  return cursor ? `${filterKey(filter)}@${cursor.createdAt}|${cursor.id}` : filterKey(filter);
+  const key = filterKey(filter);
+  return cursor ? [key, [cursor.createdAt, cursor.id].join(separatorByKeyPart.cursor)].join(separatorByKeyPart.page) : key;
 }
 
 // How long a cached page is reused. Keyset pages don't shift when links are
@@ -127,18 +156,19 @@ const FILTER_CACHE_TTL_MS = 5 * 60 * 1000;
 const FILTER_CACHE_MAX_PAGES = 50;
 
 interface CacheEntry<V> {
-  value: Promise<V | null>;
+  value: Promise<Result<V>>;
   expires: number;
 }
 
 // `load` memoized by key. The promise is what's kept, so a second request for
-// a page still in flight shares the first; a load that fails (null or a
-// rejection) is dropped so the next request tries again.
+// a page still in flight shares the first; a failed load (or one that
+// rejects, which comes back as a failure) is dropped so the next request
+// tries again.
 function memoize<A extends unknown[], V>(
   key: (...args: A) => string,
-  load: (...args: A) => Promise<V | null>,
+  load: Lazy<V, A>,
   { ttlMs = FILTER_CACHE_TTL_MS, maxEntries = FILTER_CACHE_MAX_PAGES, now = () => Date.now() } = {},
-): (...args: A) => Promise<V | null> {
+): Lazy<V, A> {
   const entries = new Map<string, CacheEntry<V>>();
   return (...args: A) => {
     const k = key(...args);
@@ -149,16 +179,10 @@ function memoize<A extends unknown[], V>(
       entries.set(k, hit);
       return hit.value;
     }
-    const value = load(...args).then(
-      (v) => {
-        if (v === null && entries.get(k)?.value === value) entries.delete(k);
-        return v;
-      },
-      (error: unknown) => {
-        if (entries.get(k)?.value === value) entries.delete(k);
-        throw error;
-      },
-    );
+    const value: Promise<Result<V>> = Result.settle(Promise.resolve(args).then((a) => load(...a))).then((result) => {
+      if (!Result.isOk(result) && entries.get(k)?.value === value) entries.delete(k);
+      return result;
+    });
     entries.delete(k);
     entries.set(k, { value, expires: now() + ttlMs });
     while (entries.size > maxEntries) {

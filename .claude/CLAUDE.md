@@ -706,8 +706,17 @@ keyset (`before_created_at`, `before_id`, the last row's `created_at`/`link_id`;
 `20261017130000_filter_links_keyset.sql`) and caches each page by
 `filterPageKey` (5 min, 50 pages, a page in flight shared, failures not kept), so
 "paris event" reuses "event paris"; the local index keeps its own offset path.
+Values that can fail travel as `Result`s (`frontend/src/prelude.ts`, inlined
+first at `__PRELUDE_JS__`): `{ data, error }`, the shape supabase-js answers in,
+so the feed's page fetchers, `memoize` and the loaders it wraps return one
+rather than null or a throw, and `loadMore` reads the error once. Dispatch on a
+value's shape is a table (`Mapping`/`Cases` + `match`: `spellingBySenseField`,
+the page's `tagBySenseField` and `pageFetcherByFeedField`), named
+`<value>By<Key>`; `frontend/test/conventions.test.mjs` enforces that, no
+if-chains on fields, and no string literals in function bodies (the page
+script's existing ones are a shrink-only baseline, `page-strings.json`).
 CI's `frontend` job runs ESLint (strict type-checked), `tsc --noEmit`, the build
-(failing if the committed `filter.js` differs) and `frontend/test/`;
+(failing if a committed compiled script differs) and `frontend/test/`;
 `tests/qa/` has `npm run keyset` (keyset pages equal offset pages on an embedded
 Postgres) next to #81's `db` and `page`. Order names live in `SORTS` (the function) and
 `SORT_LABELS` (the page) and must match `feed_query`'s check.

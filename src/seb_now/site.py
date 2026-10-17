@@ -52,8 +52,9 @@ from seb_now.source_type import classify_source, display_domain, favicon_host
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 TEMPLATE_PATH = TEMPLATES_DIR / "index.html"
-# Compiled from frontend/src/filter.ts by `npm run build` in frontend/; CI
-# fails if it's out of date with its source.
+# Compiled from frontend/src/*.ts by `npm run build` in frontend/; CI fails
+# if they're out of date with their sources.
+PRELUDE_JS_PATH = TEMPLATES_DIR / "prelude.js"
 FILTER_JS_PATH = TEMPLATES_DIR / "filter.js"
 # Compiled from frontend/src/senses.ts the same way.
 SENSES_JS_PATH = TEMPLATES_DIR / "senses.js"
@@ -71,6 +72,7 @@ FIND_SOURCES_PROMPT_PLACEHOLDER = "__FIND_SOURCES_PROMPT__"
 FIND_ENTITY_SOURCES_PROMPT_PLACEHOLDER = "__FIND_ENTITY_SOURCES_PROMPT__"
 SUPABASE_JS_MODULE_URL_PLACEHOLDER = "__SUPABASE_JS_MODULE_URL__"
 CSP_PLACEHOLDER = "__CONTENT_SECURITY_POLICY__"
+PRELUDE_JS_PLACEHOLDER = "__PRELUDE_JS__"
 FILTER_JS_PLACEHOLDER = "__FILTER_JS__"
 SENSES_JS_PLACEHOLDER = "__SENSES_JS__"
 
@@ -380,6 +382,7 @@ def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon
     )
     substitutions = {
         ARTICLES_PLACEHOLDER: list_html,
+        PRELUDE_JS_PLACEHOLDER: compiled_script(PRELUDE_JS_PATH),
         FILTER_JS_PLACEHOLDER: compiled_script(FILTER_JS_PATH),
         SENSES_JS_PLACEHOLDER: compiled_script(SENSES_JS_PATH),
         SUPABASE_URL_PLACEHOLDER: script_json(supabase_url),

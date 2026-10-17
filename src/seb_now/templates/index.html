@@ -1153,8 +1153,10 @@
   <script type="module">
 
     // Compiled from frontend/src/*.ts (tsc, see frontend/README.md); site.py
-    // inlines it here. Filter, filterKey, nextFilterCursor, memoize...; then
-    // lexicon, claimNames, senseLabel (what typed words name, senses.ts).
+    // inlines it here. Result, Mapping and match (prelude.ts); Filter,
+    // filterKey, nextFilterCursor, memoize...; then lexicon, claimNames,
+    // senseLabel (what typed words name, senses.ts).
+    __PRELUDE_JS__
     __FILTER_JS__
     __SENSES_JS__
 
@@ -2060,37 +2062,45 @@
       return text.replace(/[\\%_]/g, (c) => `\\${c}`);
     }
 
+    // A page of the feed is a Result (frontend/src/prelude.ts) of {rows,
+    // count, cursor?}: `count` is how many the source listed, which decides
+    // whether there's more, and `cursor` where its next page starts.
+    const emptyPage = () => Result.ok({ rows: [], count: 0 });
+    const FEED_LOAD_FAILED = "failed to load the feed";
+
     async function fetchLinks({ query = "", before = null }) {
       let request = (await supabaseReady).from("links").select(FEED_SELECT);
       if (query) request = request.ilike("search_text", `%${escapeLike(query.toLowerCase())}%`);
       if (before) request = request.or(keyset("lt", before));
-      const { data, error } = await request
+      const rows = await request
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .limit(FEED_PAGE_SIZE);
-      if (error) {
-        console.error("failed to load feed", error);
-        return null;
-      }
-      return data;
+      return Result.map(rows, (page) => ({ rows: page, count: page.length, cursor: page.length ? cursorOfRow(page.at(-1)) : null }));
     }
 
-    // One page of ranked_feed, then those links by id in rank order. `count`
-    // is how many ranks came back, which decides whether there's more.
+    function cursorOfRow(row) {
+      return { createdAt: row.created_at, id: row.id };
+    }
+
+    // The links with these ids, in that order.
+    async function linksInIdOrder(client, order) {
+      if (!order.length) return Result.ok([]);
+      const position = new Map(order.map((id, i) => [id, i]));
+      return Result.map(await client.from("links").select(FEED_SELECT).in("id", order),
+        (rows) => rows.sort((a, b) => position.get(a.id) - position.get(b.id)));
+    }
+
+    // One page of ranked_feed, then those links by id in rank order.
     async function fetchRanked(asOf, offset) {
       const client = await supabaseReady;
       // ranked_feed reads the caller's own votes, so wait for the session.
       await pendingSession;
-      const { data: ranks, error } = await client.rpc("ranked_feed", {
+      return Result.chain(client.rpc("ranked_feed", {
         as_of: asOf,
         page_offset: offset,
         page_size: FEED_PAGE_SIZE,
-      });
-      if (error) {
-        console.error("failed to rank feed", error);
-        return null;
-      }
-      return linksInOrder(client, ranks);
+      }), (ranks) => linksInOrder(client, ranks));
     }
 
     // One page of feed_query for a typed query's intent; only its for_you
@@ -2102,7 +2112,7 @@
       if (intent.sort === "for_you") await pendingSession;
       const entities = intent.entities ?? [];
       const required = intent.required ?? [];
-      const { data: ranks, error } = await client.rpc("feed_query", {
+      const page = await Result.chain(client.rpc("feed_query", {
         sort: intent.sort,
         topic: intent.topic?.id ?? null,
         search: intent.search || null,
@@ -2111,28 +2121,14 @@
         page_size: FEED_PAGE_SIZE,
         entities: entities.length ? entities.map((e) => e.id) : null,
         required: required.length ? required.map(({ ids, words }) => ({ ids, words })) : null,
-      });
-      if (error) {
-        console.error("failed to query feed", error);
-        return null;
-      }
-      const page = await linksInOrder(client, ranks);
-      if (!page || !(entities.length || required.length)) return page;
+      }), (ranks) => linksInOrder(client, ranks));
+      if (!(entities.length || required.length)) return page;
       const shared = { entities: new Set([...required, ...entities].map((e) => e.name)), topics: new Set() };
-      return { rows: page.rows.map((row) => ({ row, shared })), count: page.count };
+      return Result.map(page, ({ rows, count }) => ({ rows: rows.map((row) => ({ row, shared })), count }));
     }
 
     async function linksInOrder(client, ranks) {
-      if (ranks.length === 0) return { rows: [], count: 0 };
-      const ids = ranks.map((r) => r.link_id);
-      const { data: rows, error: linksError } = await client.from("links").select(FEED_SELECT).in("id", ids);
-      if (linksError) {
-        console.error("failed to load feed", linksError);
-        return null;
-      }
-      const position = new Map(ids.map((id, i) => [id, i]));
-      rows.sort((a, b) => position.get(a.id) - position.get(b.id));
-      return { rows, count: ranks.length };
+      return Result.map(await linksInIdOrder(client, ranks.map((r) => r.link_id)), (rows) => ({ rows, count: ranks.length }));
     }
 
     // One page of related_feed: related_links with each link's row in the
@@ -2140,22 +2136,18 @@
     // focused post.
     async function fetchRelated(id, offset) {
       const client = await supabaseReady;
-      const { data: related, error } = await client.rpc("related_feed", {
+      const related = await client.rpc("related_feed", {
         link: id,
         max_results: FEED_PAGE_SIZE,
         page_offset: offset,
       });
-      if (error) {
-        console.error("failed to load related links", error);
-        return null;
-      }
-      return {
-        rows: related.map((r) => ({
+      return Result.map(related, (rows) => ({
+        rows: rows.map((r) => ({
           row: r.link_row,
           shared: { entities: new Set(r.shared_entities), topics: new Set(r.shared_topics) },
         })),
-        count: related.length,
-      };
+        count: rows.length,
+      }));
     }
 
     // One page of entity_links, then those links by id in its order, each
@@ -2163,61 +2155,34 @@
     // promise: a direct visit only learns the name with the page's header.
     async function fetchEntityLinks(entity, offset) {
       const client = await supabaseReady;
-      const { data: ids, error } = await client.rpc("entity_links", {
+      return Result.chain(client.rpc("entity_links", {
         entity: entity.id,
         max_results: FEED_PAGE_SIZE,
         page_offset: offset,
+      }), async (ids) => {
+        if (ids.length === 0) return emptyPage();
+        const [rows, name] = await Promise.all([linksInIdOrder(client, ids.map((r) => r.link_id)), entity.name]);
+        const shared = { entities: new Set(name ? [name] : []), topics: new Set() };
+        return Result.map(rows, (found) => ({ rows: found.map((row) => ({ row, shared })), count: ids.length }));
       });
-      if (error) {
-        console.error("failed to load the entity's links", error);
-        return null;
-      }
-      if (ids.length === 0) return { rows: [], count: 0 };
-      const order = ids.map((r) => r.link_id);
-      const [{ data: rows, error: linksError }, name] = await Promise.all([
-        client.from("links").select(FEED_SELECT).in("id", order),
-        entity.name,
-      ]);
-      if (linksError) {
-        console.error("failed to load the entity's links", linksError);
-        return null;
-      }
-      const position = new Map(order.map((id, i) => [id, i]));
-      rows.sort((a, b) => position.get(a.id) - position.get(b.id));
-      const shared = { entities: new Set(name ? [name] : []), topics: new Set() };
-      return { rows: rows.map((row) => ({ row, shared })), count: ids.length };
     }
 
     // One page of topic_links (the topic and its children), then those links
     // by id in its order, each with its chips under the topic highlighted.
     async function fetchTopicLinks(path, offset) {
       const client = await supabaseReady;
-      const { data: ids, error } = await client.rpc("topic_links", {
+      const inTopic = (id) => id === path || id.startsWith(`${path}.`);
+      return Result.chain(client.rpc("topic_links", {
         topic: path,
         max_results: FEED_PAGE_SIZE,
         page_offset: offset,
-      });
-      if (error) {
-        console.error("failed to load the topic's links", error);
-        return null;
-      }
-      if (ids.length === 0) return { rows: [], count: 0 };
-      const order = ids.map((r) => r.link_id);
-      const { data: rows, error: linksError } = await client.from("links").select(FEED_SELECT).in("id", order);
-      if (linksError) {
-        console.error("failed to load the topic's links", linksError);
-        return null;
-      }
-      const position = new Map(order.map((id, i) => [id, i]));
-      rows.sort((a, b) => position.get(a.id) - position.get(b.id));
-      const inTopic = (id) => id === path || id.startsWith(`${path}.`);
-      return {
+      }), async (ids) => Result.map(await linksInIdOrder(client, ids.map((r) => r.link_id)), (rows) => ({
         rows: rows.map((row) => {
           const topics = (row.link_topics || []).filter((lt) => lt.topics && inTopic(lt.topics.id));
           return { row, shared: { entities: new Set(), topics: new Set(topics.map((lt) => lt.topics.name)) } };
         }),
         count: ids.length,
-      };
+      })));
     }
 
     // One page of kind_links (entities of the kind or its subkinds), then those
@@ -2225,16 +2190,11 @@
     // highlighted.
     async function fetchKindLinks(path, offset) {
       const client = await supabaseReady;
-      const { data: ids, error } = await client.rpc("kind_links", {
+      return Result.chain(client.rpc("kind_links", {
         kind: path,
         max_results: FEED_PAGE_SIZE,
         page_offset: offset,
-      });
-      if (error) {
-        console.error("failed to load the kind's links", error);
-        return null;
-      }
-      return linksWithMatches(client, ids);
+      }), (ids) => linksWithMatches(client, ids));
     }
 
     // One page of a typed query's filters (see Filter): the links passing
@@ -2254,18 +2214,12 @@
     // without asking the server.
     const fetchServerFiltered = memoize(filterPageKey, async (filter, cursor) => {
       const client = await supabaseReady;
-      const { data: ids, error } = await client.rpc("filter_links", {
+      return Result.chain(client.rpc("filter_links", {
         filters: filter.terms,
         max_results: FEED_PAGE_SIZE,
         before_created_at: cursor?.createdAt ?? null,
         before_id: cursor?.id ?? null,
-      });
-      if (error) {
-        console.error("failed to load the filtered links", error);
-        return null;
-      }
-      const page = await linksWithMatches(client, ids);
-      return page && { ...page, cursor: nextFilterCursor(ids) };
+      }), async (ids) => Result.map(await linksWithMatches(client, ids), (page) => ({ ...page, cursor: nextFilterCursor(ids) })));
     });
 
     // Link rows by seq, fetched once per visit: a filter's pages come from the
@@ -2278,90 +2232,57 @@
     async function fetchLocalFiltered(client, local, offset) {
       const page = filterLocalLinks(local).slice(offset, offset + FEED_PAGE_SIZE);
       const missing = page.map((p) => p.linkSeq).filter((seq) => !linkRowsBySeq.has(seq));
-      if (missing.length) {
-        const { data, error } = await client.from("links").select(`${FEED_SELECT}, seq`).in("seq", missing);
-        if (error) {
-          console.error("failed to load the filtered links", error);
-          return null;
-        }
+      const fetched = missing.length ? await client.from("links").select(`${FEED_SELECT}, seq`).in("seq", missing) : Result.ok([]);
+      return Result.map(fetched, (data) => {
         for (const row of data) linkRowsBySeq.set(row.seq, row);
-      }
-      const rows = page.filter((p) => linkRowsBySeq.has(p.linkSeq)).map((p) => ({
-        row: linkRowsBySeq.get(p.linkSeq),
-        shared: {
-          entities: new Set([...p.entitySeqs].map((seq) => entityIndex.entities.get(seq)?.name).filter(Boolean)),
-          topics: new Set(),
-        },
-      }));
-      return { rows, count: page.length };
+        const rows = page.filter((p) => linkRowsBySeq.has(p.linkSeq)).map((p) => ({
+          row: linkRowsBySeq.get(p.linkSeq),
+          shared: {
+            entities: new Set([...p.entitySeqs].map((seq) => entityIndex.entities.get(seq)?.name).filter(Boolean)),
+            topics: new Set(),
+          },
+        }));
+        return { rows, count: page.length };
+      });
     }
 
     // `ids` ({link_id, entity_ids} rows) as links in that order, each with the
     // chips of its matched entities highlighted.
     async function linksWithMatches(client, ids) {
-      if (ids.length === 0) return { rows: [], count: 0 };
-      const order = ids.map((r) => r.link_id);
-      const { data: rows, error } = await client.from("links").select(FEED_SELECT).in("id", order);
-      if (error) {
-        console.error("failed to load links", error);
-        return null;
-      }
       const matched = new Map(ids.map((r) => [r.link_id, new Set(r.entity_ids)]));
-      const position = new Map(order.map((id, i) => [id, i]));
-      rows.sort((a, b) => position.get(a.id) - position.get(b.id));
-      return {
+      return Result.map(await linksInIdOrder(client, ids.map((r) => r.link_id)), (rows) => ({
         rows: rows.map((row) => {
           const entities = (row.link_entities || []).filter((le) => le.entities && matched.get(row.id).has(le.entities.id));
           return { row, shared: { entities: new Set(entities.map((le) => le.entities.name)), topics: new Set() } };
         }),
         count: ids.length,
-      };
+      }));
     }
+
+    // Which page the feed lists, by the first of these it has set; a feed
+    // with none of them is the ranked feed.
+    const pageFetcherByFeedField = {
+      filter: ({ filter, offset, cursor }) => fetchFiltered(filter, offset, cursor),
+      kind: ({ kind, offset }) => fetchKindLinks(kind, offset),
+      topic: ({ topic, offset }) => fetchTopicLinks(topic, offset),
+      entity: ({ entity, offset }) => fetchEntityLinks(entity, offset),
+      related: ({ related, offset }) => fetchRelated(related, offset),
+      intent: ({ intent, asOf, offset }) => fetchQueried(intent, asOf, offset),
+      query: ({ query, cursor }) => fetchLinks({ query, before: cursor }),
+      chronological: ({ query, cursor }) => fetchLinks({ query, before: cursor }),
+    };
 
     async function fetchPage() {
       // An indexical's or a term's page lists nothing until its filter is read
       // (or ever, for "this" read on no page).
-      if ((feed.indexical || feed.term) && !feed.filter) return { rows: [], count: 0 };
-      if (feed.filter) {
-        const page = await fetchFiltered(feed.filter, feed.offset, feed.cursor);
-        if (page) feed.offset += page.count;
-        if (page?.cursor) feed.cursor = page.cursor;
-        return page;
-      }
-      if (feed.kind) {
-        const page = await fetchKindLinks(feed.kind, feed.offset);
-        if (page) feed.offset += page.count;
-        return page;
-      }
-      if (feed.topic) {
-        const page = await fetchTopicLinks(feed.topic, feed.offset);
-        if (page) feed.offset += page.count;
-        return page;
-      }
-      if (feed.entity) {
-        const page = await fetchEntityLinks(feed.entity, feed.offset);
-        if (page) feed.offset += page.count;
-        return page;
-      }
-      if (feed.related) {
-        const page = await fetchRelated(feed.related, feed.offset);
-        if (page) feed.offset += page.count;
-        return page;
-      }
-      if (feed.intent) {
-        const page = await fetchQueried(feed.intent, feed.asOf, feed.offset);
-        if (page) feed.offset += page.count;
-        return page;
-      }
-      if (feed.query || feed.chronological) {
-        const rows = await fetchLinks({ query: feed.query, before: feed.cursor });
-        if (!rows) return null;
-        if (rows.length > 0) feed.cursor = { createdAt: rows.at(-1).created_at, id: rows.at(-1).id };
-        return { rows, count: rows.length };
-      }
-      const page = await fetchRanked(feed.asOf, feed.offset);
-      if (page) feed.offset += page.count;
-      return page;
+      if ((feed.indexical || feed.term) && !feed.filter) return emptyPage();
+      const field = Object.keys(pageFetcherByFeedField).find((key) => feed[key]);
+      const page = await (field ? pageFetcherByFeedField[field](feed) : fetchRanked(feed.asOf, feed.offset));
+      return Result.map(page, (p) => {
+        feed.offset += p.count;
+        if (p.cursor) feed.cursor = p.cursor;
+        return p;
+      });
     }
 
     // Rows are links, or {row, shared} for related and entity links.
@@ -2400,11 +2321,14 @@
       feed.replacing = replace;
       updateSkeletons();
       const generation = feed.generation;
-      const page = await fetchPage();
+      const { data: page, error } = await fetchPage();
       if (generation !== feed.generation) return;
       feed.loading = false;
       updateSkeletons();
-      if (!page) return false;
+      if (error) {
+        console.error(FEED_LOAD_FAILED, error);
+        return false;
+      }
       if (page.count < FEED_PAGE_SIZE) feed.done = true;
       // Ranks can shift between pages as votes come in, so a link may come
       // back twice.
@@ -4335,14 +4259,15 @@
 
     async function withEntityIds(matches) {
       const missing = matches.map((m) => m.e.seq).filter((seq) => !entityIdsBySeq.has(seq));
-      if (missing.length) {
-        const { data, error } = await (await supabaseReady).from("entities").select("id, seq").in("seq", missing);
-        if (error) throw error;
-        for (const row of data) entityIdsBySeq.set(row.seq, row.id);
-      }
-      return matches.filter((m) => entityIdsBySeq.has(m.e.seq)).map(({ e, posts }) => ({
-        id: entityIdsBySeq.get(e.seq), seq: e.seq, name: e.name, kind: e.kind, kind_path: e.kind_path, posts,
-      }));
+      const fetched = missing.length
+        ? await (await supabaseReady).from("entities").select("id, seq").in("seq", missing)
+        : Result.ok([]);
+      return Result.map(fetched, (rows) => {
+        for (const row of rows) entityIdsBySeq.set(row.seq, row.id);
+        return matches.filter((m) => entityIdsBySeq.has(m.e.seq)).map(({ e, posts }) => ({
+          id: entityIdsBySeq.get(e.seq), seq: e.seq, name: e.name, kind: e.kind, kind_path: e.kind_path, posts,
+        }));
+      });
     }
 
     // filter_links over the local index: the links passing every term, with
@@ -4387,10 +4312,7 @@
       if (!typed.length) return Promise.resolve([]);
       const partial = /[a-z0-9]$/i.test(text) ? typed.pop() : null;
       const matched = entityIndex.ready ? matchIndexedEntities(entityIndex.version, typed, partial) : matchServerEntities(typed, partial);
-      return matched.then((entities) => entities ?? [], (error) => {
-        console.error("failed to match entities", error);
-        return [];
-      });
+      return matched.then((entities) => Result.unwrapOr(entities, [], (error) => console.error("failed to match entities", error)));
     }
 
     const matchIndexedEntities = memoize(
@@ -4401,15 +4323,11 @@
 
     const matchServerEntities = memoize(
       (typed, partial) => JSON.stringify([typed, partial]),
-      async (typed, partial) => {
-        const { data, error } = await (await supabaseReady).rpc("match_entities", {
-          words: typed,
-          partial,
-          max_results: QUERY_ENTITY_SUGGESTIONS,
-        });
-        if (error) throw error;
-        return withKindPaths(data);
-      },
+      async (typed, partial) => Result.chain((await supabaseReady).rpc("match_entities", {
+        words: typed,
+        partial,
+        max_results: QUERY_ENTITY_SUGGESTIONS,
+      }), async (entities) => Result.ok(await withKindPaths(entities))),
       { ttlMs: Infinity, maxEntries: ENTITY_MATCH_CACHE_SIZE },
     );
 
@@ -4437,21 +4355,20 @@
       else showQueryChips(text, feed.intent);
     }
 
-    // What query-parse makes of `text` with these candidate topics, or null.
-    // Each reading costs a credit, so one is never asked for twice.
+    // What query-parse makes of `text` with these candidate topics, as a
+    // Result. Each reading costs a credit, so one is never asked for twice.
     const readQueryOnce = memoize(
       (text, topicIds) => JSON.stringify([text.toLowerCase(), topicIds]),
       async (text, topicIds) => {
         const client = await supabaseReady;
         // Reads are charged to the session's account.
         await pendingSession;
-        const { data, error } = await client.functions.invoke("query-parse", { body: { text, topic_ids: topicIds } });
-        if (error) {
-          if (error.context?.status === 429) showQueryBalance(0);
-          throw error;
-        }
-        showQueryBalance(data.credits_left);
-        return { sort: data.sort, topic: data.topic, search: data.search };
+        const reading = await client.functions.invoke("query-parse", { body: { text, topic_ids: topicIds } });
+        if (reading.error?.context?.status === 429) showQueryBalance(0);
+        return Result.map(reading, ({ credits_left, sort, topic, search }) => {
+          showQueryBalance(credits_left);
+          return { sort, topic, search };
+        });
       },
       { ttlMs: Infinity, maxEntries: QUERY_READ_CACHE_SIZE },
     );
@@ -4459,10 +4376,7 @@
     function readQuery(text, topicIds) {
       // Out of reads: the box is a plain title search from here on.
       if (queryCreditsLeft === 0) return Promise.resolve(null);
-      return readQueryOnce(text, topicIds).catch((error) => {
-        console.error("failed to read query", error);
-        return null;
-      });
+      return readQueryOnce(text, topicIds).then((reading) => Result.unwrapOr(reading, null, (error) => console.error("failed to read query", error)));
     }
 
     const queryBalance = document.getElementById("query-balance");
@@ -4616,6 +4530,15 @@
       return lexicon(namedSenses(entities, topics), queryWords, (sense) => sense.id);
     }
 
+    // What a name with one sense is tagged as (namedSenses' senses), by the
+    // sense's field: what the tag carries and the page it opens.
+    const tagBySenseField = {
+      entity: ({ entity }) => ({ entity, page: markPage(entity.name, setEntityHref, entity.id) }),
+      topic: ({ topic }) => ({ topic, page: markPage(topic.name, setTopicHref, topic.id) }),
+      kind: (sense) => ({ page: markPage(sense.kind.label, setKindHref, sense.kind.path) }),
+      indexical: ({ indexical }) => ({ indexical: indexical.term, page: markPage(indexical.term, setIndexicalHref, indexical.term) }),
+    };
+
     // The words of `value` with what each is tagged as, in place in the search
     // box (renderSearchMarks): the reading's sort words and topic (filled),
     // then, dashed, every name whose whole is typed (an entity, a topic
@@ -4669,28 +4592,17 @@
       const required = new Set((intent?.required ?? []).flatMap((g) => g.ids));
       claim(senseLexicon(entities, topicMatches), (entry) => {
         const [sense, ...more] = entry.senses;
+        const suggested = !entry.senses.some((s) => s.entity && required.has(s.entity.id));
         if (more.length) {
           const term = entry.words.join(" ");
           return {
             kind: senseLabel(entry.senses, kindName),
-            suggested: !entry.senses.some((s) => s.entity && required.has(s.entity.id)),
+            suggested,
             entity: entry.senses.find((s) => s.entity)?.entity,
             page: markPage(term, setTermHref, term),
           };
         }
-        if (sense.entity) {
-          const { entity } = sense;
-          return { kind: sense.label, suggested: !required.has(entity.id), entity, page: markPage(entity.name, setEntityHref, entity.id) };
-        }
-        if (sense.topic) {
-          const { topic } = sense;
-          return { kind: "topic", suggested: true, topic, page: markPage(topic.name, setTopicHref, topic.id) };
-        }
-        if (sense.kind) {
-          return { kind: sense.label, suggested: true, page: markPage(sense.kind.label, setKindHref, sense.kind.path) };
-        }
-        const { indexical } = sense;
-        return { kind: sense.label, suggested: true, indexical: indexical.term, page: markPage(indexical.term, setIndexicalHref, indexical.term) };
+        return { kind: sense.label, suggested, ...match(tagBySenseField, sense) };
       });
       return tokens;
     }

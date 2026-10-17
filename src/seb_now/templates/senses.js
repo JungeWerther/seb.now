@@ -13,6 +13,9 @@
 //   only completes a name when no other name could take it: "nightc" may be
 //   "Nightcall", "night" may be Nightcall, Night Owl or Night Vale, so it
 //   names none of them yet.
+// Between a name's folded words, and between a kind path's labels.
+const NAME_WORD_SEPARATOR = " ";
+const KIND_PATH_SEPARATOR = ".";
 // The named things grouped by their folded words, longest names first (a
 // stable sort, so equal lengths keep their order), so "tim fernholz" is one
 // name before "tim" can take its first word. Names that fold to nothing are
@@ -24,7 +27,7 @@ function lexicon(named, fold, senseId) {
         const words = fold(name);
         if (!words.length)
             continue;
-        const key = words.join(" ");
+        const key = words.join(NAME_WORD_SEPARATOR);
         const entry = entries.get(key) ?? { words, senses: [], ids: new Set() };
         entries.set(key, entry);
         const id = senseId(sense);
@@ -76,7 +79,7 @@ function claimNames(typed, entries, matches, complete) {
 // "entity.artifact.product" are both artifacts. Null for no paths, or when
 // one of them is outside the kind tree (a topic).
 function commonKindPath(paths) {
-    const [first, ...rest] = paths.map((p) => p?.split("."));
+    const [first, ...rest] = paths.map((p) => p?.split(KIND_PATH_SEPARATOR));
     if (!first || rest.some((p) => !p))
         return null;
     let depth = first.length;
@@ -86,20 +89,22 @@ function commonKindPath(paths) {
             same++;
         depth = same;
     }
-    return depth ? first.slice(0, depth).join(".") : null;
+    return depth ? first.slice(0, depth).join(KIND_PATH_SEPARATOR) : null;
 }
 // A tag's label for a name's senses: one sense reads as its label ("work");
 // several read as what they share, with how many ("work ×2", "artifact ×3"),
 // or "senses ×n" when they share nothing in the kind tree (a topic and a
 // kind). `name` turns a kind path into its short name.
+const SENSES_LABEL = "senses";
+const SENSE_COUNT_SEPARATOR = " ×";
 function senseLabel(senses, name) {
-    const [one] = senses;
+    const [one, ...more] = senses;
     if (!one)
         return "";
-    if (senses.length === 1)
+    if (!more.length)
         return one.label;
     const labels = new Set(senses.map((s) => s.label));
     const common = commonKindPath(senses.map((s) => s.path));
-    const shared = labels.size === 1 ? one.label : common ? name(common) : "senses";
-    return `${shared} ×${String(senses.length)}`;
+    const shared = labels.size === 1 ? one.label : common ? name(common) : SENSES_LABEL;
+    return [shared, String(senses.length)].join(SENSE_COUNT_SEPARATOR);
 }
