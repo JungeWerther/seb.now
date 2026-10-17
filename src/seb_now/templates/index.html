@@ -1810,7 +1810,7 @@
     const FIND_SOURCES_PROMPT = __FIND_SOURCES_PROMPT__;
     const FIND_ENTITY_SOURCES_PROMPT = __FIND_ENTITY_SOURCES_PROMPT__;
     const FEED_SELECT =
-      "id, title, url, image_url, author, created_at, link_topics(p, topics(id, name)), link_entities(p, found_in, entities(id, name, kind))";
+      "id, title, url, image_url, author, created_at, link_topics(p, topics(id, name)), link_entities(p, found_in, entities(id, name, kind, kind_path))";
     // link_entities.found_in of a link's source tag (site.py's SOURCE_FOUND_IN):
     // the channel, account or feed it came from, linked from the domain line
     // rather than shown as an entity chip.
@@ -2636,7 +2636,7 @@
           (row.link_entities || [])
             .filter((le) => le.entities)
             .sort((a, b) => b.p - a.p)
-            .map((le) => tagItem(le.entities.name, le.entities.kind.replace("_", " "), "entity", le.entities.id)),
+            .map((le) => tagItem(le.entities.name, entityKindLabel(le.entities), "entity", le.entities.id)),
         );
         showFocusSection(
           "focus-topics",
@@ -2691,12 +2691,12 @@
         document.getElementById("focus-entity-name").textContent = entity.name;
         const posts = count == null ? "" : ` · ${count} ${count === 1 ? "post" : "posts"}`;
         const kind = document.createElement(entity.kind_path ? "a" : "span");
-        kind.textContent = entity.kind.replace("_", " ");
+        kind.textContent = entityKindLabel(entity);
         if (entity.kind_path) setKindHref(kind, entity.kind_path);
         document.getElementById("focus-entity-meta").replaceChildren(kind, posts);
         findSources.href = findSourcesUrl(FIND_ENTITY_SOURCES_PROMPT, {
           name: entity.name,
-          kind: entity.kind.replace("_", " "),
+          kind: entityKindLabel(entity),
         });
         findSources.hidden = false;
       }
@@ -3684,6 +3684,15 @@
       return path.split(".").at(-1).replace(/_/g, " ");
     }
 
+    // What an entity is, from the kind tree: its kind's label once the kinds
+    // have loaded ("YouTube channel"), else its path's last segment. The flat
+    // entities.kind is the legacy column (every source is just "source"), only
+    // a fallback for rows fetched without kind_path.
+    function entityKindLabel(entity) {
+      if (!entity.kind_path) return (entity.kind ?? "").replace(/_/g, " ");
+      return kindIndex.find((k) => k.path === entity.kind_path)?.label.toLowerCase() ?? kindName(entity.kind_path);
+    }
+
     function indexKinds(kinds) {
       kindIndex = kinds.map((k) => ({
         path: k.path,
@@ -3787,7 +3796,7 @@
         ...entities.map((entity) => ({
           name: entity.name,
           entity,
-          kind: entity.kind_path ? kindName(entity.kind_path) : entity.kind.replace("_", " "),
+          kind: entityKindLabel(entity),
         })),
       ];
       // One term per sequence of words, with all its senses.
@@ -4437,7 +4446,7 @@
       for (const entity of text ? entitySuggestions.filter((e) => !requiredIds.has(e.id)) : []) {
         const chip = document.createElement("a");
         chip.className = "query-chip";
-        chip.dataset.kind = entity.kind.replace("_", " ");
+        chip.dataset.kind = entityKindLabel(entity);
         chip.textContent = entity.name;
         setEntityHref(chip, entity.id);
         chips.push(chip);
@@ -4505,7 +4514,7 @@
           tagName(intent.topic.name, { kind: "topic", topic: intent.topic, page: markPage(intent.topic.name, setTopicHref, intent.topic.id) }, prefix);
         }
         for (const entity of longestFirst) {
-          const kind = entity.kind_path ? kindName(entity.kind_path) : entity.kind.replace("_", " ");
+          const kind = entityKindLabel(entity);
           tagName(entity.name, { kind, suggested: !required.has(entity.id), entity, page: markPage(entity.name, setEntityHref, entity.id) }, prefix);
         }
         for (const topic of topicMatches) {
