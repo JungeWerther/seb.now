@@ -4591,8 +4591,11 @@
     // unsettled words searched for as well. `partial`: the last word is still
     // being typed.
     async function runQuery(text, { force = false, partial = false } = {}) {
-      if (!force && text === lastQueryText) return;
-      lastQueryText = text;
+      // Finishing the last word (a trailing space) reads the same text again,
+      // now matching names whole.
+      const queryKey = `${partial ? "partial" : "finished"} ${text}`;
+      if (!force && queryKey === lastQueryText) return;
+      lastQueryText = queryKey;
       const generation = ++queryGeneration;
       if (!text) {
         entitySuggestions = [];
@@ -4655,7 +4658,8 @@
       feed.query = text;
       // Loading or loaded already; after a failed load it's asked again.
       const shown = feed.loading || feed.offset > 0 || feed.done;
-      if (feed.filter && filterKey(feed.filter) === filterKey(filter) && shown) return;
+      // An indexical's page holds the same filter, but its feed is that page's.
+      if (feed.filter && !feed.indexical && filterKey(feed.filter) === filterKey(filter) && shown) return;
       resetFeed(text);
       feed.filter = filter;
       loadMore({ replace: true });
