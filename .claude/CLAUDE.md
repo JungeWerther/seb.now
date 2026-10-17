@@ -854,7 +854,10 @@ to the source's page instead (`FEED_SELECT` and `related_feed`'s `link_row`
 carry `found_in` for this; `SOURCE_FOUND_IN`), `related_links` ignores them
 (title mentions only), and `entity_candidates`/`known_names` skip source
 entities, so a headline's "Belfast Telegraph" never resolves to the channel.
-QA: `tests/qa`, `npm run sources`.
+QA: `tests/qa`, `npm run sources`. The page labels every entity by its
+`kind_path` (`entityKindLabel`: the kind's label, "youtube channel"), never the
+legacy flat `entities.kind`, which is just "source" for all of them; so
+`FEED_SELECT` and `related_feed` carry `kind_path`.
 
 Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the
 vote tints (`.swipe-bg`) and the `.post` that slides over them, so the

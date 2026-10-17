@@ -289,7 +289,7 @@ def test_link_page_focuses_a_tapped_post_above_its_related_links() -> None:
     script = html[html.index('<script type="module">') :]
     assert 'rpc("related_feed"' in script
     assert "page_offset: offset" in script
-    assert "link_entities(p, found_in, entities(id, name, kind))" in script
+    assert "link_entities(p, found_in, entities(id, name, kind, kind_path))" in script
     assert "history.pushState" in script and "`/p/${id}`" in script
     assert "focusLink(li.dataset.linkId, { from: li })" in script
     assert "setupLinkPage();" in script
@@ -626,6 +626,14 @@ def test_page_script_fills_the_domain_link_and_keeps_sources_off_the_chips() -> 
     assert 'const SOURCE_FOUND_IN = "source";' in script
     assert "le.found_in !== SOURCE_FOUND_IN" in script
     assert "setEntityHref(domain, source.entities.id)" in script
+
+
+def test_page_labels_entities_from_the_kind_tree_not_the_flat_kind() -> None:
+    # A source's flat kind is just "source"; its kind_path says what it is
+    # ("youtube channel"), and the kind link already goes there.
+    script = render([])[render([]).index('<script type="module">') :]
+    assert "function entityKindLabel(entity)" in script
+    assert 'kind.replace("_", " ")' not in script
 
 
 def test_posted_label_shows_month_and_day_adding_the_year_only_for_other_years() -> None:
