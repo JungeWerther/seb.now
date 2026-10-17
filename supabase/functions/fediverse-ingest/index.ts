@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { decodeEntities, enabledSources, mapSeries, present, previewImage, serveIngest, upsertLink } from "../_shared/ingest.ts";
 
 // Public Mastodon REST API - no auth needed for public statuses. Not raw
 // ActivityPub outbox parsing: Mastodon's JSON API is simpler and stable,
@@ -7,22 +7,21 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // the enabled mastodon_account rows in sources, as handle@instance.
 
 const POSTS_PER_ACCOUNT = 10;
-const IMAGE_FETCH_TIMEOUT_MS = 5000;
+
+type Status = {
+  id: string;
+  uri: string;
+  url: string;
+  content: string;
+  card?: { url?: string; title?: string; image?: string | null } | null;
+};
 
 // Mastodon wraps long URLs in inline <span> for ellipsis display with no
 // real whitespace between spans - only block-level tags (p, br) represent
 // an actual word/sentence break, so only those become a space.
 function stripHtml(html: string): string {
   const withBreaks = html.replace(/<\/(p|br)\s*\/?>/gi, " ").replace(/<[^>]+>/g, "");
-  const decoded = withBreaks
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&");
-  return decoded.replace(/\s+/g, " ").trim();
+  return decodeEntities(withBreaks).replace(/\s+/g, " ");
 }
 
 // Mastodon only generates a card for posts with exactly one link, and even
@@ -31,13 +30,8 @@ function stripHtml(html: string): string {
 // markup, where a real link is a plain <a href> with no mention/hashtag
 // class (those point back into the fediverse, not out to a source).
 function extractLinkedUrl(html: string): string | null {
-  const linkTag = /<a\s+href="([^"]+)"[^>]*>/g;
-  let match: RegExpExecArray | null;
-  while ((match = linkTag.exec(html))) {
-    if (/class="[^"]*\b(mention|hashtag)\b/.test(match[0])) continue;
-    return match[1];
-  }
-  return null;
+  return [...html.matchAll(/<a\s+href="([^"]+)"[^>]*>/g)]
+    .find(([tag]) => !/class="[^"]*\b(mention|hashtag)\b/.test(tag))?.[1] ?? null;
 }
 
 // When a post links to a single external page, Mastodon's own preview-card
@@ -53,99 +47,48 @@ function titleFrom(status: { content: string; card?: { title?: string } | null }
 // Mastodon's card already carries a preview image when it generated one.
 // When it didn't (same cases titleFrom falls back for), peek at the
 // target page ourselves: prefer its og:image, else its first <img>.
-async function scrapePreviewImage(pageUrl: string): Promise<string | null> {
-  try {
-    const res = await fetch(pageUrl, { signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS) });
-    if (!res.ok) return null;
-    if (!(res.headers.get("content-type") ?? "").includes("text/html")) return null;
-    const html = await res.text();
-    const ogImage =
-      html.match(/<meta[^>]+(?:property|name)=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ??
-      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']og:image["']/i)?.[1];
-    const candidate = ogImage ?? html.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1];
-    return candidate ? new URL(candidate, pageUrl).toString() : null;
-  } catch {
-    return null;
-  }
+function imageFrom(status: { card?: { image?: string | null } | null }, sourceUrl: string): Promise<string | null> {
+  return status.card?.image
+    ? Promise.resolve(status.card.image)
+    : previewImage(sourceUrl, { keys: ["og:image"], firstImage: true });
 }
 
-async function imageFrom(
-  status: { card?: { image?: string | null } | null },
-  sourceUrl: string,
-): Promise<string | null> {
-  if (status.card?.image) return status.card.image;
-  return scrapePreviewImage(sourceUrl);
-}
-
-Deno.serve(async (_req: Request) => {
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+// The account's latest public posts and its display name.
+async function latestPosts(handle: string, instance: string) {
+  const lookupRes = await fetch(`https://${instance}/api/v1/accounts/lookup?acct=${encodeURIComponent(handle)}`);
+  if (!lookupRes.ok) throw new Error(`lookup ${lookupRes.status}`);
+  const account = await lookupRes.json();
+  const statusesRes = await fetch(
+    `https://${instance}/api/v1/accounts/${account.id}/statuses?exclude_replies=true&exclude_reblogs=true&limit=${POSTS_PER_ACCOUNT}`,
   );
+  if (!statusesRes.ok) throw new Error(`statuses ${statusesRes.status}`);
+  return { displayName: account.display_name || handle, statuses: await statusesRes.json() };
+}
 
-  const results = [];
-
-  const { data: sources, error: sourcesError } = await supabase
-    .from("sources")
-    .select("id, identifier")
-    .eq("kind", "mastodon_account")
-    .eq("enabled", true);
-  if (sourcesError) results.push({ sources: sourcesError.message });
-
-  for (const { id: sourceId, identifier } of sources ?? []) {
+Deno.serve(serveIngest(async (db, report) => {
+  const results = await mapSeries(await enabledSources(db, "mastodon_account", report), async ({ id: sourceId, identifier }) => {
     const [handle, instance] = identifier.split("@");
     try {
-      const lookupRes = await fetch(
-        `https://${instance}/api/v1/accounts/lookup?acct=${encodeURIComponent(handle)}`,
-      );
-      if (!lookupRes.ok) {
-        results.push({ instance, handle, error: `lookup ${lookupRes.status}` });
-        continue;
-      }
-      const account = await lookupRes.json();
-
-      const statusesRes = await fetch(
-        `https://${instance}/api/v1/accounts/${account.id}/statuses?exclude_replies=true&exclude_reblogs=true&limit=${POSTS_PER_ACCOUNT}`,
-      );
-      if (!statusesRes.ok) {
-        results.push({ instance, handle, error: `statuses ${statusesRes.status}` });
-        continue;
-      }
-      const statuses = await statusesRes.json();
-
-      let upserted = 0;
-      for (const status of statuses) {
-        if (!status.url) continue;
+      const { displayName, statuses } = await latestPosts(handle, instance);
+      const linkIds = await mapSeries(statuses.filter((status: { url?: string }) => status.url), async (status: Status) => {
         const sourceUrl = status.card?.url || extractLinkedUrl(status.content) || status.url;
-        const imageUrl = await imageFrom(status, sourceUrl);
-        const { error } = await supabase.from("links").upsert(
-          {
-            url: sourceUrl,
-            thread_url: status.url,
-            title: titleFrom(status, account.display_name || handle),
-            image_url: imageUrl,
-            origin: "fediverse",
-            fediverse_post_uri: status.uri,
-            submitted_by: null,
-            // Which followed account posted it; the database tags the link with it.
-            source_id: sourceId,
-          },
-          { onConflict: "fediverse_post_uri" },
-        );
-        if (error) {
-          results.push({ instance, handle, status: status.id, error: error.message });
-        } else {
-          upserted++;
-        }
-      }
-
-      results.push({ instance, handle, fetched: statuses.length, upserted });
+        return upsertLink(db, {
+          url: sourceUrl,
+          thread_url: status.url,
+          title: titleFrom(status, displayName),
+          origin: "fediverse",
+          fediverse_post_uri: status.uri,
+          submitted_by: null,
+          // Which followed account posted it; the database tags the link with it.
+          source_id: sourceId,
+          ...present({ image_url: await imageFrom(status, sourceUrl) }),
+        }, { instance, handle, status: status.id }, report, "fediverse_post_uri");
+      });
+      return { instance, handle, fetched: statuses.length, upserted: linkIds.filter(Boolean).length };
     } catch (e) {
-      results.push({ instance, handle, error: String(e) });
+      report({ instance, handle, error: e instanceof Error ? e.message : String(e) });
+      return { instance, handle, fetched: 0, upserted: 0 };
     }
-  }
-
-  return new Response(JSON.stringify({ results }, null, 2), {
-    headers: { "Content-Type": "application/json" },
   });
-});
+  return { results };
+}));
