@@ -471,23 +471,28 @@ async function storedMentions(db: SupabaseClient, linkId: string, foundIn?: Foun
 // and returns those it would drop with their entities.
 async function respanLink(db: SupabaseClient, jev: JevClient, link: Link) {
   const stored = await storedMentions(db, link.id);
+  // The page is read again, so the span rule sees what extraction saw: every
+  // section in full and the names the page declares in its structured data,
+  // neither of which the stored (capped) text keeps. If it can't be read, only
+  // title drops the stored text fully supports are staged; no page drops.
+  const page = await fetchPage(link.url).catch(() => null);
+  const live = page !== null && page.sections.length > 0;
   const { data: content, error } = await db.from("link_content").select("text, lang").eq("link_id", link.id).maybeSingle();
   if (error) throw new Error(error.message);
-  const pageText = content?.text ?? "";
+  const storedText = content?.text ?? "";
+  const text = live ? readText(link, page) : [link.title, storedText].join("\n");
+  const lang = live ? page.lang : content?.lang;
   const titles = stored.filter((m) => m.found_in === "title");
   const pages = stored.filter((m) => m.found_in === "page")
-    .map((m) => ({ ...m, sentence: sentenceWith(pageText, m.surface, content?.lang) ?? m.surface }));
+    .map((m) => ({ ...m, sentence: sentenceWith(text, m.surface, lang) ?? m.surface }));
   const state = { link: { title: link.title, site: hostOf(link.url) } };
   let inputTokens = 0;
   const ask = askRunTogether(jev, link.id, state, (n) => inputTokens += n);
   // A title name is a fragment only if the page doesn't say it on its own either.
-  const text = [link.title, pageText].join("\n");
   const title = await readSpans(titles, [], text, ask);
-  const page = await readSpans(pages, title.kept, text, ask);
-  // Stored text is capped: on a page cut at the cap, a name may stand alone in
-  // the part not kept, so page fragments aren't dropped there.
-  const capped = pageText.length >= PAGE.MAX_TEXT_CHARS;
-  const drops = [title, capped ? { ...page, parts: [] } : page].flatMap((spans) => [
+  const pageSpans = live ? await readSpans(pages, title.kept, text, ask) : null;
+  const titleTrusted = live || storedText.length < PAGE.MAX_TEXT_CHARS;
+  const drops = [...(titleTrusted ? [title] : []), ...(pageSpans ? [pageSpans] : [])].flatMap((spans) => [
     ...spans.parts.map((m) => ({ mention: m, reason: "only part of a longer name here" })),
     // A run-together surface that resolved to one of its own parts ("Ledger
     // Flex and Ledger Stax" stored as Ledger Flex) still names that entity.
@@ -495,7 +500,7 @@ async function respanLink(db: SupabaseClient, jev: JevClient, link: Link) {
       .filter((m) => !contains(m, { surface: m.entity_name }))
       .map((m) => ({ mention: m, reason: "runs several names together" })),
   ]);
-  return { link_id: link.id, title: link.title, drops, inputTokens };
+  return { link_id: link.id, title: link.title, read_page: live, drops, inputTokens };
 }
 
 // Stages each drop as an `entity_edits` row, skipping mentions already staged

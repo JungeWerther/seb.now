@@ -276,7 +276,9 @@ parts, and every other fragment is dropped. Each result lists its `dropped`
 names. The page pass counts the title's names as read whole and offers them as
 longer names a page's short form can stand for (taking that entity). `POST
 {"respan": true, "link_ids": [...], "batch": "<label>"}` re-reads mentions already
-stored with the same rule and stages each drop as a `drop_mention` row in
+stored with the same rule (fetching the page again, for its full text and declared
+names; if it can't be read, no page drops and only title drops the stored text
+fully supports) and stages each drop as a `drop_mention` row in
 `entity_edits` (see "Reversible graph edits"), applying nothing; with `"decide":
 true` the eval also reports `mention_fragments`, mentions that are only part of a
 labelled name, which its overlap-based precision counts as relevant. Links run one at a time so

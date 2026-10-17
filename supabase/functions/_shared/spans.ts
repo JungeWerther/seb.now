@@ -15,6 +15,14 @@ export function nameWords(surface: string): string[] {
   return surface.toLowerCase().replace(/’/g, "'").replace(/'s\b/g, "").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 }
 
+// Words and commas, for finding where names stand in a text: a comma between
+// two names keeps them apart ("New York, Times Square" holds no "New York
+// Times"), and a name written with one ("Farrar, Straus and Giroux") still
+// matches itself.
+function spanTokens(text: string): string[] {
+  return text.toLowerCase().replace(/’/g, "'").replace(/'s\b/g, "").match(/[\p{L}\p{N}]+|,/gu) ?? [];
+}
+
 // Where `name`'s words start in `words`.
 function occurrences(words: string[], name: string[]): number[] {
   if (!name.length) return [];
@@ -40,11 +48,11 @@ const BOUNDARY =
 // Times are hard" holds no "New York Times"). A name the text doesn't say as
 // such (spelled otherwise) is taken to stand alone.
 export function standsAlone(name: string, wholes: string[], text: string): boolean {
-  const own = nameWords(name);
-  const holders = wholes.map(nameWords).filter((whole) => containsName(whole, own));
+  const own = spanTokens(name);
+  const holders = wholes.filter((whole) => containsName(nameWords(whole), nameWords(name))).map(spanTokens);
   let said = false;
   for (const segment of text.split(BOUNDARY)) {
-    const words = nameWords(segment);
+    const words = spanTokens(segment);
     const covered = holders.flatMap((whole) => occurrences(words, whole).map((start) => [start, start + whole.length] as const));
     for (const i of occurrences(words, own)) {
       said = true;
@@ -109,7 +117,7 @@ function sentenceSegmenter(lang?: string | null): Intl.Segmenter {
 // `wholes` (the sentence that makes it stand alone), else null.
 export function aloneSentence(text: string, surface: string, wholes: string[], lang?: string | null): string | null {
   for (const { segment } of sentenceSegmenter(lang).segment(text)) {
-    if (occurrences(nameWords(segment), nameWords(surface)).length && standsAlone(surface, wholes, segment)) return segment.trim();
+    if (occurrences(spanTokens(segment), spanTokens(surface)).length && standsAlone(surface, wholes, segment)) return segment.trim();
   }
   return null;
 }
@@ -117,9 +125,9 @@ export function aloneSentence(text: string, surface: string, wholes: string[], l
 // The first sentence of `text` that says `surface`, for asking about a name
 // read back from storage.
 export function sentenceWith(text: string, surface: string, lang?: string | null): string | null {
-  const own = nameWords(surface);
+  const own = spanTokens(surface);
   for (const { segment } of sentenceSegmenter(lang).segment(text)) {
-    if (occurrences(nameWords(segment), own).length) return segment.trim();
+    if (occurrences(spanTokens(segment), own).length) return segment.trim();
   }
   return null;
 }

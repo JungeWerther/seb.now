@@ -102,3 +102,8 @@ Deno.test("the sentence offered is the one where the name stands alone", () => {
   assertEquals(aloneSentence(body, "Tokyo", ["Palais de Tokyo"]), "She then flew to Tokyo.");
   assertEquals(aloneSentence("The Palais de Tokyo opens.", "Tokyo", ["Palais de Tokyo"]), null);
 });
+
+Deno.test("a comma between two names keeps them apart", () => {
+  assert(standsAlone("New York", ["New York Times"], "The New York Times lists New York, Times Square and Central Park."));
+  assert(!standsAlone("Straus", ["Farrar, Straus and Giroux"], "Farrar, Straus and Giroux published it."));
+});
