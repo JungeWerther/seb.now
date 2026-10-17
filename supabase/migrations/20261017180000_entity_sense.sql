@@ -92,6 +92,7 @@ as $$
 declare
   f uuid := edit.entity_id;
   t uuid := edit.into_id;
+  tname text;
   snap jsonb;
   moved jsonb := '{}';
   deleted jsonb := '{}';
@@ -103,9 +104,13 @@ begin
   if not exists (select 1 from public.entities where id = t) then
     raise exception 'edit %: entity % is gone', edit.id, edit.into_name;
   end if;
+  tname := (select name from public.entities where id = t);
   snap := jsonb_build_object(
     'entity', (select to_jsonb(e) from public.entities e where id = f),
-    'into', (select to_jsonb(e) from public.entities e where id = t)
+    'into', (select to_jsonb(e) from public.entities e where id = t),
+    -- Staged edits about either entity, as they were, so undo can restore them.
+    'edits', coalesce((select jsonb_agg(to_jsonb(x)) from public.entity_edits x
+      where x.status = 'staged' and x.id <> edit.id and (x.entity_id in (f, t) or x.into_id in (f, t))), '[]')
   );
 
   -- Mentions: a link that mentions both keeps the target's row.
@@ -199,9 +204,9 @@ begin
   update public.entity_edits set status = 'rejected', reason = left(coalesce(reason || ' ', '') || '[superseded by edit ' || edit.id || ']', 300)
   where status = 'staged' and id <> edit.id
     and ((entity_id = f and into_id = t) or (entity_id = t and into_id = f) or (op = 'drop_mention' and entity_id = f));
-  update public.entity_edits set entity_id = t, entity_name = edit.into_name
+  update public.entity_edits set entity_id = t, entity_name = tname
   where status = 'staged' and id <> edit.id and entity_id = f;
-  update public.entity_edits set into_id = t, into_name = edit.into_name
+  update public.entity_edits set into_id = t, into_name = tname
   where status = 'staged' and id <> edit.id and into_id = f;
 
   return snap || jsonb_build_object('moved', moved, 'deleted', deleted, 'alias_witness', alias_id);
@@ -250,6 +255,15 @@ begin
   s := edit.snapshot;
   f := edit.entity_id;
   t := edit.into_id;
+  -- Undo in reverse order: a later applied edit about the same entities (or,
+  -- for a drop, the same mention) may rest on this one's rows.
+  if exists (
+    select 1 from public.entity_edits later
+    where later.status = 'applied' and (later.applied_at, later.id) > (edit.applied_at, edit.id)
+      and (later.entity_id in (f, t) or later.into_id in (f, t))
+  ) then
+    raise exception 'edit %: undo the later applied edits about % first', edit_id, edit.entity_name;
+  end if;
 
   if edit.op = 'drop_mention' then
     -- Witnesses first, so the mention's insert trigger finds its label already back.
@@ -259,13 +273,15 @@ begin
     insert into public.link_entities overriding system value
     select * from jsonb_populate_recordset(null::public.link_entities, s -> 'link_entities');
   elsif edit.op = 'merge' then
-    insert into public.entities overriding system value
-    select * from jsonb_populate_record(null::public.entities, s -> 'entity');
+    -- The target first gives back what it took (a unique wikidata_id among it),
+    -- then the merged-away entity returns.
     update public.entities e set
       nace_code = (s -> 'into' ->> 'nace_code'), country = (s -> 'into' ->> 'country'),
       website = (s -> 'into' ->> 'website'), description = (s -> 'into' ->> 'description'),
       wikidata_id = (s -> 'into' ->> 'wikidata_id')
     where e.id = t;
+    insert into public.entities overriding system value
+    select * from jsonb_populate_record(null::public.entities, s -> 'entity');
     update public.link_entities set entity_id = f
     where entity_id = t and link_id in (select jsonb_array_elements_text(s -> 'moved' -> 'link_entities')::uuid);
     update public.identity_witnesses set entity_id = f
@@ -296,6 +312,13 @@ begin
     insert into public.entity_enrichment
     select * from jsonb_populate_recordset(null::public.entity_enrichment, s -> 'deleted' -> 'entity_enrichment')
     on conflict do nothing;
+    -- Staged edits it superseded or retargeted go back to how they were, unless
+    -- they have been decided since.
+    update public.entity_edits x set
+      entity_id = o.entity_id, entity_name = o.entity_name, into_id = o.into_id,
+      into_name = o.into_name, reason = o.reason, status = o.status
+    from jsonb_populate_recordset(null::public.entity_edits, s -> 'edits') o
+    where x.id = o.id and (x.status = 'staged' or (x.status = 'rejected' and o.status = 'staged'));
   end if;
 
   update public.entity_edits set status = 'undone' where id = edit_id;
@@ -336,9 +359,9 @@ as $$
     union all
     select l.parent_id, up.depth + 1
     from up join public.entity_locations l on l.entity_id = up.id
-    where up.depth < 32
-  )
-  select up.id, e.name, up.depth from up join public.entities e on e.id = up.id order by up.depth
+  ) cycle id set looped using visited
+  select up.id, e.name, up.depth from up join public.entities e on e.id = up.id
+  where not up.looped order by up.depth
 $$;
 
 -- Whether `place` is `container` or somewhere inside it.
@@ -358,6 +381,9 @@ language plpgsql
 set search_path = ''
 as $$
 begin
+  -- One writer at a time, so two transactions can't each add half of a cycle;
+  -- the check below runs after the lock, on a fresh snapshot.
+  perform pg_advisory_xact_lock(hashtext('public.entity_locations'));
   if not exists (
     select 1 from public.entities e
     where e.id = new.parent_id and e.kind_path operator(extensions.<@) 'entity.place'::extensions.ltree
@@ -400,6 +426,33 @@ as $$
     and x.wikidata_at is null
   group by e.id
   order by count(m.link_id) desc, e.created_at
+  limit max_results
+$$;
+
+-- A merged-away name stays findable: entity_candidates also scores the label
+-- witnesses a merge keeps (labeled_by 'merge'), not only names and surfaces.
+create or replace function public.entity_candidates(phrase text, max_results integer default 8)
+returns table(id uuid, name text, kind text, description text, example_title text, similarity real)
+language sql stable set search_path = public, extensions as $$
+  with scored as (
+    select e.id, greatest(
+      similarity(lower(e.name), lower(phrase)),
+      coalesce((select max(similarity(lower(m.surface), lower(phrase)))
+                from link_entities m where m.entity_id = e.id and m.surface is not null), 0),
+      coalesce((select max(similarity(w.value, lower(phrase)))
+                from identity_witnesses w
+                where w.entity_id = e.id and w.sense = 'label' and w.labeled_by = 'merge'), 0)
+    ) as similarity
+    from entities e
+    where e.kind <> 'source'
+  )
+  select e.id, e.name, e.kind, e.description,
+    (select l.title from link_entities m join links l on l.id = m.link_id
+     where m.entity_id = e.id order by m.created_at limit 1),
+    s.similarity
+  from scored s join entities e on e.id = s.id
+  where s.similarity >= 0.3
+  order by s.similarity desc, e.created_at
   limit max_results
 $$;
 
