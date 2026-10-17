@@ -14,6 +14,9 @@ from here.
   is readable from its bare name, by character n-grams and by a frozen
   multilingual embedding, per depth of the kind tree, against a shuffled-label
   control. Reads `public.entities` with the anon key from `.env`.
+- `kind_predicates.py` — one independent yes/no probe per kind ("is it an
+  org?"), so a name can be several kinds at once; reports AUC per predicate
+  against a control, and which predicates fire together.
 - `test_*.py` — collected by the normal `pytest` run.
 - `jev/` — prototype: noun-phrase relations judged by TypeSafe's Jev, emitted
   as PLN links in MeTTa. See its own README.
