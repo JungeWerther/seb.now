@@ -11,9 +11,11 @@ of the bare name:
   `chars` is what the embedding model knows about the name.
 
 Each probe is reported against the majority class and against a control task
-(Hewitt & Liang 2019): the same probe trained on shuffled labels. Accuracy
-minus control accuracy is the probe's selectivity; a probe that only beats
-the majority by memorising has a control close to its own score.
+(Hewitt & Liang 2019): every distinct name gets one random kind, and the same
+probe is trained and scored on those. Accuracy minus control accuracy is the
+probe's selectivity; a probe that only beats the majority by memorising names
+has a control close to its own score. Both feature types use the same split,
+and the TF-IDF vocabulary is fitted on the training names only.
 
 Source entities (`entity.source.*`) are left out: their kind comes from which
 table they were made from, not from anything in the name.
@@ -26,7 +28,9 @@ Run with:
 from __future__ import annotations
 
 import argparse
+import random
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -115,7 +119,11 @@ def load_entities() -> list[Entity]:
         start += KIND_PROBE_PAGE_SIZE
 
 
-def char_features(names: list[str]) -> NDArray:
+Featurize = Callable[[list[str], list[str]], tuple["NDArray", "NDArray"]]
+
+
+def char_features(train_names: list[str], test_names: list[str]) -> tuple[NDArray, NDArray]:
+    """TF-IDF over character n-grams, its vocabulary and weights fitted on the training names only."""
     from sklearn.feature_extraction.text import TfidfVectorizer
 
     vectorizer = TfidfVectorizer(
@@ -123,19 +131,38 @@ def char_features(names: list[str]) -> NDArray:
         ngram_range=(CHAR_NGRAM_MIN, CHAR_NGRAM_MAX),
         lowercase=CHAR_NGRAM_LOWERCASE,
     )
-    return vectorizer.fit_transform(names)
+    return vectorizer.fit_transform(train_names), vectorizer.transform(test_names)
 
 
-def embed_features(names: list[str]) -> NDArray:
+def embed_names(names: list[str]) -> dict[str, NDArray]:
     from sentence_transformers import SentenceTransformer
 
     model = SentenceTransformer(ModelName.MULTILINGUAL_E5_SMALL)
-    return model.encode(
+    vectors = model.encode(
         [E5_INPUT_PREFIX + n for n in names],
         batch_size=KIND_PROBE_EMBED_BATCH,
         normalize_embeddings=True,
         show_progress_bar=True,
     )
+    return dict(zip(names, vectors))
+
+
+def lookup_features(embeddings: dict[str, NDArray]) -> Featurize:
+    import numpy as np
+
+    def featurize(train_names: list[str], test_names: list[str]) -> tuple[NDArray, NDArray]:
+        return np.stack([embeddings[n] for n in train_names]), np.stack([embeddings[n] for n in test_names])
+
+    return featurize
+
+
+def control_labels(names: list[str], labels: list[str], seed: int) -> list[str]:
+    """Hewitt & Liang's control task: one random kind per distinct name, drawn
+    from the kinds' own frequencies, the same for every occurrence of the name."""
+    distinct = sorted(set(names))
+    drawn = random.Random(seed).choices(labels, k=len(distinct))
+    by_name = dict(zip(distinct, drawn))
+    return [by_name[n] for n in names]
 
 
 def fit_score(x_train: NDArray, y_train: list[str], x_test: NDArray, y_test: list[str]) -> tuple[float, list[str]]:
@@ -148,26 +175,26 @@ def fit_score(x_train: NDArray, y_train: list[str], x_test: NDArray, y_test: lis
     return float(np.mean([p == t for p, t in zip(predicted, y_test)])), predicted
 
 
-def probe(features: NDArray, labels: list[str], depth: int, name: str) -> ProbeResult:
+def probe(names: list[str], labels: list[str], featurize: Featurize, depth: int, feature_name: str) -> ProbeResult:
     import numpy as np
     from sklearn.model_selection import train_test_split
 
-    indices = np.arange(len(labels))
     train_idx, test_idx = train_test_split(
-        indices, test_size=KIND_PROBE_TEST_FRACTION, random_state=KIND_PROBE_SEED, stratify=labels
+        np.arange(len(labels)), test_size=KIND_PROBE_TEST_FRACTION, random_state=KIND_PROBE_SEED, stratify=labels
     )
+    x_train, x_test = featurize([names[i] for i in train_idx], [names[i] for i in test_idx])
     y_train = [labels[i] for i in train_idx]
     y_test = [labels[i] for i in test_idx]
+    accuracy, predicted = fit_score(x_train, y_train, x_test, y_test)
 
-    accuracy, predicted = fit_score(features[train_idx], y_train, features[test_idx], y_test)
-    shuffled = list(np.random.default_rng(KIND_PROBE_SEED).permutation(y_train))
-    control, _ = fit_score(features[train_idx], shuffled, features[test_idx], y_test)
+    controls = control_labels(names, labels, KIND_PROBE_SEED)
+    control, _ = fit_score(x_train, [controls[i] for i in train_idx], x_test, [controls[i] for i in test_idx])
 
     majority = Counter(y_train).most_common(1)[0][0]
     confusions = Counter((t, p) for t, p in zip(y_test, predicted) if t != p)
     return ProbeResult(
         depth=depth,
-        features=name,
+        features=feature_name,
         classes=len(set(labels)),
         train=len(train_idx),
         test=len(test_idx),
@@ -196,26 +223,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--skip-embed", action="store_true", help="only the character n-gram probe (no model download)")
     args = parser.parse_args()
-    import numpy as np
-
 
     entities = load_entities()
     print(f"{len(entities)} entities (excluding {KIND_PROBE_EXCLUDED_ROOT}*)")
     max_depth = max(len(e.kind_path.split(".")) for e in entities) - 1
 
-    embeddings: dict[str, NDArray] = {}
-    if not args.skip_embed:
-        names = sorted({e.name for e in entities})
-        embeddings = dict(zip(names, embed_features(names)))
+    embed = None if args.skip_embed else lookup_features(embed_names(sorted({e.name for e in entities})))
 
     results: list[ProbeResult] = []
     for depth in range(1, max_depth + 1):
         names, labels = labelled_at_depth(entities, depth, KIND_PROBE_MIN_EXAMPLES)
         if len(set(labels)) < 2:
             continue
-        results.append(probe(char_features(names), labels, depth, "chars"))
-        if embeddings:
-            results.append(probe(np.stack([embeddings[n] for n in names]), labels, depth, "embed"))
+        results.append(probe(names, labels, char_features, depth, "chars"))
+        if embed:
+            results.append(probe(names, labels, embed, depth, "embed"))
     report(results)
 
 
