@@ -369,7 +369,12 @@ supersedes staged edits that are about the merged-away one (undo restores them).
 Undo runs in reverse order of application (`applied_at` is `clock_timestamp()`):
 it refuses while a later applied edit touched any entity this one changed (the
 snapshot's `touched` list), and merges sharing an entity take advisory locks so
-snapshots never go stale. Nothing applies an edit automatically; the
+snapshots never go stale. A merge's undo also refuses when a change outside
+`entity_edits` rests on it (`20261017220000_entity_undo_guards.sql`): a path it
+would restore whose places moved since (`place_path_consistent`: each place a
+path names must still have that path's prefix as its own), or a kept entity
+enriched since (its metadata and Wikidata lookup state differ from the
+snapshot's `into_after`, checked under a row lock). Nothing applies an edit automatically; the
 `/entity-sense` and `/entity-resolution` skills stage batches for review. Where a
 place is lives in `entities.place_path`, an ltree of entity labels (`e` + `seq`,
 since uuids aren't labels) from the outermost place in, so Palais de Tokyo is
@@ -917,6 +922,8 @@ arrondissement, in Paris, in France. On its own `pg_cron` job (`7-59/10 * * * *`
 run from `places_to_resolve`. Code proposes, Jev only chooses: a place that
 already has a `wikidata_id` is read as is; any other is searched by name on
 Wikidata's API in English and French (`_shared/wikidata.ts`, memoized per item,
+every request, retries included, through one gate per isolate,
+`limited(WIKIDATA.MAX_CONCURRENT_REQUESTS)` from `_shared/limit.ts`,
 keeping only items located somewhere: coordinates P625, an area P131 or a
 country P17), and one Jev request asks per place which item the posts
 mentioning it mean (each described with its area and country), or none. A pick
@@ -925,7 +932,8 @@ ISO code, P297). If another entity already has the item, the two are one place
 and a `merge` is staged in `entity_edits` (batch `wikidata-<date>`), not applied.
 The item's area (P131, else its country; current, best-ranked claim) becomes the
 place's parent: the entity with that item, else the unlinked place of that name
-(which takes the item, only if still unlinked), else a new place entity named
+(which takes the item, only if still unlinked and its `country` is unset or the
+item's), else a new place entity named
 with its description when the name is taken, which later runs place in turn,
 up to a country; parents are set with `set_place_parent`. A place linked
 meanwhile as another's parent keeps that item. A cycle in Wikidata's own claims is

@@ -22,7 +22,8 @@ import { ENTITY_EXTRACT, JEV, PLACE_RESOLVE, WIKIDATA } from "../_shared/constan
 //     place: a `merge` is staged in `entity_edits` for review, not applied.
 //  4. the item's area (P131, else its country) becomes the place's parent
 //     (`set_place_parent`, which writes `place_path`): the entity with that item, else the place of that
-//     name not yet linked (which takes the item), else a new place entity.
+//     name not yet linked and not known to be in another country (which takes
+//     the item), else a new place entity.
 //     Parents are places like any other, so later runs place them in turn,
 //     until a country, which has none.
 // Every place looked at gets `entities.wikidata_checked_at`, picked or not.
@@ -152,25 +153,33 @@ async function placeFor(db: SupabaseClient, wd: Wikidata, qid: string): Promise<
   // English or French label is named by its QID.
   if (!item) throw new Error(`Wikidata item ${qid} not found`);
   const label = item.label ?? qid;
-  const { data: named, error } = await db.from("entities").select("id, wikidata_id")
+  // Only a well-formed ISO code goes into a filter (or the country column).
+  const iso = ((code) => code && /^[A-Z]{2}$/.test(code) ? code : null)(await wd.isoOf(item));
+  const { data: named, error } = await db.from("entities").select("id, wikidata_id, country")
     .eq("kind", "place").ilike("name", label.replace(/[%_\\]/g, "\\$&"));
   if (error) throw new Error(error.message);
-  const same = (named as { id: string; wikidata_id: string | null }[])[0];
-  if (same && !same.wikidata_id) {
-    // Claimed only if still unlinked, so two runs can't give it two items; a
-    // no-match lookup recorded before it had an item is void (looked up again).
-    const { data: claimed, error: claimError } = await db.from("entities")
+  const same = (named as { id: string; wikidata_id: string | null; country: string | null }[])[0];
+  // The place of that name is this item only if nothing says otherwise: a
+  // Cambridge known to be in the US is never claimed for the one in England.
+  const sameCountry = (country: string | null) => country === null || country === iso;
+  if (same && !same.wikidata_id && sameCountry(same.country)) {
+    // Claimed only if still unlinked and still of no other country, so two
+    // runs can't give it two items; a no-match lookup recorded before it had
+    // an item is void (looked up again).
+    const unlinked = db.from("entities")
       .update({ wikidata_id: qid, wikidata_checked_at: null, wikidata_p: null })
-      .eq("id", same.id).is("wikidata_id", null).select("id");
+      .eq("id", same.id).is("wikidata_id", null);
+    const { data: claimed, error: claimError } = await (iso ? unlinked.or(`country.is.null,country.eq.${iso}`) : unlinked.is("country", null))
+      .select("id");
     if (claimError) throw new Error(claimError.message);
     if ((claimed as unknown[]).length) return same.id;
     return placeFor(db, wd, qid);
   }
-  // Another place already has the name (names are unique per kind): this one is
-  // named with what tells it apart.
+  // Another place already has the name (names are unique per kind), linked or
+  // elsewhere: this one is named with what tells it apart.
   const name = same ? `${label} (${item.description ?? qid})` : label;
   const { data: created, error: insertError } = await db.from("entities")
-    .insert({ name, kind: "place", wikidata_id: qid, country: await wd.isoOf(item) })
+    .insert({ name, kind: "place", wikidata_id: qid, country: iso })
     .select("id").single();
   if (insertError) throw new Error(insertError.message);
   return created.id;
