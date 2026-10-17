@@ -23,7 +23,7 @@ from seb_now.constants import (
     GOOGLE_FONTS_STYLESHEET_ORIGIN,
     POST_SLUG_PATTERN,
     SAFE_URL_SCHEMES,
-    SUPABASE_JS_MODULE_URL,
+    SUPABASE_JS_URL,
 )
 
 PAGE_SCRIPT_PATTERN = re.compile(r'<script type="module">(.*?)</script>', re.DOTALL)
@@ -74,11 +74,11 @@ def _origin(url: str) -> str:
     return f"{parts.scheme}://{parts.netloc}"
 
 
-# Only the page's own inline script (by hash) and supabase-js's origin may
+# Only the page's own inline script (by hash) and the one supabase-js file may
 # run script, so markup that slips past escaping still can't execute.
 def page_csp(html: str, supabase_url: str) -> str:
     scripts = PAGE_SCRIPT_PATTERN.findall(html)
     return content_security_policy(
-        script_src=[*(script_hash(script) for script in scripts), _origin(SUPABASE_JS_MODULE_URL)],
+        script_src=[*(script_hash(script) for script in scripts), SUPABASE_JS_URL],
         connect_src=[_origin(supabase_url)] if supabase_url else [],
     )

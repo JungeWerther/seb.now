@@ -17,6 +17,7 @@ from seb_now.constants import (
     FIND_SOURCES_URL_TEMPLATE,
     FEED_PAGE_SIZE,
     FEED_SKELETON_ROWS,
+    SUPABASE_JS_URL,
     SourceType,
 )
 from seb_now.site import Article, Chip, _top_entities, _top_topics, build_articles, render
@@ -472,7 +473,7 @@ def test_render_sets_a_csp_that_only_allows_the_page_script_by_hash() -> None:
     digest = base64.b64encode(hashlib.sha256(_page_script(html).encode()).digest()).decode()
     csp = unescape(re.search(r'<meta http-equiv="Content-Security-Policy" content="([^"]*)">', html).group(1))
     directives = dict(d.strip().split(" ", 1) for d in csp.split(";"))
-    assert directives["script-src"].split() == [f"'sha256-{digest}'", "https://esm.sh"]
+    assert directives["script-src"].split() == [f"'sha256-{digest}'", SUPABASE_JS_URL]
     assert directives["connect-src"] == "https://example.supabase.co"
     assert directives["default-src"] == "'none'"
 

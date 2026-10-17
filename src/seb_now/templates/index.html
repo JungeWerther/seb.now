@@ -1010,6 +1010,10 @@
       from { transform: translateY(0); opacity: 1; }
       to { transform: translateY(120%); opacity: 0; }
     }
+    /* Hidden until the page script has checked it isn't framed: a <meta> CSP
+       can't set frame-ancestors and the static host can't send headers, so
+       this is the clickjacking defence. */
+    html:not(.unframed) body { display: none !important; }
   </style>
 </head>
 <body>
@@ -1151,6 +1155,8 @@
     </div>
   </div>
   <script type="module">
+    if (window.top !== window.self) throw new Error("seb.now doesn't run inside a frame");
+    document.documentElement.classList.add("unframed");
 
     // Compiled from frontend/src/*.ts (tsc, see frontend/README.md); site.py
     // inlines it here. Filter, filterKey, nextFilterCursor, memoize...; then
@@ -1162,9 +1168,16 @@
     // other UI work while supabase-js is still downloading.
     const SUPABASE_URL = __SUPABASE_URL__;
     const SUPABASE_ANON_KEY = __SUPABASE_ANON_KEY__;
-    const supabaseReady = import(__SUPABASE_JS_MODULE_URL__).then(({ createClient }) =>
-      createClient(SUPABASE_URL, SUPABASE_ANON_KEY),
-    );
+    // supabase-js's UMD build is a classic script that sets window.supabase.
+    const supabaseReady = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = __SUPABASE_JS_URL__;
+      script.integrity = __SUPABASE_JS_INTEGRITY__;
+      script.crossOrigin = "anonymous";
+      script.addEventListener("load", () => resolve(window.supabase));
+      script.addEventListener("error", () => reject(new Error("supabase-js failed to load")));
+      document.head.append(script);
+    }).then(({ createClient }) => createClient(SUPABASE_URL, SUPABASE_ANON_KEY));
 
     // Covers point at arbitrary third-party sites, so drop one that fails to
     // load rather than leave an empty frame; a favicon that fails leaves its
