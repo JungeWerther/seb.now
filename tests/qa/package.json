@@ -5,8 +5,7 @@
     "db": "node senses_db.mjs ../../supabase/migrations/20261016235000_senses_and_indexicals.sql",
     "page": "node query_reading.mjs ../../src/seb_now/templates/index.html",
     "keyset": "node keyset_db.mjs ../../supabase/migrations/20261016235000_senses_and_indexicals.sql ../../supabase/migrations/20261017130000_filter_links_keyset.sql",
-    "sources": "node sources_db.mjs ../../supabase/migrations/20261017140000_source_entities.sql",
-    "styles": "node styles_db.mjs ../../supabase/migrations/20261017170000_aat_style_topics.sql"
+    "sources": "node sources_db.mjs ../../supabase/migrations/20261017140000_source_entities.sql"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.10"
