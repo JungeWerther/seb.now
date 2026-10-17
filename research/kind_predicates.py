@@ -61,6 +61,19 @@ def run_depth(entities, embed: dict, depth: int) -> None:
     rng = np.random.default_rng(KIND_PROBE_SEED)
     y_control = y[rng.permutation(len(names))]  # each name gets another name's kinds: same label marginals, no signal
 
+    def two_classes(j: int) -> bool:
+        """Both yes and no in every train/test target, real and control, so fit and AUC are defined."""
+        return all(len(np.unique(t[idx, j])) == 2 for t in (y, y_control) for idx in (tr, te))
+
+    supported = [j for j in range(len(kinds)) if two_classes(j)]
+    skipped = [kinds[j] for j in range(len(kinds)) if j not in supported]
+    if skipped:
+        print(f"\ndepth {depth}: skipping predicates with one class in a split: {', '.join(skipped)}")
+    if not supported:
+        return
+    kinds = [kinds[j] for j in supported]
+    y, y_control = y[:, supported], y_control[:, supported]
+
     preds, probs = [], []
     for j, kind in enumerate(kinds):
         p = fit(x[tr], y[tr, j], x[te])
