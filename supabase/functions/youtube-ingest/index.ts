@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { enabledSources, extractTag, mapSeries, present, serveIngest, upsertLink } from "../_shared/ingest.ts";
 
 // Each followed channel's public Atom feed (no auth) lists its latest 15
 // uploads. Regex-extracted like techcrunch-ingest: the <entry> shape is flat
@@ -34,62 +34,29 @@ async function channelOf(videoUrl: string): Promise<string | null> {
   }
 }
 
-function decodeEntities(s: string): string {
-  return s
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&")
-    .trim();
-}
+// Shorts are vertical clips, not the channel's videos.
+const SHORTS_LINK = /<link rel="alternate" href="[^"]*\/shorts\//;
 
-function extractTag(block: string, tag: string): string | null {
-  const match = block.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, "i"));
-  return match ? decodeEntities(match[1]) : null;
-}
-
-Deno.serve(async (_req: Request) => {
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  );
-
-  let fetched = 0;
-  let skippedShorts = 0;
-  let upserted = 0;
-  const errors: unknown[] = [];
-
-  const { data: sources, error: sourcesError } = await supabase
-    .from("sources")
-    .select("id, identifier")
-    .eq("kind", "youtube_channel")
-    .eq("enabled", true);
-  if (sourcesError) errors.push({ sources: sourcesError.message });
-
-  for (const { id: sourceId, identifier: channel } of sources ?? []) {
+Deno.serve(serveIngest(async (db, report) => {
+  const channels = await mapSeries(await enabledSources(db, "youtube_channel", report), async ({ id: sourceId, identifier: channel }) => {
     const res = await fetch(FEED_URL + channel);
     if (!res.ok) {
-      errors.push({ channel, status: res.status });
-      continue;
+      report({ channel, status: res.status });
+      return { fetched: 0, skippedShorts: 0, upserted: 0 };
     }
     const entries = (await res.text()).match(/<entry>[\s\S]*?<\/entry>/g) ?? [];
-    fetched += entries.length;
-
-    for (const entry of entries) {
-      const videoId = extractTag(entry, "yt:videoId");
-      const title = extractTag(entry, "title");
-      const published = extractTag(entry, "published");
-      if (!videoId || !title) continue;
-      // Shorts are vertical clips, not the channel's videos.
-      if (/<link rel="alternate" href="[^"]*\/shorts\//.test(entry)) {
-        skippedShorts++;
-        continue;
-      }
-      // Dated by upload, not ingest, so a channel's backlog doesn't all rank as new.
-      const row = {
+    const videos = entries
+      .map((entry) => ({
+        videoId: extractTag(entry, "yt:videoId"),
+        title: extractTag(entry, "title"),
+        published: extractTag(entry, "published"),
+        short: SHORTS_LINK.test(entry),
+      }))
+      .filter((video): video is { videoId: string; title: string; published: string | null; short: boolean } =>
+        !!video.videoId && !!video.title
+      );
+    const linkIds = await mapSeries(videos.filter((video) => !video.short), ({ videoId, title, published }) =>
+      upsertLink(db, {
         url: WATCH_URL + videoId,
         title,
         origin: "feed",
@@ -97,32 +64,38 @@ Deno.serve(async (_req: Request) => {
         // Which followed channel posted it; the database tags the link with it.
         source_id: sourceId,
         image_url: THUMBNAIL_URL(videoId),
-        ...(published ? { created_at: published } : {}),
-      };
-      const { error } = await supabase.from("links").upsert(row, { onConflict: "url" });
-      if (error) errors.push({ videoId, error: error.message });
-      else upserted++;
-    }
-  }
+        // Dated by upload, not ingest, so a channel's backlog doesn't all rank as new.
+        ...present({ created_at: published }),
+      }, { videoId }, report)
+    );
+    return {
+      fetched: entries.length,
+      skippedShorts: videos.filter((video) => video.short).length,
+      upserted: linkIds.filter(Boolean).length,
+    };
+  });
 
-  const { data: authorless, error: sweepError } = await supabase
+  const { data: authorless, error: sweepError } = await db
     .from("links")
     .select("id, url")
     .is("author", null)
     .ilike("url", "%youtu%")
     .order("created_at", { ascending: false })
     .limit(AUTHOR_SWEEP_LIMIT);
-  if (sweepError) errors.push({ sweep: sweepError.message });
-  let authored = 0;
-  for (const { id, url } of (authorless ?? []).filter((row) => VIDEO_ID.test(row.url))) {
+  if (sweepError) report({ sweep: sweepError.message });
+  const authored = await mapSeries((authorless ?? []).filter((row) => VIDEO_ID.test(row.url)), async ({ id, url }) => {
     const author = await channelOf(url);
-    if (!author) continue;
-    const { error } = await supabase.from("links").update({ author }).eq("id", id);
-    if (error) errors.push({ id, error: error.message });
-    else authored++;
-  }
-
-  return new Response(JSON.stringify({ fetched, skippedShorts, upserted, authored, errors }, null, 2), {
-    headers: { "Content-Type": "application/json" },
+    if (!author) return false;
+    const { error } = await db.from("links").update({ author }).eq("id", id);
+    if (error) report({ id, error: error.message });
+    return !error;
   });
-});
+
+  const total = (key: keyof (typeof channels)[number]) => channels.reduce((sum, channel) => sum + channel[key], 0);
+  return {
+    fetched: total("fetched"),
+    skippedShorts: total("skippedShorts"),
+    upserted: total("upserted"),
+    authored: authored.filter(Boolean).length,
+  };
+}));
