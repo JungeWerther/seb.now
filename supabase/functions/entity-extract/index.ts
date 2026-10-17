@@ -7,6 +7,7 @@ import { nameHints } from "../_shared/hints.ts";
 import { fold, pageCandidates, WORD } from "../_shared/names.ts";
 import { fetchHtml, fetchPage, PageContent, pageText, readPage } from "../_shared/page.ts";
 import { candidates } from "./candidates.ts";
+import { ENTITY_EXTRACT, JEV } from "../_shared/constants.ts";
 
 // Finds the named entities a link mentions and links each to a row in
 // `entities`, creating it when it's new. Two passes, each marked in
@@ -42,18 +43,8 @@ import { candidates } from "./candidates.ts";
 // "decide": true also runs the dry run's decisions and scores the mentions;
 // "text": true adds the page text as read.
 
-const MODEL = "jev-1.13.0";
-const NAME_MIN_P = 0.8;
-const MATCH_MIN_P = 0.5;
-const CANDIDATE_ENTITIES = 8;
-const LINKS_PER_RUN = 30;
-const PAGE_LINKS_PER_RUN = 12;
-const FETCH_CONCURRENCY = 4;
-const RUN_BUDGET_MS = 100_000;
-const MAX_LINK_IDS = 50;
 const NEW_ENTITY = "new";
 const SAME_AS_PREFIX = "same_as_";
-const SAME_PASS_OPTIONS = 4;
 
 const MENTION_OPTIONS = {
   name:
@@ -178,7 +169,7 @@ function longerNames(name: Name, names: Name[]): Name[] {
     .filter(({ other, words: longer }) =>
       containsName(longer, words) || (longer.join(" ") === words.join(" ") && before(other, name)))
     .sort((a, b) => a.words.length - b.words.length)
-    .slice(0, SAME_PASS_OPTIONS)
+    .slice(0, ENTITY_EXTRACT.SAME_PASS_OPTIONS)
     .map(({ other }) => other);
 }
 
@@ -230,7 +221,7 @@ async function findNames(jev: JevClient, linkId: string, state: JsonValue, phras
       p = probabilities.name ?? 0;
       kind = result.answers[`k${i}`].choice as Kind;
     }
-    return p >= NAME_MIN_P ? [{ surface, sentence, p, kind }] : [];
+    return p >= ENTITY_EXTRACT.NAME_MIN_P ? [{ surface, sentence, p, kind }] : [];
   });
   return { names, inputTokens: result.usage.input_tokens };
 }
@@ -245,7 +236,7 @@ async function mentionsOf(db: SupabaseClient, jev: JevClient, link: Link, phrase
   const pending: { name: Name; options: Candidate[]; longer: Name[] }[] = [];
   const mentions: Mention[] = [];
   for (const name of found.names) {
-    const { data, error } = await db.rpc("entity_candidates", { phrase: name.surface, max_results: CANDIDATE_ENTITIES });
+    const { data, error } = await db.rpc("entity_candidates", { phrase: name.surface, max_results: ENTITY_EXTRACT.CANDIDATE_ENTITIES });
     if (error) throw new Error(error.message);
     const options = data as Candidate[];
     const longer = longerNames(name, found.names);
@@ -286,9 +277,9 @@ async function mentionsOf(db: SupabaseClient, jev: JevClient, link: Link, phrase
       const same = answer.choice.startsWith(SAME_AS_PREFIX) ? longer[Number(answer.choice.slice(SAME_AS_PREFIX.length))] : null;
       const match = options.find((c) => c.id === answer.choice);
       mentions.push(
-        same && p >= MATCH_MIN_P
+        same && p >= ENTITY_EXTRACT.MATCH_MIN_P
           ? { ...name, entity_id: null, entity_name: same.surface, decision: "same_as", match_p: p, same_as: same.surface }
-          : match && p >= MATCH_MIN_P
+          : match && p >= ENTITY_EXTRACT.MATCH_MIN_P
           ? { ...name, entity_id: match.id, entity_name: match.name, decision: "matched", match_p: p }
           : { ...name, entity_id: null, entity_name: name.surface, decision: "new", match_p: p },
       );
@@ -367,10 +358,10 @@ async function processPage(db: SupabaseClient, jev: JevClient, link: Link, page:
 
 // Pages are fetched FETCH_CONCURRENCY at a time, ahead of the one-at-a-time Jev work.
 function prefetch<T>(links: Link[], fetchOne: (url: string) => Promise<T>): Promise<T>[] {
-  const lanes: Promise<unknown>[] = Array.from({ length: FETCH_CONCURRENCY }, () => Promise.resolve());
+  const lanes: Promise<unknown>[] = Array.from({ length: ENTITY_EXTRACT.FETCH_CONCURRENCY }, () => Promise.resolve());
   return links.map((link, i) => {
-    const page = lanes[i % FETCH_CONCURRENCY].then(() => fetchOne(link.url));
-    lanes[i % FETCH_CONCURRENCY] = page;
+    const page = lanes[i % ENTITY_EXTRACT.FETCH_CONCURRENCY].then(() => fetchOne(link.url));
+    lanes[i % ENTITY_EXTRACT.FETCH_CONCURRENCY] = page;
     return page;
   });
 }
@@ -408,7 +399,7 @@ async function evaluate(db: SupabaseClient, jev: JevClient, ids: string[] | null
   if (error) throw new Error(error.message);
   const gold = new Map<string, string[]>();
   for (const r of goldRows as { link_id: string; name: string }[]) gold.set(r.link_id, [...(gold.get(r.link_id) ?? []), r.name]);
-  const { data: links, error: linksError } = await db.from("links").select("id, title, url").in("id", (ids ?? [...gold.keys()]).slice(0, MAX_LINK_IDS));
+  const { data: links, error: linksError } = await db.from("links").select("id, title, url").in("id", (ids ?? [...gold.keys()]).slice(0, ENTITY_EXTRACT.MAX_LINK_IDS));
   if (linksError) throw new Error(linksError.message);
 
   const htmls = prefetch(links as Link[], fetchHtml);
@@ -503,8 +494,8 @@ async function unprocessedLinks(db: SupabaseClient, step: "entities" | "page_ent
 
 Deno.serve(serveJev({
   fn: "entity-extract",
-  model: MODEL,
-  maxLinkIds: MAX_LINK_IDS,
+  model: JEV.MODEL,
+  maxLinkIds: ENTITY_EXTRACT.MAX_LINK_IDS,
   readOnly: (body) => body.eval === true,
 }, async ({ db, jev, ids, dryRun, body, report }) => {
   const started = Date.now();
@@ -514,13 +505,13 @@ Deno.serve(serveJev({
   }
 
   // One link at a time, so an entity a link creates is matchable by the next.
-  const titleLinks = ids ? await linksById(db, ids) : await unprocessedLinks(db, "entities", LINKS_PER_RUN);
+  const titleLinks = ids ? await linksById(db, ids) : await unprocessedLinks(db, "entities", ENTITY_EXTRACT.LINKS_PER_RUN);
   const titles = await pool(titleLinks, 1, reporting(report, (link: Link) => ({ link_id: link.id, found_in: "title" }), (link) =>
     processTitle(db, jev, link, dryRun)));
 
-  const pageLinks = ids ? titleLinks : await unprocessedLinks(db, "page_entities", PAGE_LINKS_PER_RUN);
+  const pageLinks = ids ? titleLinks : await unprocessedLinks(db, "page_entities", ENTITY_EXTRACT.PAGE_LINKS_PER_RUN);
   const prefetched = prefetch(pageLinks, fetchPage);
-  const overBudget = () => !ids && Date.now() - started > RUN_BUDGET_MS;
+  const overBudget = () => !ids && Date.now() - started > ENTITY_EXTRACT.RUN_BUDGET_MS;
   const pageResults = await pool(
     pageLinks.map((link, i) => ({ link, page: prefetched[i] })),
     1,

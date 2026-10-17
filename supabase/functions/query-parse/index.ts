@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
 import { memoize, once } from "../_shared/memo.ts";
+import { ENV, JEV, QUERY_PARSE } from "../_shared/constants.ts";
 
 // Reads what the search box is asking for, as the reader types: the page
 // proposes the topics whose names match the text (it holds the whole topic
@@ -21,14 +22,6 @@ import { memoize, once } from "../_shared/memo.ts";
 // POST {"text": "latest on ai agents", "topic_ids": ["ai.agents", ...]}
 // → {"sort": "latest", "topic": {"id": "ai.agents", "name": "AI agents"}, "search": "", ...}
 
-const MODEL = "jev-1.13.0";
-const TYPESAFE_KEY_SECRET = "typesafe-ai-token";
-const MAX_TEXT_LENGTH = 120;
-const MAX_WORDS = 12;
-const MAX_TOPIC_CANDIDATES = 8;
-const MIN_SORT_P = 0.5;
-const MIN_TOPIC_P = 0.5;
-const CACHE_SIZE = 500;
 const TOPIC_ID_PATTERN = /^[a-z0-9_]+(\.[a-z0-9_]+)*$/i;
 const NONE = "none";
 const DEFAULT_SORT = "for_you";
@@ -68,12 +61,12 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
-const admin: SupabaseClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+const admin: SupabaseClient = createClient(ENV.SUPABASE_URL, ENV.SUPABASE_SERVICE_ROLE_KEY);
 
 const client = once(async (): Promise<JevClient> => {
-  const { data: apiKey, error } = await admin.rpc("get_vault_secret", { secret_name: TYPESAFE_KEY_SECRET });
-  if (error || !apiKey) throw new Error(`no ${TYPESAFE_KEY_SECRET} in Vault`);
-  return new JevClient(apiKey, MODEL, { db: admin, fn: "query-parse" });
+  const { data: apiKey, error } = await admin.rpc("get_vault_secret", { secret_name: JEV.TYPESAFE_KEY_SECRET });
+  if (error || !apiKey) throw new Error(`no ${JEV.TYPESAFE_KEY_SECRET} in Vault`);
+  return new JevClient(apiKey, JEV.MODEL, { db: admin, fn: "query-parse" });
 });
 
 // A reading anyone has had, from this isolate's memory, else query_readings.
@@ -81,7 +74,7 @@ const storedReading = memoize((key: string) => key, async (key: string): Promise
   const { data, error } = await admin.from("query_readings").select("reading").eq("key", key).maybeSingle();
   if (error) console.error("query_readings read failed", error);
   return (data?.reading as Reading | undefined) ?? null;
-}, { maxEntries: CACHE_SIZE });
+}, { maxEntries: QUERY_PARSE.CACHE_SIZE });
 
 // The caller's user id, from the bearer token the gateway has already verified.
 function callerId(req: Request): string | null {
@@ -102,14 +95,14 @@ async function refundCredit(req: Request) {
 }
 
 function asCaller(req: Request) {
-  return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+  return createClient(ENV.SUPABASE_URL, ENV.SUPABASE_ANON_KEY, {
     global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
   });
 }
 
 async function loadTopics(ids: string[]): Promise<Topic[]> {
   if (!ids.length) return [];
-  const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!);
+  const db = createClient(ENV.SUPABASE_URL, ENV.SUPABASE_ANON_KEY);
   const { data, error } = await db.from("topics").select("id, name, description").in("id", ids);
   if (error) throw new Error(error.message);
   const order = new Map(ids.map((id, i) => [id, i]));
@@ -117,7 +110,7 @@ async function loadTopics(ids: string[]): Promise<Topic[]> {
 }
 
 async function parse(text: string, topics: Topic[]) {
-  const words = text.split(/\s+/).filter(Boolean).slice(0, MAX_WORDS);
+  const words = text.split(/\s+/).filter(Boolean).slice(0, QUERY_PARSE.MAX_WORDS);
   const questions: Record<string, ChoiceQuestion> = {
     sort: {
       type: "choice",
@@ -155,9 +148,9 @@ async function parse(text: string, topics: Topic[]) {
   const answers = result.answers as Record<string, { choice: string; probabilities: Record<string, number> }>;
 
   const sortAnswer = answers.sort;
-  const sort = (sortAnswer.probabilities[sortAnswer.choice] >= MIN_SORT_P ? sortAnswer.choice : DEFAULT_SORT) as Sort;
+  const sort = (sortAnswer.probabilities[sortAnswer.choice] >= QUERY_PARSE.MIN_SORT_P ? sortAnswer.choice : DEFAULT_SORT) as Sort;
   const topicAnswer = answers.topic;
-  const topic = topicAnswer && topicAnswer.choice !== NONE && topicAnswer.probabilities[topicAnswer.choice] >= MIN_TOPIC_P
+  const topic = topicAnswer && topicAnswer.choice !== NONE && topicAnswer.probabilities[topicAnswer.choice] >= QUERY_PARSE.MIN_TOPIC_P
     ? topics.find((t) => t.id === topicAnswer.choice) ?? null
     : null;
   const roles = words.map((word, i) => {
@@ -186,14 +179,14 @@ Deno.serve(async (req: Request) => {
   const body = await req.json().catch(() => null);
   const text = typeof body?.text === "string" ? body.text.trim().replace(/\s+/g, " ") : "";
   const ids: unknown = body?.topic_ids ?? [];
-  if (!text || text.length > MAX_TEXT_LENGTH) {
-    return json({ error: `text must be 1-${MAX_TEXT_LENGTH} characters` }, 400);
+  if (!text || text.length > QUERY_PARSE.MAX_TEXT_LENGTH) {
+    return json({ error: `text must be 1-${QUERY_PARSE.MAX_TEXT_LENGTH} characters` }, 400);
   }
   if (
-    !Array.isArray(ids) || ids.length > MAX_TOPIC_CANDIDATES ||
+    !Array.isArray(ids) || ids.length > QUERY_PARSE.MAX_TOPIC_CANDIDATES ||
     !ids.every((id) => typeof id === "string" && TOPIC_ID_PATTERN.test(id))
   ) {
-    return json({ error: `topic_ids must be at most ${MAX_TOPIC_CANDIDATES} topic ids` }, 400);
+    return json({ error: `topic_ids must be at most ${QUERY_PARSE.MAX_TOPIC_CANDIDATES} topic ids` }, 400);
   }
   const caller = asCaller(req);
   const key = JSON.stringify([text.toLowerCase(), ids]);

@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { memoize, once } from "../_shared/memo.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { constant, retry } from "../_shared/retry.ts";
+import { ACTIVITYPUB, ENV } from "../_shared/constants.ts";
 
 // Real ActivityPub backend for the site: the DO Functions proxy forwards
 // <site>/.well-known/webfinger and <site>/ap/inbox here, and a DO ingress
@@ -30,32 +31,24 @@ import { constant, retry } from "../_shared/retry.ts";
 // discussion: boosts should follow a deliberate human upvote, not
 // ingestion volume, and that's still unbuilt).
 const PUBLIC_AUDIENCE = "https://www.w3.org/ns/activitystreams#Public";
-const OUTBOX_PAGE_SIZE = 20;
-// Must match the replies_body_length check on public.replies.
-const REPLY_MAX_LENGTH = 500;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // Must match the profiles_handle_format check. USERNAME is the site actor's,
 // so a profile holding that handle gets no account of its own.
 const HANDLE_PATTERN = "^[a-z0-9_]{1,30}$";
-const REPLIES_FEDERATED_PER_HOUR = 5;
 
 const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  ENV.SUPABASE_URL,
+  ENV.SUPABASE_SERVICE_ROLE_KEY,
 );
 
-const BOOT_RETRY_ATTEMPTS = 4;
-// Reader accounts whose signing keys an isolate keeps imported.
-const ACCOUNT_KEYS_CACHED = 500;
-const BOOT_RETRY_DELAY_MS = 500;
 
 // Runs a service_role query, retrying briefly: on a cold boot the edge
 // runtime's service_role JWT can be minted a moment ahead of PostgREST's clock
 // ("JWT issued at future"), which resolves itself within a second.
 async function withBootRetry<T>(what: string, query: () => PromiseLike<{ data: T | null; error: { message: string } | null }>): Promise<T> {
   const { outcome: { data, error } } = await retry<{ data: T | null; error: { message: string } | null }>({
-    attempts: BOOT_RETRY_ATTEMPTS,
-    delayMs: constant(BOOT_RETRY_DELAY_MS),
+    attempts: ACTIVITYPUB.BOOT_RETRY_ATTEMPTS,
+    delayMs: constant(ACTIVITYPUB.BOOT_RETRY_DELAY_MS),
     retryIf: ({ data, error }) => !!error || !data,
   })(async () => await query());
   if (error || !data) throw new Error(`${what} failed: ${error?.message ?? "no data"}`);
@@ -221,7 +214,7 @@ const getAccountKeys = memoize((profileId: string) => profileId, async (profileI
     ({ data } = await supabase.from("ap_actor_keys").select("public_key_pem, private_key_pem").eq("profile_id", profileId).single());
   }
   return { privateKey: await importPrivateKey(data!.private_key_pem), publicKeyPem: data!.public_key_pem };
-}, { maxEntries: ACCOUNT_KEYS_CACHED });
+}, { maxEntries: ACTIVITYPUB.ACCOUNT_KEYS_CACHED });
 
 async function accountSigner(profileId: string): Promise<Signer> {
   return { keyId: `${userActorId(profileId)}#main-key`, privateKey: (await getAccountKeys(profileId)).privateKey };
@@ -604,7 +597,7 @@ async function handleDeliverReplies(): Promise<Response> {
   const { data, error } = await supabase.rpc("claim_federated_replies", {
     handle_pattern: HANDLE_PATTERN,
     reserved_handle: USERNAME,
-    per_hour: REPLIES_FEDERATED_PER_HOUR,
+    per_hour: ACTIVITYPUB.REPLIES_FEDERATED_PER_HOUR,
   });
   if (error) throw new Error(`claiming replies failed: ${error.message}`);
   const sent = (data as (LocalReply & { ap_state: string })[]).filter((r) => r.ap_state === "sent");
@@ -653,7 +646,7 @@ async function handleOutbox(): Promise<Response> {
     .from("links")
     .select("id, title, created_at, ap_posts!inner(link_id)", { count: "exact" })
     .order("created_at", { ascending: false })
-    .limit(OUTBOX_PAGE_SIZE);
+    .limit(ACTIVITYPUB.OUTBOX_PAGE_SIZE);
   if (error) throw new Error(`reading posts failed: ${error.message}`);
   const posts = data as unknown as ApPost[];
   return json(
@@ -810,7 +803,7 @@ function htmlToText(html: string): string {
     .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
     .trim()
-    .slice(0, REPLY_MAX_LENGTH);
+    .slice(0, ACTIVITYPUB.REPLY_MAX_LENGTH);
 }
 
 function isPublic(object: Record<string, unknown>): boolean {

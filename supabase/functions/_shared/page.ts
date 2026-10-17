@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import { parseHTML } from "npm:linkedom@0.18.12";
 import { Readability } from "npm:@mozilla/readability@0.6.0";
+import { PAGE } from "./constants.ts";
 
 // A link's page reduced to what a reader would read. The HTML is parsed into a
 // DOM (linkedom), Mozilla's Readability (Firefox's reader view) picks the
@@ -20,11 +21,6 @@ import { Readability } from "npm:@mozilla/readability@0.6.0";
 // entity-extract fetches each page once and keeps the text in `link_content`;
 // event-extract reads it back from there with `parseSections`.
 
-const FETCH_TIMEOUT_MS = 10000;
-const MAX_HTML_CHARS = 2_000_000;
-const MAX_TEXT_CHARS = 20000;
-const MIN_ARTICLE_CHARS = 500;
-const USER_AGENT = "Mozilla/5.0 (compatible; seb.now reader; +https://seb.now)";
 // Script and style bodies, which some pages carry megabytes of before their
 // article; only JSON-LD is read. Their content can't hold their closing tag,
 // so this cut is exact even without a parser.
@@ -39,13 +35,7 @@ const BLOCK_TAGS = new Set([
 ]);
 const HEADING_TAGS = new Set(["H1", "H2", "H3"]);
 const BOLD_TAGS = new Set(["STRONG", "B"]);
-// A paragraph that opens with a bold title ("<p><a><strong>Meet Your
-// Seoul…</strong></a><br>Du 6 au 27 octobre…") is an entry of a listing
-// without headings; a short bold lead-in ("À noter :") is emphasis.
-const ENTRY_TITLE_MIN_CHARS = 12;
-const ENTRY_TITLE_MAX_CHARS = 200;
 const EVENT_TYPE = /Event$|^Festival$/;
-const DECLARED_MAX = 15;
 
 // schema.org types worth an entity, by the kind entity-extract would give them.
 // A subtype not listed here is recognised by its name's ending.
@@ -159,7 +149,7 @@ function readJsonLd(blocks: string[]): { events: JsonLdEvent[]; declared: Declar
     for (const [key, value] of Object.entries(obj)) visit(value, under || NOT_ABOUT_KEYS.has(key));
   };
   roots.forEach((r) => visit(r, false));
-  return { events, declared: [...declared.values()].slice(0, DECLARED_MAX) };
+  return { events, declared: [...declared.values()].slice(0, PAGE.DECLARED_MAX) };
 }
 
 // Decodes the entities a JSON-LD string sometimes carries, through the parser.
@@ -184,7 +174,7 @@ function sectionsOf(root: Element): Section[] {
   };
   const flush = () => {
     breakLine();
-    let text = lines.join("\n").slice(0, Math.max(0, MAX_TEXT_CHARS - total));
+    let text = lines.join("\n").slice(0, Math.max(0, PAGE.MAX_TEXT_CHARS - total));
     total += text.length;
     if (text || heading) sections.push({ heading, text });
     lines = [];
@@ -208,7 +198,7 @@ function sectionsOf(root: Element): Section[] {
   };
   const walk = (node: Element) => {
     for (const child of node.childNodes) {
-      if (total >= MAX_TEXT_CHARS) return;
+      if (total >= PAGE.MAX_TEXT_CHARS) return;
       if (child.nodeType === TEXT_NODE) {
         line += child.nodeValue ?? "";
         continue;
@@ -222,7 +212,7 @@ function sectionsOf(root: Element): Section[] {
       if (el.tagName === "P") {
         const bold = boldTitle(el);
         const length = bold ? clean(bold.textContent ?? "").length : 0;
-        if (bold && length >= ENTRY_TITLE_MIN_CHARS && length <= ENTRY_TITLE_MAX_CHARS) {
+        if (bold && length >= PAGE.ENTRY_TITLE_MIN_CHARS && length <= PAGE.ENTRY_TITLE_MAX_CHARS) {
           startSection(bold.textContent ?? "");
           bold.remove();
         }
@@ -247,12 +237,12 @@ export function readPage(html: string): Omit<PageContent, "status"> {
 
   let article: { content?: string | null; textContent?: string | null } | null = null;
   try {
-    article = new Readability(document, { charThreshold: MIN_ARTICLE_CHARS }).parse();
+    article = new Readability(document, { charThreshold: PAGE.MIN_ARTICLE_CHARS }).parse();
   } catch {
     article = null;
   }
   let root: Element | null = null;
-  if (article?.content && (article.textContent ?? "").trim().length >= MIN_ARTICLE_CHARS) {
+  if (article?.content && (article.textContent ?? "").trim().length >= PAGE.MIN_ARTICLE_CHARS) {
     root = parseHTML(`<!doctype html><html><body>${article.content}</body></html>`).document.body;
   } else {
     // Readability has taken the document apart, so the fallback parses it again.
@@ -266,15 +256,15 @@ export function readPage(html: string): Omit<PageContent, "status"> {
 export async function fetchHtml(url: string): Promise<{ status: number | null; html: string | null }> {
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml" },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      headers: { "User-Agent": PAGE.USER_AGENT, Accept: "text/html,application/xhtml+xml" },
+      signal: AbortSignal.timeout(PAGE.FETCH_TIMEOUT_MS),
     });
     if (!res.ok || !(res.headers.get("content-type") ?? "").includes("html")) {
       await res.body?.cancel();
       return { status: res.status, html: null };
     }
     const html = (await res.text()).replace(SCRIPT_OR_STYLE, (whole, _tag, attrs) => (JSON_LD_TYPE.test(attrs) ? whole : ""));
-    return { status: res.status, html: html.slice(0, MAX_HTML_CHARS) };
+    return { status: res.status, html: html.slice(0, PAGE.MAX_HTML_CHARS) };
   } catch {
     return { status: null, html: null };
   }
@@ -292,7 +282,7 @@ export async function fetchPage(url: string): Promise<PageContent> {
 }
 
 export function pageText(sections: Section[]): string {
-  return sections.map((s) => (s.heading ? `## ${s.heading}\n${s.text}` : s.text)).join("\n\n").slice(0, MAX_TEXT_CHARS);
+  return sections.map((s) => (s.heading ? `## ${s.heading}\n${s.text}` : s.text)).join("\n\n").slice(0, PAGE.MAX_TEXT_CHARS);
 }
 
 // The inverse of `pageText`: section texts never hold a blank line, since
@@ -308,7 +298,6 @@ export function parseSections(text: string | null): Section[] {
   });
 }
 
-const CONTEXT_CHARS = 240;
 const sentenceSegmenter = new Intl.Segmenter(undefined, { granularity: "sentence" });
 
 // A sentence ICU ends after a title or short abbreviation ("Dr.", "St.", "M.")
@@ -331,8 +320,8 @@ export function sentences(text: string): { start: number; end: number }[] {
 
 // The sentence around text[from, to), at most CONTEXT_CHARS long.
 export function sentenceAround(text: string, from: number, to: number): string {
-  const lo = Math.max(0, from - CONTEXT_CHARS);
-  const window = text.slice(lo, Math.min(text.length, to + CONTEXT_CHARS));
+  const lo = Math.max(0, from - PAGE.CONTEXT_CHARS);
+  const window = text.slice(lo, Math.min(text.length, to + PAGE.CONTEXT_CHARS));
   let start = from;
   let end = to;
   for (const s of sentences(window)) {
@@ -341,7 +330,7 @@ export function sentenceAround(text: string, from: number, to: number): string {
     start = Math.min(start, s.start + lo);
     end = Math.max(end, s.end + lo);
   }
-  start = Math.max(start, from - CONTEXT_CHARS / 2);
-  end = Math.min(end, to + CONTEXT_CHARS / 2);
+  start = Math.max(start, from - PAGE.CONTEXT_CHARS / 2);
+  end = Math.min(end, to + PAGE.CONTEXT_CHARS / 2);
   return text.slice(start, end).replace(/\s+/g, " ").trim();
 }

@@ -1,0 +1,229 @@
+// Every Edge Function metaparameter: model ids, limits, thresholds, timeouts,
+// secret names and the external services' addresses, grouped by the function
+// that uses them, plus ENV, the only place the environment is read.
+// tests/test_edge_constants.py fails on a top-level UPPER_CASE const or a
+// Deno.env.get anywhere else (regexes and the protocol tables it lists aside).
+
+function required(name: string): string {
+  const value = Deno.env.get(name);
+  if (!value) throw new Error(`${name} is not set`);
+  return value;
+}
+
+// The function's environment, read when first used.
+export const ENV = {
+  get SUPABASE_URL() {
+    return required("SUPABASE_URL");
+  },
+  get SUPABASE_SERVICE_ROLE_KEY() {
+    return required("SUPABASE_SERVICE_ROLE_KEY");
+  },
+  get SUPABASE_ANON_KEY() {
+    return required("SUPABASE_ANON_KEY");
+  },
+};
+
+// TypeSafe's System One API (Jev), shared by every function that asks it.
+export const JEV = Object.freeze({
+  ENDPOINT: "https://api.typesafe.ai/v1/systemone",
+  RETRYABLE_STATUSES: [429, 529],
+  MAX_ATTEMPTS: 4,
+  BACKOFF_BASE_MS: 1000,
+  MODEL: "jev-1.13.0",
+  TYPESAFE_KEY_SECRET: "typesafe-ai-token",
+});
+
+// _shared/ingest.ts: what every ingest function shares.
+export const INGEST = Object.freeze({
+  IMAGE_FETCH_TIMEOUT_MS: 5000,
+  USER_AGENT: "seb.now feed reader (+https://seb.now)",
+});
+
+// hn-ingest.
+export const HN = Object.freeze({
+  STORIES_LIMIT: 25,
+  API: "https://hacker-news.firebaseio.com/v0",
+});
+
+// techcrunch-ingest.
+export const TECHCRUNCH = Object.freeze({
+  FEED_URL: "https://techcrunch.com/feed/",
+  ITEMS_LIMIT: 20,
+});
+
+// youtube-ingest.
+export const YOUTUBE = Object.freeze({
+  FEED_URL: "https://www.youtube.com/feeds/videos.xml?channel_id=",
+  WATCH_URL: "https://www.youtube.com/watch?v=",
+  // 4:3 with letterbox bars on 16:9 videos; the page's 16:9 cover crop removes
+  // them exactly. Unlike maxresdefault, it exists for every video.
+  THUMBNAIL_URL: (id: string) => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+  // oEmbed answers data-centre requests (unlike the watch page's og tags) and
+  // names the uploading channel, which becomes links.author.
+  OEMBED_URL: "https://www.youtube.com/oembed?format=json&url=",
+  OEMBED_TIMEOUT_MS: 5000,
+  // YouTube links from any ingest (e.g. Hacker News) still without an author,
+  // looked up per run.
+  AUTHOR_SWEEP_LIMIT: 50,
+});
+
+// web-feed-ingest.
+export const WEB_FEED = Object.freeze({
+  ITEMS_PER_FEED: 10,
+  FEED_FETCH_TIMEOUT_MS: 10000,
+  DESCRIPTION_MAX_CHARS: 500,
+  DESCRIPTION_MIN_CHARS: 20,
+});
+
+// ical-ingest.
+export const ICAL = Object.freeze({
+  // link_events dates are wall-clock dates here
+  EVENT_ZONE: "Europe/Paris",
+  HORIZON_DAYS: 45,
+  EVENTS_PER_FEED: 40,
+  FEED_FETCH_TIMEOUT_MS: 15000,
+  IMAGE_CONCURRENCY: 6,
+  DESCRIPTION_MAX_CHARS: 500,
+  DESCRIPTION_MIN_CHARS: 20,
+  EVIDENCE_MAX_CHARS: 500,
+  VENUE_MAX_CHARS: 300,
+  TITLE_MAX_CHARS: 300,
+});
+
+// fediverse-ingest.
+export const FEDIVERSE = Object.freeze({
+  POSTS_PER_ACCOUNT: 10,
+});
+
+// _shared/page.ts: fetching and reading a link's page.
+export const PAGE = Object.freeze({
+  FETCH_TIMEOUT_MS: 10000,
+  MAX_HTML_CHARS: 2_000_000,
+  MAX_TEXT_CHARS: 20000,
+  MIN_ARTICLE_CHARS: 500,
+  USER_AGENT: "Mozilla/5.0 (compatible; seb.now reader; +https://seb.now)",
+  // A paragraph that opens with a bold title ("<p><a><strong>Meet Your
+  // Seoul…</strong></a><br>Du 6 au 27 octobre…") is an entry of a listing
+  // without headings; a short bold lead-in ("À noter :") is emphasis.
+  ENTRY_TITLE_MIN_CHARS: 12,
+  ENTRY_TITLE_MAX_CHARS: 200,
+  DECLARED_MAX: 15,
+  CONTEXT_CHARS: 240,
+});
+
+// _shared/names.ts: names proposed from a page.
+export const NAMES = Object.freeze({
+  MAX_LENGTH: 60,
+  PAGE_CANDIDATES: 80,
+  KNOWN_CANDIDATES: 25,
+  PAGE_MIN_LENGTH: 3,
+  CAP_RATE_NAME: 0.5,
+  // Below this, a capitalised word at a sentence start is never a name's first
+  // word ("After", "Pour"); above, it sometimes is ("New York").
+  NAME_START_RATE: 0.1,
+  PREFIX_CAP_RATE: 0.25,
+  MAX_PARTICLES: 2,
+});
+
+// _shared/hints.ts.
+export const HINTS = Object.freeze({
+  MIN_EVIDENCE: 5,
+  MAX_LOOKUP_WORDS: 5000,
+});
+
+// topic-label.
+export const TOPIC_LABEL = Object.freeze({
+  BEAM_WIDTH: 3,
+  MAX_LABELS: 3,
+  MIN_LABEL_SCORE: 0.5,
+  LINKS_PER_RUN: 60,
+  MAX_LINK_IDS: 100,
+  CONCURRENCY: 6,
+  TOPICS_PAGE_SIZE: 1000,
+});
+
+// entity-extract.
+export const ENTITY_EXTRACT = Object.freeze({
+  NAME_MIN_P: 0.8,
+  MATCH_MIN_P: 0.5,
+  CANDIDATE_ENTITIES: 8,
+  LINKS_PER_RUN: 30,
+  PAGE_LINKS_PER_RUN: 12,
+  FETCH_CONCURRENCY: 4,
+  RUN_BUDGET_MS: 100_000,
+  MAX_LINK_IDS: 50,
+  SAME_PASS_OPTIONS: 4,
+});
+
+// entity-extract/candidates.ts: phrases proposed from a title.
+export const TITLE_CANDIDATES = Object.freeze({
+  MAX_CANDIDATES: 20,
+  MIN_LENGTH: 2,
+  WINDOW_MIN_RUN_WORDS: 3,
+});
+
+// event-extract.
+export const EVENT_EXTRACT = Object.freeze({
+  LINKS_PER_RUN: 10,
+  MAX_LINK_IDS: 50,
+  CONCURRENCY: 4,
+  MIN_PAGE_P: 0.5,
+  MAX_NOT_AN_EVENT_P: 0.5,
+  MIN_ROLE_P: 0.5,
+  MIN_VENUE_P: 0.5,
+  SECTION_VENUE_PHRASES: 6,
+  LEAD_CHARS: 600,
+  EXCERPT_CHARS: 300,
+  DESCRIPTION_CHARS: 500,
+  RECENT_MS: 24 * 60 * 60 * 1000,
+});
+
+// event-extract/dates.ts.
+export const EVENT_DATES = Object.freeze({
+  MAX_CANDIDATES: 20,
+});
+
+// query-parse.
+export const QUERY_PARSE = Object.freeze({
+  MAX_TEXT_LENGTH: 120,
+  MAX_WORDS: 12,
+  MAX_TOPIC_CANDIDATES: 8,
+  MIN_SORT_P: 0.5,
+  MIN_TOPIC_P: 0.5,
+  CACHE_SIZE: 500,
+});
+
+// activitypub.
+export const ACTIVITYPUB = Object.freeze({
+  OUTBOX_PAGE_SIZE: 20,
+  // Must match the replies_body_length check on public.replies.
+  REPLY_MAX_LENGTH: 500,
+  REPLIES_FEDERATED_PER_HOUR: 5,
+  BOOT_RETRY_ATTEMPTS: 4,
+  // Reader accounts whose signing keys an isolate keeps imported.
+  ACCOUNT_KEYS_CACHED: 500,
+  BOOT_RETRY_DELAY_MS: 500,
+});
+
+// mcp.
+export const MCP = Object.freeze({
+  DEFAULT_LIMIT: 20,
+  MAX_LIMIT: 50,
+  MAX_QUERY_LENGTH: 200,
+  MAX_PROPOSAL_EXAMPLES: 10,
+  MAX_RATIONALE_LENGTH: 500,
+  MAX_TOPIC_NAME_LENGTH: 60,
+  MAX_TOPIC_DESCRIPTION_LENGTH: 300,
+  // The URL clients connect to for the signed-in endpoint, and so the OAuth
+  // resource its tokens are for: the seb.now proxy, not this function's own URL.
+  USER_RESOURCE: "https://seb.now/mcp/user",
+});
+
+// index-snapshot.
+export const INDEX_SNAPSHOT = Object.freeze({
+  BUCKET: "index",
+  PREFIX: "snapshots",
+  KEEP_SNAPSHOTS: 3,
+  // Snapshot names never change content, so they can be cached for a year.
+  CACHE_SECONDS: "31536000",
+});

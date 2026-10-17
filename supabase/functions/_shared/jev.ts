@@ -5,11 +5,8 @@
 
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { exponential, retry } from "./retry.ts";
+import { JEV } from "./constants.ts";
 
-const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
-const RETRYABLE_STATUSES = [429, 529];
-const MAX_ATTEMPTS = 4;
-const BACKOFF_BASE_MS = 1000;
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
@@ -55,13 +52,13 @@ export class JevClient {
     let attempts = 0;
     try {
       const { outcome: res } = await retry<Response>({
-        attempts: MAX_ATTEMPTS,
-        delayMs: exponential(BACKOFF_BASE_MS),
-        retryIf: (res) => RETRYABLE_STATUSES.includes(res.status),
+        attempts: JEV.MAX_ATTEMPTS,
+        delayMs: exponential(JEV.BACKOFF_BASE_MS),
+        retryIf: (res) => JEV.RETRYABLE_STATUSES.includes(res.status),
         onRetry: (res) => res.body?.cancel(),
         onAttempt: (n) => attempts = n,
       })(() =>
-        fetch(ENDPOINT, {
+        fetch(JEV.ENDPOINT, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.apiKey}` },
           body,

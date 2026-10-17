@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { encodeSnapshot, type RawSnapshot } from "../_shared/index_snapshot.ts";
+import { ENV, INDEX_SNAPSHOT } from "../_shared/constants.ts";
 
 // Builds the snapshot of the entity index the page keeps for itself (see
 // 20261016210000_entity_index.sql) and uploads it, gzipped, to the public
@@ -11,11 +12,6 @@ import { encodeSnapshot, type RawSnapshot } from "../_shared/index_snapshot.ts";
 //
 // POST {} builds if needed; POST {"force": true} always builds.
 
-const BUCKET = "index";
-const PREFIX = "snapshots";
-const KEEP_SNAPSHOTS = 3;
-// Snapshot names never change content, so they can be cached for a year.
-const CACHE_SECONDS = "31536000";
 
 interface State {
   gen: number;
@@ -35,7 +31,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 Deno.serve(async (req: Request) => {
-  const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const db = createClient(ENV.SUPABASE_URL, ENV.SUPABASE_SERVICE_ROLE_KEY);
   const force = req.method === "POST" && Boolean((await req.json().catch(() => ({}))).force);
 
   const { data: states, error: stateError } = await db.from("index_state").select("*");
@@ -64,11 +60,11 @@ Deno.serve(async (req: Request) => {
   const text = JSON.stringify(snapshot);
   const body = await gzip(text);
   const { gen, wm } = snapshot;
-  const path = `${PREFIX}/${gen}-${wm.l}-${wm.e}-${wm.p}.json.gz`;
+  const path = `${INDEX_SNAPSHOT.PREFIX}/${gen}-${wm.l}-${wm.e}-${wm.p}.json.gz`;
 
-  const { error: uploadError } = await db.storage.from(BUCKET).upload(path, body, {
+  const { error: uploadError } = await db.storage.from(INDEX_SNAPSHOT.BUCKET).upload(path, body, {
     contentType: "application/gzip",
-    cacheControl: CACHE_SECONDS,
+    cacheControl: INDEX_SNAPSHOT.CACHE_SECONDS,
     upsert: true,
   });
   if (uploadError) return json({ error: uploadError.message }, 500);
@@ -82,12 +78,12 @@ Deno.serve(async (req: Request) => {
   });
   if (publishError) return json({ error: publishError.message }, 500);
 
-  const { data: files } = await db.storage.from(BUCKET).list(PREFIX, {
+  const { data: files } = await db.storage.from(INDEX_SNAPSHOT.BUCKET).list(INDEX_SNAPSHOT.PREFIX, {
     sortBy: { column: "created_at", order: "desc" },
     limit: 100,
   });
-  const stale = (files ?? []).map((f) => `${PREFIX}/${f.name}`).filter((p) => p !== path).slice(KEEP_SNAPSHOTS - 1);
-  if (stale.length) await db.storage.from(BUCKET).remove(stale);
+  const stale = (files ?? []).map((f) => `${INDEX_SNAPSHOT.PREFIX}/${f.name}`).filter((p) => p !== path).slice(INDEX_SNAPSHOT.KEEP_SNAPSHOTS - 1);
+  if (stale.length) await db.storage.from(INDEX_SNAPSHOT.BUCKET).remove(stale);
 
   return json({
     path,

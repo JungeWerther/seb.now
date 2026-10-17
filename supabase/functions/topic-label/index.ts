@@ -3,6 +3,7 @@ import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
 import { isPresent, type Report, reporting, serveJev } from "../_shared/jev_function.ts";
 import { pool } from "../_shared/pool.ts";
+import { JEV, TOPIC_LABEL } from "../_shared/constants.ts";
 
 // Labels links with leaf topics by walking the topic tree with Jev: at each
 // node one Choice over its children, keeping the BEAM_WIDTH best paths by
@@ -16,14 +17,6 @@ import { pool } from "../_shared/pool.ts";
 // POST {"link_ids": [...], "dry_run": true} returns labels without writing
 // (used to evaluate against the hand labels).
 
-const MODEL = "jev-1.13.0";
-const BEAM_WIDTH = 3;
-const MAX_LABELS = 3;
-const MIN_LABEL_SCORE = 0.5;
-const LINKS_PER_RUN = 60;
-const MAX_LINK_IDS = 100;
-const CONCURRENCY = 6;
-const TOPICS_PAGE_SIZE = 1000;
 const NONE = "none";
 const ROOT = "";
 
@@ -49,18 +42,18 @@ interface Link {
 
 async function loadTopics(db: SupabaseClient): Promise<Map<string, Topic[]>> {
   const children = new Map<string, Topic[]>();
-  for (let from = 0; ; from += TOPICS_PAGE_SIZE) {
+  for (let from = 0; ; from += TOPIC_LABEL.TOPICS_PAGE_SIZE) {
     const { data, error } = await db
       .from("topics")
       .select("id, name, description")
       .order("id")
-      .range(from, from + TOPICS_PAGE_SIZE - 1);
+      .range(from, from + TOPIC_LABEL.TOPICS_PAGE_SIZE - 1);
     if (error) throw new Error(error.message);
     for (const topic of data as Topic[]) {
       const parent = topic.id.includes(".") ? topic.id.slice(0, topic.id.lastIndexOf(".")) : ROOT;
       children.set(parent, [...(children.get(parent) ?? []), topic]);
     }
-    if (data.length < TOPICS_PAGE_SIZE) return children;
+    if (data.length < TOPIC_LABEL.TOPICS_PAGE_SIZE) return children;
   }
 }
 
@@ -141,11 +134,11 @@ async function labelLink(jev: JevClient, link: Link, children: Map<string, Topic
       const probabilities = result!.answers[`q${index}`].probabilities as Record<string, number>;
       for (const [option, p] of Object.entries(probabilities)) next.push(extend(path, option, p, true));
     }
-    beam = next.sort((a, b) => b.score - a.score).slice(0, BEAM_WIDTH);
+    beam = next.sort((a, b) => b.score - a.score).slice(0, TOPIC_LABEL.BEAM_WIDTH);
   }
   const labels = beam
-    .filter((p) => p.node !== NONE && p.node !== ROOT && p.score >= MIN_LABEL_SCORE)
-    .slice(0, MAX_LABELS)
+    .filter((p) => p.node !== NONE && p.node !== ROOT && p.score >= TOPIC_LABEL.MIN_LABEL_SCORE)
+    .slice(0, TOPIC_LABEL.MAX_LABELS)
     .map((p) => ({ topic_id: p.node, p: Math.round(p.score * 1000) / 1000 }));
   return { link_id: link.id, title: link.title, labels, beam: beam.map(({ node, score }) => ({ node, score })), requests, inputTokens };
 }
@@ -172,7 +165,7 @@ async function saveLabels(db: SupabaseClient, results: Awaited<ReturnType<typeof
 }
 
 async function unlabelledLinks(db: SupabaseClient): Promise<Link[]> {
-  const { data: rows, error } = await db.rpc("links_to_enrich", { step: "topics", max_results: LINKS_PER_RUN });
+  const { data: rows, error } = await db.rpc("links_to_enrich", { step: "topics", max_results: TOPIC_LABEL.LINKS_PER_RUN });
   if (error) throw new Error(error.message);
   const ids = (rows as { link_id: string }[]).map((r) => r.link_id);
   if (!ids.length) return [];
@@ -181,12 +174,12 @@ async function unlabelledLinks(db: SupabaseClient): Promise<Link[]> {
   return data;
 }
 
-Deno.serve(serveJev({ fn: "topic-label", model: MODEL, maxLinkIds: MAX_LINK_IDS }, async ({ db, jev, ids, dryRun, report }) => {
+Deno.serve(serveJev({ fn: "topic-label", model: JEV.MODEL, maxLinkIds: TOPIC_LABEL.MAX_LINK_IDS }, async ({ db, jev, ids, dryRun, report }) => {
   const children = await loadTopics(db);
   const names = new Map([...children.values()].flat().map((t) => [t.id, t.name]));
   const links = ids ? await linksById(db, ids) : await unlabelledLinks(db);
   const label = reporting(report, (link: Link) => ({ link_id: link.id }), (link) => labelLink(jev, link, children, names));
-  const results = (await pool(links, CONCURRENCY, label)).filter(isPresent);
+  const results = (await pool(links, TOPIC_LABEL.CONCURRENCY, label)).filter(isPresent);
 
   const written = dryRun ? 0 : await saveLabels(db, results, report);
   return {

@@ -9,9 +9,9 @@ import {
   type Report,
   serveIngest,
   upsertLink,
-  USER_AGENT,
 } from "../_shared/ingest.ts";
 import { CalendarEvent, lastDay, parseCalendar } from "../_shared/ical.ts";
+import { ICAL, INGEST } from "../_shared/constants.ts";
 
 // Public event calendars (iCalendar .ics): the enabled ical_feed rows in
 // sources, whose identifier is the calendar URL (Luma's
@@ -19,16 +19,6 @@ import { CalendarEvent, lastDay, parseCalendar } from "../_shared/ical.ts";
 // upcoming event becomes a link to its own page, and its dates go straight to
 // link_events (labeled_by 'ical'), since the calendar states them: the link is
 // marked in link_enrichment.events_at so event-extract doesn't ask Jev again.
-const EVENT_ZONE = "Europe/Paris"; // link_events dates are wall-clock dates here
-const HORIZON_DAYS = 45;
-const EVENTS_PER_FEED = 40;
-const FEED_FETCH_TIMEOUT_MS = 15000;
-const IMAGE_CONCURRENCY = 6;
-const DESCRIPTION_MAX_CHARS = 500;
-const DESCRIPTION_MIN_CHARS = 20;
-const EVIDENCE_MAX_CHARS = 500;
-const VENUE_MAX_CHARS = 300;
-const TITLE_MAX_CHARS = 300;
 
 // Luma writes the event page and its address into DESCRIPTION; neither is
 // part of what the event is about.
@@ -55,7 +45,7 @@ function plainDescription(raw: string | null): string | null {
     .replace(LUMA_HOSTED_BY, "")
     .replace(/\s+/g, " ")
     .trim();
-  return text.length < DESCRIPTION_MIN_CHARS ? null : cut(text, DESCRIPTION_MAX_CHARS);
+  return text.length < ICAL.DESCRIPTION_MIN_CHARS ? null : cut(text, ICAL.DESCRIPTION_MAX_CHARS);
 }
 
 // The place's name: LOCATION's first comma-separated part. An online event's
@@ -63,12 +53,12 @@ function plainDescription(raw: string | null): string | null {
 function venueName(location: string | null): string | null {
   if (!location || httpUrl(location)) return null;
   const name = location.split(",")[0].trim();
-  return name ? cut(name, VENUE_MAX_CHARS) : null;
+  return name ? cut(name, ICAL.VENUE_MAX_CHARS) : null;
 }
 
 function evidence(event: CalendarEvent): string {
   const when = [event.start, event.end].filter((t) => t).map((t) => `${t!.date}${t!.time ? ` ${t!.time}` : ""}`).join(" – ");
-  return cut([when, event.location].filter((s) => s).join(", "), EVIDENCE_MAX_CHARS);
+  return cut([when, event.location].filter((s) => s).join(", "), ICAL.EVIDENCE_MAX_CHARS);
 }
 
 function todayIn(zone: string): string {
@@ -77,12 +67,12 @@ function todayIn(zone: string): string {
 
 // Not over yet and starting within the horizon, soonest first.
 function upcoming(events: CalendarEvent[]): CalendarEvent[] {
-  const today = todayIn(EVENT_ZONE);
-  const horizon = Date.now() + HORIZON_DAYS * 24 * 60 * 60 * 1000;
+  const today = todayIn(ICAL.EVENT_ZONE);
+  const horizon = Date.now() + ICAL.HORIZON_DAYS * 24 * 60 * 60 * 1000;
   return events
     .filter((e) => !e.cancelled && lastDay(e) >= today && e.start.instant.getTime() <= horizon)
     .sort((a, b) => a.start.instant.getTime() - b.start.instant.getTime())
-    .slice(0, EVENTS_PER_FEED);
+    .slice(0, ICAL.EVENTS_PER_FEED);
 }
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -102,14 +92,14 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 async function readCalendar(feedUrl: string, report: Report): Promise<{ event: CalendarEvent; url: string }[]> {
   try {
     const res = await fetch(feedUrl, {
-      headers: { "User-Agent": USER_AGENT, Accept: "text/calendar, */*" },
-      signal: AbortSignal.timeout(FEED_FETCH_TIMEOUT_MS),
+      headers: { "User-Agent": INGEST.USER_AGENT, Accept: "text/calendar, */*" },
+      signal: AbortSignal.timeout(ICAL.FEED_FETCH_TIMEOUT_MS),
     });
     if (!res.ok) {
       report({ feed: feedUrl, status: res.status });
       return [];
     }
-    return upcoming(parseCalendar(await res.text(), EVENT_ZONE))
+    return upcoming(parseCalendar(await res.text(), ICAL.EVENT_ZONE))
       .map((event) => ({ event, url: eventPage(event) }))
       .filter((e): e is { event: CalendarEvent; url: string } => !!e.url);
   } catch (e) {
@@ -150,11 +140,11 @@ Deno.serve(serveIngest(async (db, report) => {
     const events = (await readCalendar(feedUrl, report)).filter(({ url }) => !seen.has(url));
     events.forEach(({ url }) => seen.add(url));
 
-    const images = await mapLimit(events, IMAGE_CONCURRENCY, ({ url }) => previewImage(url));
+    const images = await mapLimit(events, ICAL.IMAGE_CONCURRENCY, ({ url }) => previewImage(url));
     const linkIds = await mapSeries(events, async ({ event, url }, i) => {
       const linkId = await upsertLink(db, {
         url,
-        title: cut(event.summary, TITLE_MAX_CHARS),
+        title: cut(event.summary, ICAL.TITLE_MAX_CHARS),
         origin: "feed",
         submitted_by: null,
         // Which followed calendar listed it; the database tags the link with it.

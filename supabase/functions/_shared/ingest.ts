@@ -4,9 +4,8 @@
 // the function's summary as JSON.
 
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { ENV, INGEST } from "./constants.ts";
 
-const IMAGE_FETCH_TIMEOUT_MS = 5000;
-export const USER_AGENT = "seb.now feed reader (+https://seb.now)";
 
 export type Report = (error: Record<string, unknown>) => void;
 export type Row = Record<string, unknown>;
@@ -17,7 +16,7 @@ export function serveIngest(
   ingest: (db: SupabaseClient, report: Report) => Promise<Row>,
 ): (req: Request) => Promise<Response> {
   return async () => {
-    const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const db = createClient(ENV.SUPABASE_URL, ENV.SUPABASE_SERVICE_ROLE_KEY);
     const errors: Row[] = [];
     const summary = await ingest(db, (error) => errors.push(error));
     return new Response(JSON.stringify({ ...summary, errors }, null, 2), {
@@ -128,8 +127,8 @@ export async function previewImage(
 ): Promise<string | null> {
   try {
     const res = await fetch(pageUrl, {
-      headers: { "User-Agent": USER_AGENT },
-      signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
+      headers: { "User-Agent": INGEST.USER_AGENT },
+      signal: AbortSignal.timeout(INGEST.IMAGE_FETCH_TIMEOUT_MS),
     });
     if (!res.ok || !(res.headers.get("content-type") ?? "").includes("text/html")) return null;
     const html = await res.text();
