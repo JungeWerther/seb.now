@@ -19,12 +19,12 @@ import { ENTITY_EXTRACT, JEV, PLACE_RESOLVE, WIKIDATA } from "../_shared/constan
 //  3. a pick with p ≥ MATCH_MIN_P sets `wikidata_id` and, when empty, `country`
 //     (ISO 3166-1). If another entity already has that item, the two are one
 //     place: a `merge` is staged in `entity_edits` for review, not applied.
-//  4. the item's area (P131, else its country) becomes the place's parent in
-//     `entity_locations`: the entity with that item, else the place of that
+//  4. the item's area (P131, else its country) becomes the place's parent
+//     (`set_place_parent`, which writes `place_path`): the entity with that item, else the place of that
 //     name not yet linked (which takes the item), else a new place entity.
 //     Parents are places like any other, so later runs place them in turn,
 //     until a country, which has none.
-// Every place looked at gets `entity_enrichment.wikidata_at`, picked or not.
+// Every place looked at gets `entities.wikidata_checked_at`, picked or not.
 //
 // POST {} runs on the next places; POST {"entity_ids": [...]} on those.
 // "dry_run": true reports the picks without writing.
@@ -143,12 +143,14 @@ async function placeFor(db: SupabaseClient, wd: Wikidata, qid: string): Promise<
   if (error) throw new Error(error.message);
   const same = (named as { id: string; wikidata_id: string | null }[])[0];
   if (same && !same.wikidata_id) {
-    const { error: claimError } = await db.from("entities").update({ wikidata_id: qid }).eq("id", same.id);
+    // Claimed only if still unlinked, so two runs can't give it two items; a
+    // no-match lookup recorded before it had an item is void (looked up again).
+    const { data: claimed, error: claimError } = await db.from("entities")
+      .update({ wikidata_id: qid, wikidata_checked_at: null, wikidata_p: null })
+      .eq("id", same.id).is("wikidata_id", null).select("id");
     if (claimError) throw new Error(claimError.message);
-    // A no-match lookup recorded before it had an item is void: look it up again.
-    const { error: resetError } = await db.from("entity_enrichment").delete().eq("entity_id", same.id);
-    if (resetError) throw new Error(resetError.message);
-    return same.id;
+    if ((claimed as unknown[]).length) return same.id;
+    return placeFor(db, wd, qid);
   }
   // Another place already has the name (names are unique per kind): this one is
   // named with what tells it apart.
@@ -160,10 +162,18 @@ async function placeFor(db: SupabaseClient, wd: Wikidata, qid: string): Promise<
   return created.id;
 }
 
-async function save(db: SupabaseClient, wd: Wikidata, { place: queued, item, p }: Pick) {
+async function save(db: SupabaseClient, wd: Wikidata, pick: Pick) {
+  const queued = pick.place;
+  let { item, p } = pick;
   // Re-read: an earlier save in this run may have linked this place as a parent.
   const [place] = await placesById(db, [queued.id]);
   if (!place) return { place: queued.name, skipped: "gone" };
+  // A place linked meanwhile (as another place's parent) keeps that item: the
+  // link is what its children's paths rest on.
+  if (place.wikidata_id && place.wikidata_id !== item?.id) {
+    item = await wd.item(place.wikidata_id);
+    p = 1;
+  }
   const outcome: Record<string, unknown> = { place: place.name, item: item?.id ?? null, p };
   if (item) {
     const holder = item.id !== place.wikidata_id ? await entityWithItem(db, item.id) : null;
@@ -181,17 +191,16 @@ async function save(db: SupabaseClient, wd: Wikidata, { place: queued, item, p }
       if (error) throw new Error(error.message);
       const parentId = item.parent ? await placeFor(db, wd, item.parent) : null;
       if (parentId && parentId !== place.id) {
-        const { error: locationError } = await db.from("entity_locations")
-          .upsert({ entity_id: place.id, parent_id: parentId, labeled_by: "wikidata", p: p ?? 1 });
-        // A cycle in Wikidata's own claims is refused by the table and leaves the
-        // place unplaced; any other failure is an error, and the place is retried.
+        const { error: locationError } = await db.rpc("set_place_parent", { entity: place.id, parent: parentId, labeled_by: "wikidata" });
+        // A cycle in Wikidata's own claims is refused and leaves the place
+        // unplaced; any other failure is an error, and the place is retried.
         if (locationError && !/would make a cycle/.test(locationError.message)) throw new Error(locationError.message);
         outcome.parent = locationError ? `refused: ${locationError.message}` : (await wd.item(item.parent!))?.label;
       }
     }
   }
-  const { error } = await db.from("entity_enrichment")
-    .upsert({ entity_id: place.id, wikidata_at: new Date().toISOString(), wikidata_p: item ? p : null });
+  const { error } = await db.from("entities")
+    .update({ wikidata_checked_at: new Date().toISOString(), wikidata_p: item ? p : null }).eq("id", place.id);
   if (error) throw new Error(error.message);
   return outcome;
 }

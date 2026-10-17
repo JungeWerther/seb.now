@@ -860,7 +860,7 @@ legacy flat `entities.kind`, which is just "source" for all of them; so
 `FEED_SELECT` and `related_feed` carry `kind_path`.
 
 **Places — `place-resolve`.** Links place entities to Wikidata so where a place
-is comes from what it is (`entity_locations`, see "Reversible graph edits and
+is comes from what it is (`entities.place_path`, see "Reversible graph edits and
 where places are"), never from its name: "Palais de Tokyo" is in the 16th
 arrondissement, in Paris, in France. On its own `pg_cron` job (`7-59/10 * * * *`,
 `20261017190000_place_resolve_schedule.sql`), up to `PLACES_PER_RUN` places a
@@ -875,10 +875,13 @@ ISO code, P297). If another entity already has the item, the two are one place
 and a `merge` is staged in `entity_edits` (batch `wikidata-<date>`), not applied.
 The item's area (P131, else its country; current, best-ranked claim) becomes the
 place's parent: the entity with that item, else the unlinked place of that name
-(which takes the item), else a new place entity, which later runs place in turn,
-up to a country. A cycle in Wikidata's own claims is refused by the table's
-trigger and leaves the place unplaced. Every place looked at gets
-`entity_enrichment.wikidata_at`, picked or not, so it isn't asked again. `POST
+(which takes the item, only if still unlinked), else a new place entity named
+with its description when the name is taken, which later runs place in turn,
+up to a country; parents are set with `set_place_parent`. A place linked
+meanwhile as another's parent keeps that item. A cycle in Wikidata's own claims is
+refused by `set_place_parent` and leaves the place unplaced; any other write error
+fails the save, so the place is retried. Every place looked at gets
+`entities.wikidata_checked_at`, picked or not, so it isn't asked again. `POST
 {"entity_ids": [...]}` runs on those; `"dry_run": true` reports the picks without
 writing. Deploy the function before this schedule's migration lands.
 
