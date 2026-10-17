@@ -60,6 +60,8 @@ create table public.entity_properties (
 );
 create table public.link_events (id uuid primary key default gen_random_uuid(), link_id uuid references links(id), venue_entity_id uuid references entities(id) on delete set null);
 create table public.sources (id uuid primary key default gen_random_uuid(), entity_id uuid references entities(id) on delete set null);
+create table public.index_state (id boolean primary key default true check (id), gen bigint not null default 1);
+insert into public.index_state default values;
 `);
 
 const one = async (sql, params = []) => (await db.query(sql, params)).rows[0];
@@ -101,8 +103,11 @@ await db.query(`select apply_entity_edit($1)`, [drop]);
 assert.equal((await one(`select count(*)::int n from link_entities where entity_id = $1`, [await id("Tokyo")])).n, 0, "mention dropped");
 assert.equal((await one(`select count(*)::int n from identity_witnesses where entity_id = $1 and sense = 'label'`, [await id("Tokyo")])).n, 0, "its witness dropped");
 await assert.rejects(db.query(`select apply_entity_edit($1)`, [drop]), /not staged/, "an edit applies once");
+const gen = async () => (await one(`select gen from index_state`)).gen;
+const genBefore = await gen();
 await db.query(`select undo_entity_edit($1)`, [drop]);
 assert.deepEqual(await dump(), before, "undoing a drop restores every row");
+assert.equal(Number(await gen()), Number(genBefore) + 1, "undo starts a new index generation");
 
 // 2. Merging "The Pentagon" into "Pentagon", then undoing it.
 const merge = (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by)
@@ -180,7 +185,41 @@ await assert.rejects(db.query(`select undo_entity_edit($1)`, [m1]), /later appli
 await db.query(`select undo_entity_edit($1)`, [m2]);
 await db.query(`select undo_entity_edit($1)`, [m1]);
 assert.deepEqual(await dump(), placesBefore, "placed merges undo exactly");
+// A place put inside the kept entity after a merge blocks its undo.
+await db.query(`select apply_entity_edit(id) from entity_edits where id = $1`, [
+  (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by)
+    values ('qa-later', 'merge', $1, 'Le Palais', $2, 'Palais', 'claude') returning id`, [await id("Le Palais"), await id("Palais")])).id]);
+const lateMerge = (await one(`select id from entity_edits where batch = 'qa-later'`)).id;
+await db.exec(`insert into entities (name, kind) values ('Salle 2','place')`);
+await place(await id("Salle 2"), await id("Palais"));
+await assert.rejects(db.query(`select undo_entity_edit($1)`, [lateMerge]), /changed since/, "later placements block undo");
+await place(await id("Salle 2"), await id("Tokyo"));
+await db.query(`select undo_entity_edit($1)`, [lateMerge]);
+await db.query(`delete from entities where name = 'Salle 2'`);
+assert.deepEqual(await dump(), placesBefore, "once moved back out, the merge undoes exactly");
+
+// A merge can't move places inside a non-place.
+await db.exec(`insert into entities (name, kind) values ('Musée Org','other')`);
+await assert.rejects(db.query(`select apply_entity_edit($1)`, [
+  (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by)
+    values ('qa-kind', 'merge', $1, 'Le Palais', $2, 'Musée Org', 'claude') returning id`, [await id("Le Palais"), await id("Musée Org")])).id]),
+  /not a place/, "places never end up inside a non-place");
+
+// Merges that rewrote the same staged judgment must be undone in reverse order.
+await db.exec(`insert into entities (name, kind) values ('Aa','place'), ('Bb','place'), ('Cc','place'), ('Dd','place')`);
+await db.query(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by) values ('qa-keep', 'keep', $1, 'Aa', $2, 'Cc', 'claude')`, [await id("Aa"), await id("Cc")]);
+const ab = (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by) values ('qa-keep', 'merge', $1, 'Aa', $2, 'Bb', 'claude') returning id`, [await id("Aa"), await id("Bb")])).id;
+await db.query(`select apply_entity_edit($1)`, [ab]);
+const cd = (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by) values ('qa-keep', 'merge', $1, 'Cc', $2, 'Dd', 'claude') returning id`, [await id("Cc"), await id("Dd")])).id;
+await db.query(`select apply_entity_edit($1)`, [cd]);
+await assert.rejects(db.query(`select undo_entity_edit($1)`, [ab]), /later applied edits/, "a shared staged judgment orders the undos");
+await db.query(`select undo_entity_edit($1)`, [cd]);
+await db.query(`select undo_entity_edit($1)`, [ab]);
+assert.deepEqual((await one(`select entity_name, into_name from entity_edits where batch = 'qa-keep' and op = 'keep'`)), { entity_name: "Aa", into_name: "Cc" }, "and the judgment is as staged");
+
+
 // Two in one transaction: undo order follows application, not staging ids.
+const orderBefore = await dump();
 const [a, b] = [
   (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by)
     values ('qa-order', 'merge', $1, 'Salle Une', $2, 'Salle 1', 'claude') returning id`, [await id("Salle Une"), await id("Salle 1")])).id,
@@ -191,6 +230,6 @@ await db.exec(`begin; select apply_entity_edit(${b}); select apply_entity_edit($
 await assert.rejects(db.query(`select undo_entity_edit($1)`, [b]), /later applied edits/, "applied later in the same transaction counts as later");
 await db.query(`select undo_entity_edit($1)`, [a]);
 await db.query(`select undo_entity_edit($1)`, [b]);
-assert.deepEqual(await dump(), placesBefore, "and both undo exactly");
+assert.deepEqual(await dump(), orderBefore, "and both undo exactly");
 
 console.log("entity_sense: all checks pass");

@@ -107,8 +107,10 @@ begin
   if not exists (select 1 from public.entities where id = t) then
     raise exception 'edit %: entity % is gone', edit.id, edit.into_name;
   end if;
-  -- Merges touching the same entities run one after another, so each snapshot
-  -- is taken after the previous merge committed its changes.
+  -- Merges run after any placement in flight (the same lock set_place_parent
+  -- takes), and merges touching the same entities one after another, so each
+  -- snapshot is taken after the previous change committed.
+  perform pg_advisory_xact_lock(hashtext('public.entities.place_path'));
   perform pg_advisory_xact_lock(hashtext(least(f, t)::text));
   perform pg_advisory_xact_lock(hashtext(greatest(f, t)::text));
   tname := (select name from public.entities where id = t);
@@ -184,6 +186,10 @@ begin
   if public.place_self(t) operator(extensions.<@) public.place_self(f) then
     raise exception 'edit %: % lies inside %; place it elsewhere first', edit.id, tname, edit.entity_name;
   end if;
+  if exists (select 1 from public.entities c where c.id <> f and c.place_path operator(extensions.<@) public.place_self(f))
+     and not exists (select 1 from public.entities e where e.id = t and e.kind_path operator(extensions.<@) 'entity.place'::extensions.ltree) then
+    raise exception 'edit %: places lie inside %, but % is not a place', edit.id, edit.entity_name, tname;
+  end if;
   select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'path', c.place_path::text, 'by', c.place_labeled_by)), '[]')
   into placed
   from public.entities c
@@ -198,6 +204,9 @@ begin
     extensions.subpath(c.place_path, extensions.nlevel(public.place_self(f)))
   where c.id <> f and c.place_path operator(extensions.<@) public.place_self(f);
   moved := moved || jsonb_build_object('place_paths', placed);
+  -- The target's place and everything inside it as left by this merge: undo
+  -- refuses if a later placement changed them.
+  snap := snap || jsonb_build_object('places_after', public.place_subtree(t));
 
   delete from public.entities where id = f;
   update public.entities keep
@@ -223,7 +232,9 @@ begin
     'moved', moved, 'deleted', deleted, 'alias_witness', alias_id,
     -- Every entity whose rows this merge changed, for undo's ordering check.
     'touched', (select jsonb_agg(distinct x) from (
-      select f::text x union select t::text union select p ->> 'id' from jsonb_array_elements(placed) p) u));
+      select f::text x union select t::text union select p ->> 'id' from jsonb_array_elements(placed) p
+      union select e ->> 'entity_id' from jsonb_array_elements(snap -> 'edits') e
+      union select e ->> 'into_id' from jsonb_array_elements(snap -> 'edits') e where e ->> 'into_id' is not null) u));
 end;
 $$;
 
@@ -290,6 +301,9 @@ begin
     insert into public.link_entities overriding system value
     select * from jsonb_populate_recordset(null::public.link_entities, s -> 'link_entities');
   elsif edit.op = 'merge' then
+    if public.place_subtree(t) is distinct from coalesce(s -> 'places_after', public.place_subtree(t)) then
+      raise exception 'edit %: places in or around % changed since; move them back first', edit_id, edit.into_name;
+    end if;
     -- The target first gives back what it took (a unique wikidata_id among it),
     -- then the merged-away entity returns.
     update public.entities e set
@@ -333,6 +347,11 @@ begin
     where x.id = o.id and (x.status = 'staged' or (x.status = 'rejected' and o.status = 'staged'));
   end if;
 
+  -- Restored rows keep their old seq, below what readers' index copies already
+  -- hold, so a new index generation makes them reload.
+  if edit.op in ('drop_mention', 'merge') then
+    update public.index_state set gen = gen + 1 where id;
+  end if;
   update public.entity_edits set status = 'undone' where id = edit_id;
   return jsonb_build_object('edit', edit_id, 'op', edit.op, 'undone', true);
 end;
@@ -366,6 +385,14 @@ $$;
 create or replace function public.place_self(entity uuid)
 returns extensions.ltree language sql stable set search_path = '' as $$
   select coalesce(place_path, ('e' || seq)::extensions.ltree) from public.entities where id = entity
+$$;
+
+-- `entity`'s own path and those of every place inside it, sorted, as jsonb.
+create or replace function public.place_subtree(entity uuid)
+returns jsonb language sql stable set search_path = '' as $$
+  select coalesce(jsonb_agg(jsonb_build_array(c.id, c.place_path::text) order by c.id), '[]')
+  from public.entities c
+  where c.id = entity or c.place_path operator(extensions.<@) public.place_self(entity)
 $$;
 
 -- The place `entity` is directly in, or null.
