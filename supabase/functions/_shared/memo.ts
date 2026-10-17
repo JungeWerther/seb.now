@@ -14,7 +14,8 @@ export function once<T>(load: () => Promise<T>): () => Promise<T> {
 
 export interface Memoized<A extends unknown[], V> {
   (...args: A): Promise<V>;
-  // Stores a value already known for `args`, as if `load` had returned it.
+  // Stores a value already known for `args`, as if `load` had returned it
+  // (so null is not kept).
   prime: (args: A, value: V) => void;
 }
 
@@ -54,5 +55,10 @@ export function memoize<A extends unknown[], V>(
     keep(k, value);
     return value;
   };
-  return Object.assign(memoized, { prime: (args: A, value: V) => keep(key(...args), Promise.resolve(value)) });
+  const prime = (args: A, value: V) => {
+    const k = key(...args);
+    if (value === null) entries.delete(k);
+    else keep(k, Promise.resolve(value));
+  };
+  return Object.assign(memoized, { prime });
 }

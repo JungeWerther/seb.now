@@ -38,3 +38,12 @@ Deno.test("memoize drops the least recently used entry and takes primed values",
   load.prime(["z"], "primed");
   assertEquals(await load("z"), "primed");
 });
+
+Deno.test("priming with null keeps nothing, so the next call loads", async () => {
+  let calls = 0;
+  const load = memoize((k: string) => k, () => Promise.resolve<string | null>(`loaded ${++calls}`), { maxEntries: 2 });
+  load.prime(["a"], null);
+  assertEquals(await load("a"), "loaded 1");
+  load.prime(["a"], null);
+  assertEquals(await load("a"), "loaded 2");
+});
