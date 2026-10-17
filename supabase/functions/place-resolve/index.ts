@@ -178,6 +178,8 @@ async function save(db: SupabaseClient, wd: Wikidata, pick: Pick) {
     p = 1;
   }
   const outcome: Record<string, unknown> = { place: place.name, item: item?.id ?? null, p };
+  // The place's Wikidata link as this save leaves it (a staged merge leaves it as read).
+  let observed = place.wikidata_id;
   if (item) {
     const holder = item.id !== place.wikidata_id ? await entityWithItem(db, item.id) : null;
     if (holder) {
@@ -197,6 +199,7 @@ async function save(db: SupabaseClient, wd: Wikidata, pick: Pick) {
         .eq("id", place.id).or(`wikidata_id.is.null,wikidata_id.eq.${item.id}`).select("id");
       if (error) throw new Error(error.message);
       if (!(linked as unknown[]).length) return save(db, wd, { place, item: null, p: null });
+      observed = item.id;
       const parentId = item.parent ? await placeFor(db, wd, item.parent) : null;
       if (parentId && parentId !== place.id) {
         const { error: locationError } = await db.rpc("set_place_parent", { entity: place.id, parent: parentId, labeled_by: "wikidata" });
@@ -209,7 +212,7 @@ async function save(db: SupabaseClient, wd: Wikidata, pick: Pick) {
   }
   // Recorded only if no other run linked the place since it was read: a newly
   // linked place stays queued so its own country and parent get resolved.
-  const linkedNow = item?.id ?? place.wikidata_id;
+  const linkedNow = observed;
   const done = db.from("entities")
     .update({ wikidata_checked_at: new Date().toISOString(), wikidata_p: item ? p : null }).eq("id", place.id);
   const { error } = await (linkedNow ? done.eq("wikidata_id", linkedNow) : done.is("wikidata_id", null));
