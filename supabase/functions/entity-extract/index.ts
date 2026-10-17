@@ -454,9 +454,11 @@ interface StoredMention {
 }
 
 // A link's mentions found by Jev in `foundIn` (or both passes), as resolved names.
-async function storedMentions(db: SupabaseClient, linkId: string, foundIn?: FoundIn): Promise<(Mention & { found_in: FoundIn })[]> {
-  let query = db.from("link_entities").select("entity_id, surface, p, found_in, entities(name, kind)")
-    .eq("link_id", linkId).eq("labeled_by", "jev");
+// Hand rows (`labeled_by` manual) count as context too, but only Jev's are
+// ever re-judged (`jevOnly`).
+async function storedMentions(db: SupabaseClient, linkId: string, foundIn?: FoundIn, jevOnly = false): Promise<(Mention & { found_in: FoundIn })[]> {
+  let query = db.from("link_entities").select("entity_id, surface, p, found_in, entities(name, kind)").eq("link_id", linkId);
+  if (jevOnly) query = query.eq("labeled_by", "jev");
   query = foundIn ? query.eq("found_in", foundIn) : query.in("found_in", ["title", "page"]);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
@@ -467,10 +469,24 @@ async function storedMentions(db: SupabaseClient, linkId: string, foundIn?: Foun
   );
 }
 
+// The label witnesses of each entity: every way the posts have named it.
+async function entityLabels(db: SupabaseClient, ids: string[]): Promise<Map<string, string[]>> {
+  if (!ids.length) return new Map();
+  const { data, error } = await db.from("identity_witnesses").select("entity_id, surface, value")
+    .eq("sense", "label").in("entity_id", [...new Set(ids)]);
+  if (error) throw new Error(error.message);
+  const labels = new Map<string, string[]>();
+  for (const w of data as { entity_id: string; surface: string | null; value: string }[]) {
+    labels.set(w.entity_id, [...(labels.get(w.entity_id) ?? []), w.surface ?? w.value]);
+  }
+  return labels;
+}
+
 // Re-reads the mentions stored for `link` with the span rule, pass by pass,
 // and returns those it would drop with their entities.
 async function respanLink(db: SupabaseClient, jev: JevClient, link: Link) {
-  const stored = await storedMentions(db, link.id);
+  const stored = await storedMentions(db, link.id, undefined, true);
+  const context = await storedMentions(db, link.id, "title");
   // The page is read again, so the span rule sees what extraction saw: every
   // section in full and the names the page declares in its structured data,
   // neither of which the stored (capped) text keeps. If it can't be read, only
@@ -489,11 +505,20 @@ async function respanLink(db: SupabaseClient, jev: JevClient, link: Link) {
   let inputTokens = 0;
   const ask = askRunTogether(jev, link.id, state, (n) => inputTokens += n);
   // A title name is a fragment only if the page doesn't say it on its own either.
-  const title = await readSpans(titles, [], text, ask);
-  const pageSpans = live ? await readSpans(pages, title.kept, text, ask) : null;
+  const handTitles = context.filter((c) => !titles.some((t) => t.entity_id === c.entity_id));
+  const title = await readSpans(titles, handTitles, text, ask);
+  const pageSpans = live ? await readSpans(pages, [...title.kept, ...handTitles], text, ask) : null;
   const titleTrusted = live || storedText.length < PAGE.MAX_TEXT_CHARS;
+  // A mention's entity may be named elsewhere on the page in other words ("New
+  // York" besides a fragment "NYC" in "NYC Ballet"): its other labels standing
+  // alone keep the association.
+  const labels = await entityLabels(db, stored.map((m) => m.entity_id!));
+  const wholes = [...stored, ...context].map((m) => m.surface);
+  const namedOtherwise = (m: Mention) =>
+    [m.entity_name, ...(labels.get(m.entity_id!) ?? [])]
+      .some((label) => label.toLowerCase() !== m.surface.toLowerCase() && aloneSentence(text, label, wholes, lang) !== null);
   const drops = [...(titleTrusted ? [title] : []), ...(pageSpans ? [pageSpans] : [])].flatMap((spans) => [
-    ...spans.parts.map((m) => ({ mention: m, reason: "only part of a longer name here" })),
+    ...spans.parts.filter((m) => !namedOtherwise(m)).map((m) => ({ mention: m, reason: "only part of a longer name here" })),
     // A run-together surface that resolved to one of its own parts ("Ledger
     // Flex and Ledger Stax" stored as Ledger Flex) still names that entity.
     ...spans.runTogether
