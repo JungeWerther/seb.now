@@ -15,8 +15,8 @@ import {
 import { INGEST, WEB_FEED } from "../_shared/constants.ts";
 
 // Any site's own RSS 2.0 or Atom feed: the enabled web_feed rows in sources,
-// whose identifier is the feed URL. Regex-extracted like techcrunch-ingest;
-// both formats keep each post in a flat <item>/<entry> block.
+// whose identifier is the feed URL. Regex-extracted rather than parsed: both
+// formats keep each post in a flat <item>/<entry> block.
 
 // WordPress appends this to every excerpt; it says nothing about the post.
 const WORDPRESS_FOOTER = /(?:The post .+ appeared first on .+|L[’']article .+ est apparu en premier sur .+)$/s;
