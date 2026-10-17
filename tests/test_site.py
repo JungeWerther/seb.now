@@ -720,7 +720,7 @@ def test_kind_page_lists_links_its_subkinds_and_top_entities_and_kinds_link_ther
     assert "focusKind(kindPath, { name: chip.dataset.name ?? chip.textContent })" in script
     assert "else if (kindPathFromPath()) focusKind(kindPathFromPath(), { push: false });" in script
     # An entity's page links its kind, and the search box links a typed kind.
-    assert "if (entity.kind_path) setKindHref(kind, entity.kind_path);" in script
+    assert "parentLink(entityKindLabel(entity), setKindHref, entity.kind_path)" in script
     assert "page: markPage(sense.kind.label, setKindHref, sense.kind.path)" in script
 
 
