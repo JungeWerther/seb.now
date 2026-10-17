@@ -353,17 +353,28 @@ merge repoints mentions, label witnesses, relations (self-loops between the two
 go), properties, event venues, sources and child locations to the kept entity,
 drops rows that would collide, keeps the old name as a `labeled_by = 'merge'`
 label witness so it still resolves, fills the kept entity's empty fields, and
-supersedes staged edits that are about the merged-away one. Nothing applies an
-edit automatically; the `/entity-sense` and `/entity-resolution` skills stage
-batches for review. Where a place is lives in `public.entity_locations` (one
-parent per entity, the parent a place, no cycles, both checked by trigger;
-public-read, `labeled_by` wikidata/jev/manual), never in its name: "is it in
-Tokyo?" is `public.place_within(place, container)`, a walk up
-`public.place_ancestors(entity)`. `public.entity_enrichment` records when an
-entity was last looked up on Wikidata (`wikidata_at`, `wikidata_p`), and
-`public.places_to_resolve(max_results)` lists the places never looked up, most
-mentioned first. QA: `tests/qa`, `npm run sense` (drop and merge each undone to
-an identical database, containment, the place and cycle checks).
+supersedes staged edits that are about the merged-away one (undo restores them).
+Undo runs in reverse order of application (`applied_at` is `clock_timestamp()`):
+it refuses while a later applied edit touched any entity this one changed (the
+snapshot's `touched` list), and merges sharing an entity take advisory locks so
+snapshots never go stale. Nothing applies an edit automatically; the
+`/entity-sense` and `/entity-resolution` skills stage batches for review. Where a
+place is lives in `entities.place_path`, an ltree of entity labels (`e` + `seq`,
+since uuids aren't labels) from the outermost place in, so Palais de Tokyo is
+`e<France>.e<Paris>.e<16e>.e<Palais>`, never derived from its name; null until
+placed, `place_labeled_by` wikidata/jev/manual, GiST-indexed. "Is it in Tokyo?"
+is `public.place_within(place, container)`, one `@>`; `public.place_ancestors`
+and `public.place_parent` read the path back. Paths are written only through
+`public.set_place_parent(entity, parent, labeled_by)` (service_role), which
+checks the parent is a place, refuses a cycle (a parent already under the
+entity), rewrites everything inside the moved place, and serializes writers
+with an advisory lock. A merge moves what was inside the merged-away place into
+the kept one, and a kept entity with no place takes the other's parent.
+`entities.wikidata_checked_at` / `wikidata_p` record when an entity was last
+looked up on Wikidata, and `public.places_to_resolve(max_results)` lists the
+places never looked up, most mentioned first. QA: `tests/qa`, `npm run sense`
+(drop and merge each undone to an identical database, placed merges, undo
+ordering within a transaction, containment, place and cycle checks).
 
 **The entity index — `index-snapshot` + `index_diff`.** So the page can match
 entity names and run filter queries itself (no request per keystroke or query),

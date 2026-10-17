@@ -6,10 +6,11 @@
 --    (keep) or that one is part of the other (part_of). Edits are staged,
 --    reviewed, then applied one at a time by `apply_entity_edit`, which stores a
 --    snapshot of every row it touched so `undo_entity_edit` can put it back.
--- 2. `entity_locations` says which place an entity is in (one parent each), so
---    "is it in Tokyo?" is a walk up the tree (`place_ancestors`, `place_within`),
---    never a reading of the name. `entity_enrichment` records when an entity was
---    last looked up on Wikidata, so `place-resolve` doesn't ask twice.
+-- 2. `entities.place_path` says where a place is, as an ltree of entity labels
+--    from the outermost place in ("e12.e45.e789": France, Paris, Palais de
+--    Tokyo), so "is it in Tokyo?" is one indexed `@>`, never a reading of the
+--    name. `entities.wikidata_checked_at` records when an entity was last looked
+--    up on Wikidata, so `place-resolve` doesn't ask twice.
 
 -- ---------------------------------------------------------------------------
 -- 1. Reversible edits
@@ -69,6 +70,7 @@ begin
     returning *
   )
   select jsonb_build_object(
+    'touched', jsonb_build_array(edit.entity_id::text),
     'link_entities', coalesce((select jsonb_agg(to_jsonb(m)) from gone_mention m), '[]'),
     'identity_witnesses', coalesce((select jsonb_agg(to_jsonb(w)) from gone_witnesses w), '[]')
   ) into snap;
@@ -93,6 +95,7 @@ declare
   f uuid := edit.entity_id;
   t uuid := edit.into_id;
   tname text;
+  placed jsonb;
   snap jsonb;
   moved jsonb := '{}';
   deleted jsonb := '{}';
@@ -104,6 +107,10 @@ begin
   if not exists (select 1 from public.entities where id = t) then
     raise exception 'edit %: entity % is gone', edit.id, edit.into_name;
   end if;
+  -- Merges touching the same entities run one after another, so each snapshot
+  -- is taken after the previous merge committed its changes.
+  perform pg_advisory_xact_lock(hashtext(least(f, t)::text));
+  perform pg_advisory_xact_lock(hashtext(greatest(f, t)::text));
   tname := (select name from public.entities where id = t);
   snap := jsonb_build_object(
     'entity', (select to_jsonb(e) from public.entities e where id = f),
@@ -171,23 +178,26 @@ begin
     update public.sources set entity_id = t where entity_id = f returning id
   ) select moved || jsonb_build_object('sources', coalesce(jsonb_agg(id), '[]')) into moved from moved_rows;
 
-  -- Locations: the target keeps its own; children of the old one move over.
-  with gone as (
-    delete from public.entity_locations
-    where entity_id = f
-      or (parent_id = f and entity_id = t)
-      or (entity_id = f and parent_id = t)
-    returning *
-  ) select deleted || jsonb_build_object('entity_locations', coalesce(jsonb_agg(to_jsonb(g)), '[]'))
-    into deleted from gone g;
-  with moved_rows as (
-    update public.entity_locations set parent_id = t where parent_id = f returning entity_id
-  ) select moved || jsonb_build_object('location_children', coalesce(jsonb_agg(entity_id), '[]')) into moved from moved_rows;
-
-  with gone as (
-    delete from public.entity_enrichment where entity_id = f returning *
-  ) select deleted || jsonb_build_object('entity_enrichment', coalesce(jsonb_agg(to_jsonb(g)), '[]'))
-    into deleted from gone g;
+  -- Place paths: every path this merge may change is recorded first. A target
+  -- not placed anywhere takes the merged-away entity's parent; places inside
+  -- the merged-away one move inside the target, keeping the rest of their path.
+  if public.place_self(t) operator(extensions.<@) public.place_self(f) then
+    raise exception 'edit %: % lies inside %; place it elsewhere first', edit.id, tname, edit.entity_name;
+  end if;
+  select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'path', c.place_path::text, 'by', c.place_labeled_by)), '[]')
+  into placed
+  from public.entities c
+  where c.id <> f and (c.id = t
+    or c.place_path operator(extensions.<@) public.place_self(f)
+    or c.place_path operator(extensions.<@) public.place_self(t));
+  if (select place_path is null from public.entities where id = t) and public.place_parent(f) is not null then
+    perform public.set_place_parent(t, public.place_parent(f), (snap -> 'entity' ->> 'place_labeled_by'));
+  end if;
+  update public.entities c
+  set place_path = public.place_self(t) operator(extensions.||)
+    extensions.subpath(c.place_path, extensions.nlevel(public.place_self(f)))
+  where c.id <> f and c.place_path operator(extensions.<@) public.place_self(f);
+  moved := moved || jsonb_build_object('place_paths', placed);
 
   delete from public.entities where id = f;
   update public.entities keep
@@ -209,7 +219,11 @@ begin
   update public.entity_edits set into_id = t, into_name = tname
   where status = 'staged' and id <> edit.id and into_id = f;
 
-  return snap || jsonb_build_object('moved', moved, 'deleted', deleted, 'alias_witness', alias_id);
+  return snap || jsonb_build_object(
+    'moved', moved, 'deleted', deleted, 'alias_witness', alias_id,
+    -- Every entity whose rows this merge changed, for undo's ordering check.
+    'touched', (select jsonb_agg(distinct x) from (
+      select f::text x union select t::text union select p ->> 'id' from jsonb_array_elements(placed) p) u));
 end;
 $$;
 
@@ -232,7 +246,8 @@ begin
     when 'merge' then public.merge_entity(edit)
     else '{}'::jsonb
   end;
-  update public.entity_edits set status = 'applied', applied_at = now(), snapshot = snap where id = edit_id;
+  -- clock_timestamp, not now(): edits applied in one transaction stay in order.
+  update public.entity_edits set status = 'applied', applied_at = clock_timestamp(), snapshot = snap where id = edit_id;
   return jsonb_build_object('edit', edit_id, 'op', edit.op, 'entity', edit.entity_name, 'into', edit.into_name);
 end;
 $$;
@@ -260,7 +275,9 @@ begin
   if exists (
     select 1 from public.entity_edits later
     where later.status = 'applied' and (later.applied_at, later.id) > (edit.applied_at, edit.id)
-      and (later.entity_id in (f, t) or later.into_id in (f, t))
+      and (later.entity_id::text in (select jsonb_array_elements_text(s -> 'touched'))
+        or later.into_id::text in (select jsonb_array_elements_text(s -> 'touched'))
+        or coalesce(later.snapshot -> 'touched', '[]') ?| array(select jsonb_array_elements_text(s -> 'touched')))
   ) then
     raise exception 'edit %: undo the later applied edits about % first', edit_id, edit.entity_name;
   end if;
@@ -297,8 +314,9 @@ begin
     where id in (select jsonb_array_elements_text(s -> 'moved' -> 'link_events')::uuid);
     update public.sources set entity_id = f
     where id in (select jsonb_array_elements_text(s -> 'moved' -> 'sources')::uuid);
-    update public.entity_locations set parent_id = f
-    where entity_id in (select jsonb_array_elements_text(s -> 'moved' -> 'location_children')::uuid);
+    update public.entities c set place_path = (o ->> 'path')::extensions.ltree, place_labeled_by = o ->> 'by'
+    from jsonb_array_elements(s -> 'moved' -> 'place_paths') o
+    where c.id = (o ->> 'id')::uuid;
     insert into public.identity_witnesses overriding system value
     select * from jsonb_populate_recordset(null::public.identity_witnesses, s -> 'deleted' -> 'identity_witnesses')
     on conflict do nothing;
@@ -306,12 +324,6 @@ begin
     select * from jsonb_populate_recordset(null::public.link_entities, s -> 'deleted' -> 'link_entities');
     insert into public.entity_relations
     select * from jsonb_populate_recordset(null::public.entity_relations, s -> 'deleted' -> 'entity_relations');
-    insert into public.entity_locations
-    select * from jsonb_populate_recordset(null::public.entity_locations, s -> 'deleted' -> 'entity_locations')
-    on conflict (entity_id) do update set parent_id = excluded.parent_id, labeled_by = excluded.labeled_by, p = excluded.p;
-    insert into public.entity_enrichment
-    select * from jsonb_populate_recordset(null::public.entity_enrichment, s -> 'deleted' -> 'entity_enrichment')
-    on conflict do nothing;
     -- Staged edits it superseded or retargeted go back to how they were, unless
     -- they have been decided since.
     update public.entity_edits x set
@@ -330,22 +342,39 @@ $$;
 -- 2. Where places are
 -- ---------------------------------------------------------------------------
 
--- Which place an entity is in: one parent each, the parent a place, no cycles.
--- "Palais de Tokyo" is in the 16th arrondissement, which is in Paris; that it
--- has "Tokyo" in its name says nothing. Public-read, service_role-write.
-create table public.entity_locations (
-  entity_id uuid primary key references public.entities (id) on delete cascade,
-  parent_id uuid not null references public.entities (id) on delete cascade,
-  labeled_by text not null check (labeled_by in ('wikidata', 'jev', 'manual')),
-  p real not null default 1 check (p > 0 and p <= 1),
-  created_at timestamptz not null default now(),
-  check (entity_id <> parent_id)
-);
+-- Where a place is: the labels of the places it is in, outermost first, then
+-- its own ("e" and its seq, since uuids aren't ltree labels). Null until it is
+-- placed. "Palais de Tokyo" is under Paris, not Tokyo: its name says nothing.
+-- `place_labeled_by` says who placed it. Whether it was looked up on Wikidata,
+-- and how sure the pick was (null when no item fit), is `wikidata_checked_at`
+-- and `wikidata_p`. Written only through `set_place_parent` and place-resolve.
+alter table public.entities
+  add column place_path extensions.ltree,
+  add column place_labeled_by text check (place_labeled_by in ('wikidata', 'jev', 'manual')),
+  add column wikidata_checked_at timestamptz,
+  add column wikidata_p real check (wikidata_p > 0 and wikidata_p <= 1),
+  add constraint entities_placed_by check ((place_path is null) = (place_labeled_by is null));
 
-create index entity_locations_parent_idx on public.entity_locations (parent_id);
+create index entities_place_path_gist on public.entities using gist (place_path);
 
-alter table public.entity_locations enable row level security;
-create policy "entity_locations are public" on public.entity_locations for select to anon, authenticated using (true);
+-- An entity's own ltree label, and its path or, unplaced, that label alone.
+create or replace function public.place_label(entity uuid)
+returns extensions.ltree language sql stable set search_path = '' as $$
+  select ('e' || seq)::extensions.ltree from public.entities where id = entity
+$$;
+
+create or replace function public.place_self(entity uuid)
+returns extensions.ltree language sql stable set search_path = '' as $$
+  select coalesce(place_path, ('e' || seq)::extensions.ltree) from public.entities where id = entity
+$$;
+
+-- The place `entity` is directly in, or null.
+create or replace function public.place_parent(entity uuid)
+returns uuid language sql stable set search_path = '' as $$
+  select a.id from public.entities e
+  join public.entities a on ('e' || a.seq) = extensions.subpath(e.place_path, extensions.nlevel(e.place_path) - 2, 1)::text
+  where e.id = entity and extensions.nlevel(e.place_path) > 1
+$$;
 
 -- The places `entity` is in, nearest first (depth 1 is its parent).
 create or replace function public.place_ancestors(entity uuid)
@@ -354,14 +383,12 @@ language sql
 stable
 set search_path = ''
 as $$
-  with recursive up (id, depth) as (
-    select l.parent_id, 1 from public.entity_locations l where l.entity_id = entity
-    union all
-    select l.parent_id, up.depth + 1
-    from up join public.entity_locations l on l.entity_id = up.id
-  ) cycle id set looped using visited
-  select up.id, e.name, up.depth from up join public.entities e on e.id = up.id
-  where not up.looped order by up.depth
+  select a.id, a.name, extensions.nlevel(e.place_path) - 1 - i.n
+  from public.entities e
+  cross join lateral generate_series(0, extensions.nlevel(e.place_path) - 2) as i(n)
+  join public.entities a on ('e' || a.seq) = extensions.subpath(e.place_path, i.n, 1)::text
+  where e.id = entity
+  order by 3
 $$;
 
 -- Whether `place` is `container` or somewhere inside it.
@@ -371,45 +398,41 @@ language sql
 stable
 set search_path = ''
 as $$
-  select place = container or exists (select 1 from public.place_ancestors(place) a where a.id = container)
+  select coalesce(public.place_self(container) operator(extensions.@>) public.place_self(place), false)
 $$;
 
--- A parent must be a place, and walking up from it must never reach the child.
-create or replace function public.entity_locations_check()
-returns trigger
+-- Puts `entity` (and everything inside it) inside `parent`, a place. A parent
+-- already inside `entity` would make a cycle and is refused. Writers take one
+-- lock, so two can't each move half of a cycle from stale paths.
+create or replace function public.set_place_parent(entity uuid, parent uuid, labeled_by text)
+returns extensions.ltree
 language plpgsql
 set search_path = ''
 as $$
+declare
+  old_self extensions.ltree;
+  new_self extensions.ltree;
 begin
-  -- One writer at a time, so two transactions can't each add half of a cycle;
-  -- the check below runs after the lock, on a fresh snapshot.
-  perform pg_advisory_xact_lock(hashtext('public.entity_locations'));
+  perform pg_advisory_xact_lock(hashtext('public.entities.place_path'));
   if not exists (
     select 1 from public.entities e
-    where e.id = new.parent_id and e.kind_path operator(extensions.<@) 'entity.place'::extensions.ltree
+    where e.id = parent and e.kind_path operator(extensions.<@) 'entity.place'::extensions.ltree
   ) then
-    raise exception 'parent % of % is not a place', new.parent_id, new.entity_id;
+    raise exception 'parent % of % is not a place', parent, entity;
   end if;
-  if public.place_within(new.parent_id, new.entity_id) then
-    raise exception 'placing % in % would make a cycle', new.entity_id, new.parent_id;
+  old_self := public.place_self(entity);
+  if old_self is null then raise exception 'no entity %', entity; end if;
+  if public.place_self(parent) operator(extensions.<@) old_self then
+    raise exception 'placing % in % would make a cycle', entity, parent;
   end if;
-  return new;
+  new_self := public.place_self(parent) operator(extensions.||) public.place_label(entity);
+  update public.entities set place_path = new_self, place_labeled_by = labeled_by where id = entity;
+  update public.entities c
+  set place_path = new_self operator(extensions.||) extensions.subpath(c.place_path, extensions.nlevel(old_self))
+  where c.id <> entity and c.place_path operator(extensions.<@) old_self;
+  return new_self;
 end;
 $$;
-
-create trigger entity_locations_check
-before insert or update of entity_id, parent_id on public.entity_locations
-for each row execute function public.entity_locations_check();
-
--- When each entity was last looked up on Wikidata, and how sure the pick was
--- (null when no item fit). Service_role only.
-create table public.entity_enrichment (
-  entity_id uuid primary key references public.entities (id) on delete cascade,
-  wikidata_at timestamptz,
-  wikidata_p real check (wikidata_p > 0 and wikidata_p <= 1)
-);
-
-alter table public.entity_enrichment enable row level security;
 
 -- The next places to look up on Wikidata: never looked up, most mentioned first.
 create or replace function public.places_to_resolve(max_results integer)
@@ -421,9 +444,8 @@ as $$
   select e.id, e.name, count(m.link_id)::int
   from public.entities e
   left join public.link_entities m on m.entity_id = e.id
-  left join public.entity_enrichment x on x.entity_id = e.id
   where e.kind_path operator(extensions.<@) 'entity.place'::extensions.ltree
-    and x.wikidata_at is null
+    and e.wikidata_checked_at is null
   group by e.id
   order by count(m.link_id) desc, e.created_at
   limit max_results
@@ -461,4 +483,4 @@ revoke execute on function public.merge_entity(public.entity_edits) from public,
 revoke execute on function public.apply_entity_edit(bigint) from public, anon, authenticated;
 revoke execute on function public.undo_entity_edit(bigint) from public, anon, authenticated;
 revoke execute on function public.places_to_resolve(integer) from public, anon, authenticated;
-revoke execute on function public.entity_locations_check() from public, anon, authenticated;
+revoke execute on function public.set_place_parent(uuid, uuid, text) from public, anon, authenticated;

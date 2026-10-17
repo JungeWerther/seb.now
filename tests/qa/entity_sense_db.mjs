@@ -89,7 +89,7 @@ await mention(l2, "Department of War", "Department of War");
 
 await db.exec(readFileSync(migration, "utf8"));
 
-const TABLES = ["entities", "link_entities", "identity_witnesses", "entity_relations", "entity_properties", "link_events", "sources", "entity_locations"];
+const TABLES = ["entities", "link_entities", "identity_witnesses", "entity_relations", "entity_properties", "link_events", "sources"];
 const dump = async () => Object.fromEntries(await Promise.all(TABLES.map(async (t) =>
   [t, (await db.query(`select to_jsonb(x) j from ${t} x order by 1`)).rows.map((r) => JSON.stringify(r.j)).sort()])));
 
@@ -142,21 +142,55 @@ await db.query(`select undo_entity_edit($1)`, [war]);
 assert.deepEqual(await dump(), before, "both undone, everything is back");
 
 // 3. Where places are.
-await db.query(`insert into entity_locations (entity_id, parent_id, labeled_by) values ($1, $2, 'manual')`, [await id("Palais de Tokyo"), await id("Paris")]);
+const place = (child, parent) => db.query(`select set_place_parent($1, $2, 'manual')`, [child, parent]);
+await place(await id("Palais de Tokyo"), await id("Paris"));
 assert.equal((await one(`select place_within($1, $2) b`, [await id("Palais de Tokyo"), await id("Paris")])).b, true, "Palais de Tokyo is in Paris");
 assert.equal((await one(`select place_within($1, $2) b`, [await id("Palais de Tokyo"), await id("Tokyo")])).b, false, "and not in Tokyo");
 assert.deepEqual((await db.query(`select name, depth from place_ancestors($1)`, [await id("Palais de Tokyo")])).rows, [{ name: "Paris", depth: 1 }]);
-await assert.rejects(db.query(`insert into entity_locations (entity_id, parent_id, labeled_by) values ($1, $2, 'manual')`,
-  [await id("Paris"), await id("Palais de Tokyo")]), /cycle/, "no cycles");
-await assert.rejects(db.query(`insert into entity_locations (entity_id, parent_id, labeled_by) values ($1, $2, 'manual')`,
-  [await id("Tokyo"), await id("Musée Rodin")]), /not a place/, "a parent is a place");
-assert.deepEqual((await db.query(`select name, mentions from places_to_resolve(10)`)).rows.map((r) => r.name).sort(), ["Palais de Tokyo", "Paris", "Tokyo"]);
+await assert.rejects(place(await id("Paris"), await id("Palais de Tokyo")), /cycle/, "no cycles");
+await assert.rejects(place(await id("Tokyo"), await id("Musée Rodin")), /not a place/, "a parent is a place");
+assert.deepEqual((await db.query(`select name from places_to_resolve(10)`)).rows.map((r) => r.name).sort(), ["Palais de Tokyo", "Paris", "Tokyo"]);
 
-// A chain deeper than any fixed limit still can't be closed into a cycle.
+// Placing a place moves everything inside it: built bottom up, a deep chain
+// still answers containment and can't be closed into a cycle.
 await db.exec(`insert into entities (name, kind) select 'P' || i, 'place' from generate_series(0, 40) i`);
-for (let i = 0; i < 40; i++) await db.query(`insert into entity_locations (entity_id, parent_id, labeled_by) values ($1, $2, 'manual')`, [await id(`P${i}`), await id(`P${i + 1}`)]);
-assert.equal((await one(`select place_within($1, $2) b`, [await id("P0"), await id("P40")])).b, true, "deep containment");
-await assert.rejects(db.query(`insert into entity_locations (entity_id, parent_id, labeled_by) values ($1, $2, 'manual')`,
-  [await id("P40"), await id("P0")]), /cycle/, "no cycles, however deep");
+for (let i = 0; i < 40; i++) await place(await id(`P${i}`), await id(`P${i + 1}`));
+assert.equal((await one(`select place_within($1, $2) b`, [await id("P0"), await id("P40")])).b, true, "deep containment after moving subtrees");
+assert.equal((await one(`select count(*)::int n from place_ancestors($1)`, [await id("P0")])).n, 40);
+await assert.rejects(place(await id("P40"), await id("P0")), /cycle/, "no cycles, however deep");
+
+// 4. Merging a placed duplicate into an unplaced one keeps it placed, moves
+// what was inside it, and undoes exactly; a later merge touching a moved place
+// must be undone first; edits applied in one transaction keep their order.
+await db.exec(`insert into entities (name, kind) values ('Le Palais','place'), ('Palais','place'), ('Salle 1','place'), ('Salle Une','place')`);
+await place(await id("Le Palais"), await id("Paris"));
+await place(await id("Salle 1"), await id("Le Palais"));
+const placesBefore = await dump();
+const [m1, m2] = [
+  (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by)
+    values ('qa-place', 'merge', $1, 'Le Palais', $2, 'Palais', 'claude') returning id`, [await id("Le Palais"), await id("Palais")])).id,
+  (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by)
+    values ('qa-place', 'merge', $1, 'Salle 1', $2, 'Salle Une', 'claude') returning id`, [await id("Salle 1"), await id("Salle Une")])).id,
+];
+await db.exec(`begin; select apply_entity_edit(${m2 > m1 ? m1 : m2}); commit;`);
+assert.equal((await one(`select place_within($1, $2) b`, [await id("Palais"), await id("Paris")])).b, true, "the kept entity takes the parent");
+assert.equal((await one(`select place_within($1, $2) b`, [await id("Salle 1"), await id("Palais")])).b, true, "what was inside moves inside the kept one");
+await db.query(`select apply_entity_edit($1)`, [m2]);
+await assert.rejects(db.query(`select undo_entity_edit($1)`, [m1]), /later applied edits/, "a later merge of a moved place blocks undo");
+await db.query(`select undo_entity_edit($1)`, [m2]);
+await db.query(`select undo_entity_edit($1)`, [m1]);
+assert.deepEqual(await dump(), placesBefore, "placed merges undo exactly");
+// Two in one transaction: undo order follows application, not staging ids.
+const [a, b] = [
+  (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by)
+    values ('qa-order', 'merge', $1, 'Salle Une', $2, 'Salle 1', 'claude') returning id`, [await id("Salle Une"), await id("Salle 1")])).id,
+  (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by)
+    values ('qa-order', 'merge', $1, 'Palais', $2, 'Le Palais', 'claude') returning id`, [await id("Palais"), await id("Le Palais")])).id,
+];
+await db.exec(`begin; select apply_entity_edit(${b}); select apply_entity_edit(${a}); commit;`);
+await assert.rejects(db.query(`select undo_entity_edit($1)`, [b]), /later applied edits/, "applied later in the same transaction counts as later");
+await db.query(`select undo_entity_edit($1)`, [a]);
+await db.query(`select undo_entity_edit($1)`, [b]);
+assert.deepEqual(await dump(), placesBefore, "and both undo exactly");
 
 console.log("entity_sense: all checks pass");
