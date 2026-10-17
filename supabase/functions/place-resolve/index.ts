@@ -137,9 +137,12 @@ async function placeFor(db: SupabaseClient, wd: Wikidata, qid: string): Promise<
   const linked = await entityWithItem(db, qid);
   if (linked) return linked.id;
   const item = await wd.item(qid);
-  if (!item?.label) return null;
+  // A missing parent item is an error, so the child is retried; one with no
+  // English or French label is named by its QID.
+  if (!item) throw new Error(`Wikidata item ${qid} not found`);
+  const label = item.label ?? qid;
   const { data: named, error } = await db.from("entities").select("id, wikidata_id")
-    .eq("kind", "place").ilike("name", item.label.replace(/[%_\\]/g, "\\$&"));
+    .eq("kind", "place").ilike("name", label.replace(/[%_\\]/g, "\\$&"));
   if (error) throw new Error(error.message);
   const same = (named as { id: string; wikidata_id: string | null }[])[0];
   if (same && !same.wikidata_id) {
@@ -154,7 +157,7 @@ async function placeFor(db: SupabaseClient, wd: Wikidata, qid: string): Promise<
   }
   // Another place already has the name (names are unique per kind): this one is
   // named with what tells it apart.
-  const name = same ? `${item.label} (${item.description ?? qid})` : item.label;
+  const name = same ? `${label} (${item.description ?? qid})` : label;
   const { data: created, error: insertError } = await db.from("entities")
     .insert({ name, kind: "place", wikidata_id: qid, country: await wd.isoOf(item) })
     .select("id").single();
@@ -204,8 +207,12 @@ async function save(db: SupabaseClient, wd: Wikidata, pick: Pick) {
       }
     }
   }
-  const { error } = await db.from("entities")
+  // Recorded only if no other run linked the place since it was read: a newly
+  // linked place stays queued so its own country and parent get resolved.
+  const linkedNow = item?.id ?? place.wikidata_id;
+  const done = db.from("entities")
     .update({ wikidata_checked_at: new Date().toISOString(), wikidata_p: item ? p : null }).eq("id", place.id);
+  const { error } = await (linkedNow ? done.eq("wikidata_id", linkedNow) : done.is("wikidata_id", null));
   if (error) throw new Error(error.message);
   return outcome;
 }
