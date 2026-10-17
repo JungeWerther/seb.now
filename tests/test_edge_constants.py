@@ -85,6 +85,7 @@ ALLOWED = {
     ("mcp/index.ts", "HANDLERS"): "MCP tool dispatch table",
     ("mcp/index.ts", "USER_HANDLERS"): "MCP tool dispatch table",
     ("event-extract/index.ts", "NONE"): "sentinel option key of the Jev question",
+    ("place-resolve/index.ts", "NONE"): "sentinel option key of the Jev question",
     ("event-extract/index.ts", "PHRASE_PREFIX"): "option-key prefix the code parses back",
     ("event-extract/index.ts", "VENUE_KINDS"): "entity kinds that can be a venue",
     ("event-extract/index.ts", "NOT_AN_EVENT"): "sentinel option key of the Jev question",

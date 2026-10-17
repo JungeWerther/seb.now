@@ -909,6 +909,32 @@ QA: `tests/qa`, `npm run sources`. The page labels every entity by its
 legacy flat `entities.kind`, which is just "source" for all of them; so
 `FEED_SELECT` and `related_feed` carry `kind_path`.
 
+**Places — `place-resolve`.** Links place entities to Wikidata so where a place
+is comes from what it is (`entities.place_path`, see "Reversible graph edits and
+where places are"), never from its name: "Palais de Tokyo" is in the 16th
+arrondissement, in Paris, in France. On its own `pg_cron` job (`7-59/10 * * * *`,
+`20261017190000_place_resolve_schedule.sql`), up to `PLACES_PER_RUN` places a
+run from `places_to_resolve`. Code proposes, Jev only chooses: a place that
+already has a `wikidata_id` is read as is; any other is searched by name on
+Wikidata's API in English and French (`_shared/wikidata.ts`, memoized per item,
+keeping only items located somewhere: coordinates P625, an area P131 or a
+country P17), and one Jev request asks per place which item the posts
+mentioning it mean (each described with its area and country), or none. A pick
+with p ≥ `MATCH_MIN_P` sets `wikidata_id` and an empty `country` (the country's
+ISO code, P297). If another entity already has the item, the two are one place
+and a `merge` is staged in `entity_edits` (batch `wikidata-<date>`), not applied.
+The item's area (P131, else its country; current, best-ranked claim) becomes the
+place's parent: the entity with that item, else the unlinked place of that name
+(which takes the item, only if still unlinked), else a new place entity named
+with its description when the name is taken, which later runs place in turn,
+up to a country; parents are set with `set_place_parent`. A place linked
+meanwhile as another's parent keeps that item. A cycle in Wikidata's own claims is
+refused by `set_place_parent` and leaves the place unplaced; any other write error
+fails the save, so the place is retried. Every place looked at gets
+`entities.wikidata_checked_at`, picked or not, so it isn't asked again. `POST
+{"entity_ids": [...]}` runs on those; `"dry_run": true` reports the picks without
+writing. Deploy the function before this schedule's migration lands.
+
 Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the
 vote tints (`.swipe-bg`) and the `.post` that slides over them, so the
 favicon, domain/chips line and replies don't react. Swiping right upvotes
