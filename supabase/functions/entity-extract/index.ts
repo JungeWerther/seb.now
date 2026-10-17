@@ -5,10 +5,10 @@ import { isPresent, json, reporting } from "../_shared/helpers.ts";
 import { serveJev } from "../_shared/jev_function.ts";
 import { pool } from "../_shared/pool.ts";
 import { nameHints } from "../_shared/hints.ts";
-import { fold, pageCandidates, WORD } from "../_shared/names.ts";
+import { fold, NameHints, pageCandidates, WORD } from "../_shared/names.ts";
 import { fetchHtml, fetchPage, PageContent, pageText, readPage } from "../_shared/page.ts";
 import { candidates } from "./candidates.ts";
-import { contains, containsName, nameWords, readSpans, sentenceWith, SpanReading, standsAlone } from "../_shared/spans.ts";
+import { aloneSentence, contains, containsName, nameWords, readSpans, sentenceWith, SpanReading } from "../_shared/spans.ts";
 import { ENTITY_EXTRACT, JEV } from "../_shared/constants.ts";
 
 // Finds the named entities a link mentions and links each to a row in
@@ -395,24 +395,27 @@ async function titleFragmentsOnPage(db: SupabaseClient, link: Link, known: Menti
   const titlePhrases = candidates(link.title, await nameHints(db, [link.title], null));
   return titlePhrases.flatMap((surface) => {
     const holders = known.filter((k) => contains(k, { surface }));
-    const sentence = holders.length && standsAlone(surface, holders.map((h) => h.surface), body) ? sentenceWith(body, surface, lang) : null;
+    const sentence = holders.length ? aloneSentence(body, surface, holders.map((h) => h.surface), lang) : null;
     return sentence ? [{ surface, sentence }] : [];
   });
+}
+
+// What the page pass asks about: the page's own candidates, and the title
+// fragments the page says on its own.
+async function pagePhrases(db: SupabaseClient, link: Link, page: PageContent, known: Mention[], hints: NameHints): Promise<Phrase[]> {
+  const ownPhrases = pageCandidates(page.sections, link.title, hints);
+  const offered = new Set(ownPhrases.map((p) => p.surface.toLowerCase()));
+  const recovered = await titleFragmentsOnPage(db, link, known, pageText(page.sections), page.lang);
+  return [...ownPhrases, ...recovered.filter((p) => !offered.has(p.surface.toLowerCase()))];
 }
 
 // `titleNames` are the title pass's names when they weren't saved (a dry run);
 // otherwise the stored title mentions are read.
 async function processPage(db: SupabaseClient, jev: JevClient, link: Link, page: PageContent, dryRun: boolean, titleNames?: Mention[]) {
-  const hints = await nameHints(db, sectionTexts(page), page.lang, page.declared);
   const known = titleNames ?? await storedMentions(db, link.id, "title");
-  const body = pageText(page.sections);
-  const ownPhrases = pageCandidates(page.sections, link.title, hints);
-  const offered = new Set(ownPhrases.map((p) => p.surface.toLowerCase()));
-  const phrases = [
-    ...ownPhrases,
-    ...(await titleFragmentsOnPage(db, link, known, body, page.lang)).filter((p) => !offered.has(p.surface.toLowerCase())),
-  ];
-  const text = [link.title, body].join("\n");
+  const hints = await nameHints(db, sectionTexts(page), page.lang, page.declared);
+  const phrases = await pagePhrases(db, link, page, known, hints);
+  const text = [link.title, pageText(page.sections)].join("\n");
   const { mentions, dropped, inputTokens } = await mentionsOf(db, jev, link, phrases, text, known);
   if (!dryRun) {
     const { error: contentError } = await db.from("link_content").upsert({
@@ -564,7 +567,8 @@ async function evaluate(db: SupabaseClient, jev: JevClient, ids: string[] | null
     const t1 = performance.now();
     const hints = await nameHints(db, sectionTexts(page), page.lang, page.declared);
     const t2 = performance.now();
-    const phrases = pageCandidates(page.sections, link.title, hints);
+    const known = await storedMentions(db, link.id, "title");
+    const phrases = await pagePhrases(db, link, page, known, hints);
     const t3 = performance.now();
     const surfaces = phrases.map((p) => p.surface);
     const text = pageText(page.sections);
@@ -582,7 +586,6 @@ async function evaluate(db: SupabaseClient, jev: JevClient, ids: string[] | null
       candidate_list: surfaces,
     };
     if (decide) {
-      const known = await storedMentions(db, link.id, "title");
       const { mentions, dropped } = await mentionsOf(db, jev, link, phrases, [link.title, text].join("\n"), known);
       const m = score(names, mentions.map((x) => x.surface));
       result.mentions = {

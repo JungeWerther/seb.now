@@ -29,8 +29,11 @@ export function containsName(longer: string[], shorter: string[]): boolean {
 export const contains = (longer: Span, shorter: Span): boolean =>
   containsName(nameWords(longer.surface), nameWords(shorter.surface));
 
-// A name never runs across a sentence end or a line break.
-const BOUNDARY = /[.!?;]+(?:\s+|$)|\n+/u;
+// A name never runs across a sentence end or a line break. A period after an
+// initial or a short capitalised abbreviation ("C. Thi Nguyen", "Dr. Smith",
+// "U.S. Army") doesn't end a sentence.
+const BOUNDARY =
+  /(?<!(?:^|[^\p{L}])(?:\p{Lu}|Dr|Mr|Mrs|Ms|Mme|Mlle|St|Ste|Jr|Sr|Prof|Gen|Gov|Sen|Rep|Lt|Col|Capt|Inc|Ltd|Co|Corp|vs|No))\.+(?:\s+|$)|[!?;]+(?:\s+|$)|\n+/u;
 
 // Whether `text` says `name` anywhere outside every one of `wholes`, reading
 // sentence by sentence so a name is never matched across a boundary ("New York.
@@ -100,6 +103,15 @@ function sentenceSegmenter(lang?: string | null): Intl.Segmenter {
   } catch {
     return new Intl.Segmenter(undefined, { granularity: "sentence" });
   }
+}
+
+// The first sentence of `text` that says `surface` outside every one of
+// `wholes` (the sentence that makes it stand alone), else null.
+export function aloneSentence(text: string, surface: string, wholes: string[], lang?: string | null): string | null {
+  for (const { segment } of sentenceSegmenter(lang).segment(text)) {
+    if (occurrences(nameWords(segment), nameWords(surface)).length && standsAlone(surface, wholes, segment)) return segment.trim();
+  }
+  return null;
 }
 
 // The first sentence of `text` that says `surface`, for asking about a name
