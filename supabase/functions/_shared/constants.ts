@@ -227,3 +227,32 @@ export const INDEX_SNAPSHOT = Object.freeze({
   // Snapshot names never change content, so they can be cached for a year.
   CACHE_SECONDS: "31536000",
 });
+
+// _shared/wikidata.ts: Wikidata's public API and the properties that place an item.
+export const WIKIDATA = Object.freeze({
+  API: "https://www.wikidata.org/w/api.php",
+  // Wikimedia asks API clients to name themselves and a contact.
+  USER_AGENT: "seb.now place-resolve (+https://seb.now)",
+  FETCH_TIMEOUT_MS: 10000,
+  LANGUAGES: ["en", "fr"],
+  SEARCH_LIMIT: 7,
+  CACHED_ITEMS: 2000,
+  LOCATED_IN: "P131",
+  COUNTRY: "P17",
+  ISO_CODE: "P297",
+  COORDINATES: "P625",
+  END_TIME: "P582",
+});
+
+// place-resolve: links place entities to Wikidata and to the place they are in.
+export const PLACE_RESOLVE = Object.freeze({
+  PLACES_PER_RUN: 20,
+  MAX_ENTITY_IDS: 50,
+  FETCH_CONCURRENCY: 4,
+  // How sure Jev must be of an item before it is taken.
+  MATCH_MIN_P: 0.6,
+  // Posts shown to Jev as where the place was mentioned.
+  CONTEXT_MENTIONS: 2,
+  // `entity_edits.batch` for merges it stages, followed by the date.
+  MERGE_BATCH_PREFIX: "wikidata",
+});
