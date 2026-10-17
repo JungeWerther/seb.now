@@ -871,7 +871,7 @@ line), shown in the kind band (`showKindHead`).
 **A topic's own page.** Every topic has a page at `seb.now/t/<path>` (its ltree
 id, `ai.agents`), on the same focused view (`focusTopic`): the band shows
 `#focus-topic` (name; "a kind of" the topic one level up, a link to that page;
-path, post count and the topic's `description`) and the
+post count and the topic's `description`) and the
 list is every link labelled with the topic or one of its children, newest
 first, from `public.topic_links(topic, max_results, page_offset)` (security
 invoker, `topic` passed as text and cast to `ltree`; the count comes from
@@ -889,6 +889,13 @@ channels, Mastodon accounts and feeds covering it, in the shapes a
 `public.sources` row takes, checking the feed first through this site's MCP
 server when the reader has it connected (`get_links_by_topic` for a topic,
 `search_links` on the name for an entity).
+
+**Every page's meta line is `showPageMeta`.** The line under a kind's, topic's,
+entity's or indexical's title is drawn by one function: its parent first (a
+`parentLink` to the kind or topic it sits under, or a plain phrase at a root),
+then its facts, joined by " · ", never its raw id or path.
+`tests/test_parent_links.py` enforces all three; pages with no parent (a post,
+a term, a sort order) are in its `FLAT_PAGES`.
 
 **A kind's own page.** Every entity kind has a page at `seb.now/k/<path>` (its
 path in `public.kinds`, `entity.agent.org.company`), on the same focused view

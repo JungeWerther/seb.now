@@ -2675,6 +2675,27 @@
     // every link that mentions it, newest first (entity_links), a page at a
     // time as you scroll, with its chip highlighted on each. Tapping an entity
     // chip anywhere opens it; history works as for a post's page.
+    // A page's parent, as a link to its page (setHref is setKindHref or
+    // setTopicHref): the kind an entity is, the kind or topic one level up.
+    function parentLink(label, setHref, id) {
+      const link = document.createElement("a");
+      link.textContent = label;
+      link.dataset.name = label;
+      setHref(link, id);
+      return link;
+    }
+
+    const countLabel = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+
+    // The line under every page's title: what it is (its parent, as
+    // [relation, parentLink(...)] or a plain phrase at a root), then its facts
+    // (counts and the like), joined by " · ". Never a raw id or path: the
+    // parent link is how the tree shows.
+    function showPageMeta(element, parent, ...facts) {
+      const parts = [parent, ...facts].filter(Boolean).map((part) => [part].flat());
+      document.getElementById(element).replaceChildren(...parts.flatMap((part, i) => (i ? [" · ", ...part] : part)));
+    }
+
     async function focusEntity(id, { name = "", push = true, saveFeed = true } = {}) {
       const generation = ++focusGeneration;
       enterFocus(`/e/${id}`, { push, saveFeed });
@@ -2683,7 +2704,7 @@
       showFocusSection("focus-topics", []);
       showFocusSection("focus-kinds", []);
       document.getElementById("focus-entity-name").textContent = name;
-      document.getElementById("focus-entity-meta").textContent = "";
+      document.getElementById("focus-entity-meta").replaceChildren();
       focusEntityHead.hidden = false;
       focusTopicHead.hidden = true;
       focusKindHead.hidden = true;
@@ -2710,11 +2731,11 @@
         focusStatus.textContent = error ? "Couldn't load this entity." : "This entity doesn't exist.";
       } else {
         document.getElementById("focus-entity-name").textContent = entity.name;
-        const posts = count == null ? "" : ` · ${count} ${count === 1 ? "post" : "posts"}`;
-        const kind = document.createElement(entity.kind_path ? "a" : "span");
-        kind.textContent = entityKindLabel(entity);
-        if (entity.kind_path) setKindHref(kind, entity.kind_path);
-        document.getElementById("focus-entity-meta").replaceChildren(kind, posts);
+        showPageMeta(
+          "focus-entity-meta",
+          entity.kind_path ? parentLink(entityKindLabel(entity), setKindHref, entity.kind_path) : entityKindLabel(entity),
+          count != null && countLabel(count, "post", "posts"),
+        );
         findSources.href = findSourcesUrl(FIND_ENTITY_SOURCES_PROMPT, {
           name: entity.name,
           kind: entityKindLabel(entity),
@@ -2749,7 +2770,7 @@
       showFocusSection("focus-kinds", []);
       focusEntityHead.hidden = true;
       document.getElementById("focus-topic-name").textContent = name;
-      document.getElementById("focus-topic-meta").textContent = path;
+      document.getElementById("focus-topic-meta").replaceChildren();
       document.getElementById("focus-topic-description").textContent = "";
       findSources.hidden = true;
       focusTopicHead.hidden = false;
@@ -2778,18 +2799,11 @@
         focusStatus.textContent = error ? "Couldn't load this topic." : "This topic doesn't exist.";
       } else {
         document.getElementById("focus-topic-name").textContent = topic.name;
-        const posts = count == null ? "" : ` · ${count} ${count === 1 ? "post" : "posts"}`;
-        const meta = [];
-        if (parent) {
-          const link = document.createElement("a");
-          link.textContent = parent.name;
-          link.dataset.name = parent.name;
-          setTopicHref(link, parent.id);
-          meta.push("a kind of ", link, " · ");
-        } else {
-          meta.push("a top-level topic · ");
-        }
-        document.getElementById("focus-topic-meta").replaceChildren(...meta, `${path}${posts}`);
+        showPageMeta(
+          "focus-topic-meta",
+          parent ? ["a kind of ", parentLink(parent.name, setTopicHref, parent.id)] : "a top-level topic",
+          count != null && countLabel(count, "post", "posts"),
+        );
         document.getElementById("focus-topic-description").textContent = topic.description ?? "";
         findSources.href = findSourcesUrl(FIND_SOURCES_PROMPT, {
           name: topic.name,
@@ -2844,23 +2858,14 @@
         return;
       }
       document.getElementById("focus-kind-name").textContent = kind.label;
-      const meta = [];
       const parent = kinds.find((k) => path.startsWith(`${k.path}.`) && k.path.split(".").length === path.split(".").length - 1);
-      if (parent) {
-        const link = document.createElement("a");
-        link.textContent = parent.label;
-        link.dataset.name = parent.label;
-        setKindHref(link, parent.path);
-        meta.push("a kind of ", link);
-      } else {
-        meta.push("every kind");
-      }
       const [count] = counts ?? [];
-      if (count) {
-        const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
-        meta.push(` · ${plural(count.entities, "entity", "entities")} · ${plural(count.posts, "post", "posts")}`);
-      }
-      document.getElementById("focus-kind-meta").replaceChildren(...meta);
+      showPageMeta(
+        "focus-kind-meta",
+        parent ? ["a kind of ", parentLink(parent.label, setKindHref, parent.path)] : "every kind",
+        count && countLabel(count.entities, "entity", "entities"),
+        count && countLabel(count.posts, "post", "posts"),
+      );
       document.getElementById("focus-kind-description").textContent = kind.description ?? "";
       showFocusSection(
         "focus-kinds",
@@ -2921,15 +2926,14 @@
         updateFocusBand();
         return;
       }
-      const kind = document.createElement("a");
-      kind.textContent = kindName(summary.kind_path);
-      kind.dataset.name = kind.textContent;
-      setKindHref(kind, summary.kind_path);
-      const meta = summary.context === "time"
-        ? ["a ", kind, ` · now ${formatInterval(summary.starts, summary.ends)}`,
-           ` · ${summary.posts} ${summary.posts === 1 ? "post" : "posts"}`]
-        : ["picks out any ", kind, " · read from the page you type it on"];
-      document.getElementById("focus-kind-meta").replaceChildren(...meta);
+      const time = summary.context === "time";
+      showPageMeta(
+        "focus-kind-meta",
+        [time ? "a " : "picks out any ", parentLink(kindName(summary.kind_path), setKindHref, summary.kind_path)],
+        ...(time
+          ? [`now ${formatInterval(summary.starts, summary.ends)}`, countLabel(summary.posts, "post", "posts")]
+          : ["read from the page you type it on"]),
+      );
       document.getElementById("focus-kind-description").textContent = summary.description;
       if (summary.context === "time") {
         feed.filter = { terms: [{ indexical: term, at }], local: null, log: [] };
@@ -2967,7 +2971,7 @@
         return;
       }
       const count = `${senses.length} ${senses.length === 1 ? "sense" : "senses"}`;
-      showKindHead(term, [`${count} · ${senseLabel(senses, kindName)}`], senses.length > 1 ? TERM_DESCRIPTION : "");
+      showKindHead(term, [count, senseLabel(senses, kindName)], senses.length > 1 ? TERM_DESCRIPTION : "");
       const of = (key) => senses.filter((sense) => sense[key]);
       showFocusSection("focus-kinds", of("kind").map(({ kind }) => tagItem(kind.label, "kind", "kind", kind.path)));
       showFocusSection("focus-entities", [
@@ -2997,7 +3001,7 @@
       updateFocusBand();
     }
 
-    // The kind band, filled with a page that isn't a kind (a sort order's): `title`, then `meta` (strings and nodes) and `description`.
+    // The kind band, filled with a page that isn't a kind (a sort order's): `title`, then `meta` (showPageMeta's parts) and `description`.
     function showKindHead(title, meta, description) {
       showFocusSection("focus-entities", []);
       showFocusSection("focus-topics", []);
@@ -3006,7 +3010,7 @@
       focusTopicHead.hidden = true;
       findSources.hidden = true;
       document.getElementById("focus-kind-name").textContent = title;
-      document.getElementById("focus-kind-meta").replaceChildren(...meta);
+      showPageMeta("focus-kind-meta", ...meta);
       document.getElementById("focus-kind-description").textContent = description;
       focusKindHead.hidden = false;
     }
@@ -3030,7 +3034,7 @@
         return;
       }
       const words = Object.keys(QUERY_SORT_WORDS).filter((w) => QUERY_SORT_WORDS[w] === sort);
-      showKindHead(SORT_LABELS[sort], ["an order · typed as ", words.join(", ")], ORDER_DESCRIPTIONS[sort] ?? "");
+      showKindHead(SORT_LABELS[sort], ["an order", `typed as ${words.join(", ")}`], ORDER_DESCRIPTIONS[sort] ?? "");
       updateSearchEmpty();
       updateFocusBand();
       loadMore();
