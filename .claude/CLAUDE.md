@@ -236,13 +236,15 @@ hand-made topic mapped to the same code (that would count the vote twice).
 
 `culture.styles` is the same idea for art and architecture styles: the Getty
 Art & Architecture Thesaurus's Styles and Periods facet (its European styles and
-international post-1945 movements, 605 concepts; peoples and regional cultures
+international post-1945 movements, 605 concepts plus 39 `.general` leaves; peoples and regional cultures
 left out), with AAT's own hierarchy as the path (Brutalist →
 `culture.styles.post_1945_architecture_design.brutalist`) and `topics.aat_id`
 holding each concept's AAT id (`20261017170000_aat_style_topics.sql`, QA: `node
 tests/qa/styles_db.mjs <migration>`). A style is named in its -ism form when AAT has one
 (Brutalism), and its description is AAT's scope note plus its other English
-labels, so topic-label reads "New Brutalism" as the same leaf.
+labels, so topic-label reads "New Brutalism" as the same leaf. A style with substyles also has a
+`.general` leaf of its own name (`…fine_arts.cubist.general`, Cubism), since
+only leaves are labelled.
 
 What an article is *about* is a topic; *who* it is about is an entity.
 `public.entities` (organisations: `kind` company/cooperative/nonprofit/public_body,

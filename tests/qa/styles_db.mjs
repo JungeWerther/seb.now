@@ -52,7 +52,16 @@ const expected = {
 };
 for (const [aat, [name, under]] of Object.entries(expected)) {
   const rows = await one(`select id::text, name from topics where aat_id = '${aat}' and '${under}' @> id`);
-  if (rows.length !== 1 || rows[0].name !== name) fail(`AAT ${aat}: expected ${name} under ${under}, got ${JSON.stringify(rows)}`);
+  if (!rows.length || rows.some((r) => r.name !== name)) fail(`AAT ${aat}: expected ${name} under ${under}, got ${JSON.stringify(rows)}`);
+}
+
+// Only leaves are labelled, so a style with substyles needs a leaf for itself.
+for (const aat of ["300021495", "300021512", "300021514", "300020775", "300021147"]) {
+  const rows = await one(`
+    select p.id::text from topics p
+    where p.aat_id = '${aat}' and not p.id ~ '*.general'
+      and not exists (select 1 from topics g where g.id = p.id || 'general'::ltree and g.aat_id = p.aat_id)`);
+  if (rows.length) fail(`AAT ${aat} has substyles but no .general leaf: ${rows.map((r) => r.id).join(", ")}`);
 }
 
 const peoples = await one(`select id::text from topics where id <@ 'culture.styles' and description like 'Culture and style of%'`);
