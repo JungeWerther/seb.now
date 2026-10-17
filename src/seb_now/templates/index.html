@@ -1297,6 +1297,61 @@
       return new Set(data.map((row) => row.link_id));
     }
 
+    // A row counts as seen once SEEN_VISIBLE_RATIO of it has stayed on screen
+    // for SEEN_DWELL_MS, so a fling past it doesn't. Seen links are recorded in
+    // link_impressions, and the latest order puts them below unseen ones
+    // (feed_query), so "new" means new to this reader.
+    const SEEN_VISIBLE_RATIO = 0.5;
+    const SEEN_DWELL_MS = 1000;
+    const SEEN_FLUSH_MS = 3000;
+    const seenTimers = new Map();
+    const seenQueue = new Set();
+    let seenFlushTimer = null;
+    const seenObserver = "IntersectionObserver" in window
+      ? new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          const li = entry.target;
+          if (entry.intersectionRatio >= SEEN_VISIBLE_RATIO) {
+            if (!seenTimers.has(li)) seenTimers.set(li, setTimeout(() => markSeen(li), SEEN_DWELL_MS));
+          } else {
+            clearTimeout(seenTimers.get(li));
+            seenTimers.delete(li);
+          }
+        }
+      }, { threshold: SEEN_VISIBLE_RATIO })
+      : null;
+
+    function observeSeen(items) {
+      if (seenObserver) for (const li of items) seenObserver.observe(li);
+    }
+
+    function markSeen(li) {
+      seenTimers.delete(li);
+      seenObserver.unobserve(li);
+      if (!li.isConnected || !li.dataset.linkId) return;
+      seenQueue.add(li.dataset.linkId);
+      seenFlushTimer ??= setTimeout(flushSeen, SEEN_FLUSH_MS);
+    }
+
+    async function flushSeen() {
+      clearTimeout(seenFlushTimer);
+      seenFlushTimer = null;
+      if (seenQueue.size === 0) return;
+      const linkIds = [...seenQueue];
+      seenQueue.clear();
+      const session = await pendingSession;
+      if (!session) return;
+      const { error } = await (await supabaseReady).from("link_impressions").upsert(
+        linkIds.map((linkId) => ({ viewer_id: session.user.id, link_id: linkId })),
+        { onConflict: "viewer_id,link_id", ignoreDuplicates: true },
+      );
+      if (error) console.error("failed to record seen links", error);
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flushSeen();
+    });
+
     // A clicked link's visit records how the reader came back. Article links
     // open in a new tab (or another app), which keeps this page: the return is
     // the page becoming visible again, and the time away runs from when it was
@@ -1834,6 +1889,7 @@
         }
       }
       if (visible.length > 0) decorateArticles(visible, session);
+      observeSeen(visible);
     }
 
     async function decorateArticles(items, session) {
@@ -2131,7 +2187,7 @@
     // come first. All of them are highlighted.
     async function fetchQueried(intent, asOf, offset) {
       const client = await supabaseReady;
-      if (intent.sort === "for_you") await pendingSession;
+      if (intent.sort === "for_you" || intent.sort === "latest") await pendingSession;
       const entities = intent.entities ?? [];
       const required = intent.required ?? [];
       const { data: ranks, error } = await client.rpc("feed_query", {
@@ -3758,16 +3814,29 @@
     const SORT_LABELS = { latest: "Latest", top: "Top", discussed: "Most discussed" };
     // What a sort order's page (/o/…) says it lists.
     const ORDER_DESCRIPTIONS = {
-      latest: "Every post, newest first.",
+      latest: "Every post, newest first; the ones you've seen go last.",
       top: "Every post, highest net votes first.",
       discussed: "Every post, most replied to first.",
     };
     // Words the page reads as a sort order on its own, without asking Jev.
     const QUERY_SORT_WORDS = {
-      latest: "latest", newest: "latest", recent: "latest", fresh: "latest", today: "latest",
+      latest: "latest", newest: "latest", new: "latest", recent: "latest", fresh: "latest", today: "latest",
       top: "top", best: "top", popular: "top", upvoted: "top",
       discussed: "discussed", debated: "discussed", controversial: "discussed", commented: "discussed",
     };
+    // Sort words that also open names ("new" in New York): a sort only at the
+    // end or before filler or another sort word ("new", "what's new", "new in
+    // paris"), not before a word that may finish the name ("new york").
+    const QUERY_NAME_OPENING_SORT_WORDS = new Set(["new"]);
+    // The sort each of `words` (folded, stopwords kept) asks for, or undefined.
+    function querySorts(words) {
+      return words.map((word, i) => {
+        const sort = QUERY_SORT_WORDS[word];
+        if (!sort || !QUERY_NAME_OPENING_SORT_WORDS.has(word)) return sort;
+        const next = words[i + 1];
+        return next === undefined || QUERY_FILLER_WORDS.has(next) || QUERY_SORT_WORDS[next] ? sort : undefined;
+      });
+    }
     // Words that ask for nothing by themselves ("show me the most …").
     const QUERY_FILLER_WORDS = new Set([...QUERY_STOPWORDS, "most", "articles", "posts", "stories", "links", "what", "whats", "is", "are", "happening", "now", "please", "s"]);
 
@@ -3915,7 +3984,9 @@
     // called "event" and an entity called "Event" are both read), and longer
     // names are placed first.
     function typedFilter(text, entities) {
-      const words = queryWords(text).filter((w) => !QUERY_FILLER_WORDS.has(w) && QUERY_SORT_WORDS[w] !== "latest");
+      const folded = text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter(Boolean);
+      const sorts = querySorts(folded);
+      const words = folded.filter((w, i) => !QUERY_FILLER_WORDS.has(w) && sorts[i] !== "latest");
       if (!words.length) return null;
       const senses = [
         ...kindIndex.flatMap((kind) => kind.names.map((name) => ({
@@ -4027,11 +4098,12 @@
       const words = text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
         .split(/[^a-z0-9]+/).filter(Boolean);
       const lastAt = partial ? words.length - 1 : -1;
+      const sorts = querySorts(words);
       let sort = null;
       let sure = true;
       const rest = [];
       words.forEach((word, i) => {
-        const wordSort = i === lastAt ? null : QUERY_SORT_WORDS[word];
+        const wordSort = i === lastAt ? null : sorts[i];
         if (wordSort) {
           if (sort && sort !== wordSort) sure = false;
           sort ??= wordSort;
@@ -4635,8 +4707,9 @@
 
       if (!value.trim()) return tokens;
       if (intent?.sort && SORT_LABELS[intent.sort]) {
-        for (const t of tokens) {
-          if (t.open && !t.partial && QUERY_SORT_WORDS[t.word] === intent.sort) {
+        const sorts = querySorts(tokens.map((t) => t.word));
+        for (const [i, t] of tokens.entries()) {
+          if (t.open && !t.partial && sorts[i] === intent.sort) {
             t.tag = { kind: "order", page: markPage(SORT_LABELS[intent.sort], setOrderHref, intent.sort) };
             t.open = false;
           }

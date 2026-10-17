@@ -540,7 +540,8 @@ has had read is free for everyone after (plus a per-isolate and per-page copy). 
 input tokens and ~1.2s per read. Jev's reading replaces the chips (filled: the
 sort, `topic …`, `search "…"`), and the feed becomes
 `public.feed_query(sort, topic, search, as_of, page_offset, page_size, entities, required)`
-(security invoker; `for_you` is `ranked_feed`'s rank, `latest` newest, `top`
+(security invoker; `for_you` is `ranked_feed`'s rank, `latest` newest with the
+links the caller has seen last (see "Seen links"), `top`
 net votes, `discussed` reply count; `topic` filters to it and its children;
 with search words only `link_search_hits(search)`'s links match — see above;
 `public.fold_text` is `lower(unaccent(…))`, so "cinema" finds "Cinéma" — and
@@ -812,6 +813,22 @@ after returning is `next_action` (`visit`, `open`, `upvote`, `downvote`, `reply`
 or `left` when the page is hidden first) with `next_link_id`. These are raw
 facts: the thresholds that make a visit a bounce or a read aren't in the page,
 they're meant to be fitted against votes.
+
+**Seen links — "new" means new to the reader** (`20261017231500_latest_unseen_first.sql`).
+A link is seen once its row has been on screen (`SEEN_VISIBLE_RATIO` of it for
+`SEEN_DWELL_MS`, an `IntersectionObserver` set up in `hydrateArticles`, so a fling
+past it doesn't count) or it was clicked (`link_visits`). On-screen rows go to
+`public.link_impressions (viewer_id, link_id, seen_at)`, one row per reader and
+link (private to the viewer by RLS, insert-only, batched every `SEEN_FLUSH_MS`
+and when the page is hidden, a repeat ignored). `feed_query`'s `latest` order puts
+seen links after unseen ones, each part newest first; they're moved down, not
+left out, so `/o/latest` still lists every post. Only what was seen at or before
+`as_of` counts, so rows seen while scrolling don't reorder the pages still to
+come; back-to-top restarts with a fresh `as_of`. "new" is a sort word
+(`QUERY_SORT_WORDS`), but since it also opens names (New York) `querySorts` only
+reads it as one at the end or before filler or another sort word (`QUERY_NAME_OPENING_SORT_WORDS`:
+"new", "what's new", "new in paris", not "new york"). QA: `tests/qa`, `npm run
+latest` (and `npm run page` for the reading).
 
 **A link's own page.** Every link has a page at `seb.now/p/<id>` (the same
 address a federated post links to, served by the catch-all document). Tapping a
