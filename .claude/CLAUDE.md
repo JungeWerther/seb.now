@@ -546,11 +546,13 @@ own, never a dead tag. A query that is nothing but a kind's name ("event", "even
 opens that kind's page on Enter instead of searching for the word, since the page
 is that filter; while typing it stays a search, so the view never jumps mid-word. A query
 made only of filters ("event paris", "events in paris") is the same idea for two
-or more: on Enter, `typedFilter` places every word as filler, a newest-first word,
-part of a kind's name, or the whole name of a `match_entities` result (matched with
-every word finished; longer names first, a kind before an entity at the same
+or more: as soon as the reading runs (`queryFilter` in `runQuery`, a word
+still being typed only counting once it is a whole name; Enter reads the text
+again with every word finished, replacing a reading still in flight),
+`typedFilter` places every word as filler, a newest-first word,
+part of a kind's name, or the whole name of a `match_entities` result (longer names first, a kind before an entity at the same
 length; same-named entities are one filter, any of them), and if nothing is left
-over and there are at least two filters, `showTypedFilter` swaps the search results
+over and there are at least two filters, `applyFilter` swaps the search results
 for `public.filter_links(filters jsonb, max_results, page_offset)`
 (`20261016180000_filter_links.sql`, security invoker; `filters` is an array of
 `{"kind": "<ltree path>"}` / `{"entities": [ids]}`, a link must pass all of them,
@@ -582,7 +584,7 @@ else `event_day_starts()` (06:00) on `starts_on` — a date with no time is that
 waking hours — unbounded with no start, to the end of `ends_on`, else of
 `starts_on`; a one-day event with a start time and no end lasts
 `event_default_duration()`, 3 hours). An indexical alone ("tonight", "this") is
-a filter on Enter. Each has a page, `/i/<term>` (`focusIndexical`, reusing the
+a filter too, and with a name ("tomorrow in belfast") the two are a conjunction. Each has a page, `/i/<term>` (`focusIndexical`, reusing the
 kind head: what it picks out now and its count via `indexical_summary`, the kind
 linked, its description; a time indexical's links below), and is listed first
 among the members on its kind's page. QA for both (`tests/qa/`, not in CI: `npm i` there, then `npm run db` runs the
@@ -852,7 +854,10 @@ to the source's page instead (`FEED_SELECT` and `related_feed`'s `link_row`
 carry `found_in` for this; `SOURCE_FOUND_IN`), `related_links` ignores them
 (title mentions only), and `entity_candidates`/`known_names` skip source
 entities, so a headline's "Belfast Telegraph" never resolves to the channel.
-QA: `tests/qa`, `npm run sources`.
+QA: `tests/qa`, `npm run sources`. The page labels every entity by its
+`kind_path` (`entityKindLabel`: the kind's label, "youtube channel"), never the
+legacy flat `entities.kind`, which is just "source" for all of them; so
+`FEED_SELECT` and `related_feed` carry `kind_path`.
 
 Swipe-to-vote is scoped to the post box only: `.post-swipe` wraps the
 vote tints (`.swipe-bg`) and the `.post` that slides over them, so the
