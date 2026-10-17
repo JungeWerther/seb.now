@@ -8,7 +8,7 @@ import { nameHints } from "../_shared/hints.ts";
 import { fold, pageCandidates, WORD } from "../_shared/names.ts";
 import { fetchHtml, fetchPage, PageContent, pageText, readPage } from "../_shared/page.ts";
 import { candidates } from "./candidates.ts";
-import { containsName, nameWords, readSpans, sentenceWith, SpanReading } from "../_shared/spans.ts";
+import { contains, containsName, nameWords, readSpans, sentenceWith, SpanReading, standsAlone } from "../_shared/spans.ts";
 import { ENTITY_EXTRACT, JEV } from "../_shared/constants.ts";
 
 // Finds the named entities a link mentions and links each to a row in
@@ -386,11 +386,33 @@ function sectionTexts(page: PageContent): string[] {
   return page.sections.map((s) => [s.heading, s.text].filter(Boolean).join("\n"));
 }
 
-async function processPage(db: SupabaseClient, jev: JevClient, link: Link, page: PageContent, dryRun: boolean) {
+// The title's phrases that are part of a title name but that the page also
+// says on its own ("Tokyo" after "Palais de Tokyo"): the page's own candidates
+// leave out everything the title says, so these are offered again with the
+// page sentence that says them.
+async function titleFragmentsOnPage(db: SupabaseClient, link: Link, known: Mention[], body: string, lang: string | null): Promise<Phrase[]> {
+  if (!known.length || !body) return [];
+  const titlePhrases = candidates(link.title, await nameHints(db, [link.title], null));
+  return titlePhrases.flatMap((surface) => {
+    const holders = known.filter((k) => contains(k, { surface }));
+    const sentence = holders.length && standsAlone(surface, holders.map((h) => h.surface), body) ? sentenceWith(body, surface, lang) : null;
+    return sentence ? [{ surface, sentence }] : [];
+  });
+}
+
+// `titleNames` are the title pass's names when they weren't saved (a dry run);
+// otherwise the stored title mentions are read.
+async function processPage(db: SupabaseClient, jev: JevClient, link: Link, page: PageContent, dryRun: boolean, titleNames?: Mention[]) {
   const hints = await nameHints(db, sectionTexts(page), page.lang, page.declared);
-  const phrases = pageCandidates(page.sections, link.title, hints);
-  const known = await storedMentions(db, link.id, "title");
-  const text = [link.title, pageText(page.sections)].join("\n");
+  const known = titleNames ?? await storedMentions(db, link.id, "title");
+  const body = pageText(page.sections);
+  const ownPhrases = pageCandidates(page.sections, link.title, hints);
+  const offered = new Set(ownPhrases.map((p) => p.surface.toLowerCase()));
+  const phrases = [
+    ...ownPhrases,
+    ...(await titleFragmentsOnPage(db, link, known, body, page.lang)).filter((p) => !offered.has(p.surface.toLowerCase())),
+  ];
+  const text = [link.title, body].join("\n");
   const { mentions, dropped, inputTokens } = await mentionsOf(db, jev, link, phrases, text, known);
   if (!dryRun) {
     const { error: contentError } = await db.from("link_content").upsert({
@@ -444,8 +466,10 @@ async function respanLink(db: SupabaseClient, jev: JevClient, link: Link) {
   const state = { link: { title: link.title, site: hostOf(link.url) } };
   let inputTokens = 0;
   const ask = askRunTogether(jev, link.id, state, (n) => inputTokens += n);
-  const title = await readSpans(titles, [], link.title, ask);
-  const page = await readSpans(pages, titles, [link.title, pageText].join("\n"), ask);
+  // A title name is a fragment only if the page doesn't say it on its own either.
+  const text = [link.title, pageText].join("\n");
+  const title = await readSpans(titles, [], text, ask);
+  const page = await readSpans(pages, title.kept, text, ask);
   const drops = [title, page].flatMap((spans) => [
     ...spans.parts.map((m) => ({ mention: m, reason: "only part of a longer name here" })),
     ...spans.runTogether.map((m) => ({ mention: m, reason: "runs several names together" })),
@@ -558,7 +582,8 @@ async function evaluate(db: SupabaseClient, jev: JevClient, ids: string[] | null
       candidate_list: surfaces,
     };
     if (decide) {
-      const { mentions, dropped } = await mentionsOf(db, jev, link, phrases, [link.title, text].join("\n"));
+      const known = await storedMentions(db, link.id, "title");
+      const { mentions, dropped } = await mentionsOf(db, jev, link, phrases, [link.title, text].join("\n"), known);
       const m = score(names, mentions.map((x) => x.surface));
       result.mentions = {
         count: mentions.length,
@@ -662,6 +687,8 @@ Deno.serve(serveJev({
   const titles = await pool(titleLinks, 1, reporting(report, (link: Link) => ({ link_id: link.id, found_in: "title" }), (link) =>
     processTitle(db, jev, link, dryRun)));
 
+  // A dry run saves nothing, so its page pass takes the title pass's names directly.
+  const titleNamesOf = new Map(titles.filter(isPresent).map((r) => [r.link_id, r.mentions]));
   const pageLinks = ids ? titleLinks : await unprocessedLinks(db, "page_entities", ENTITY_EXTRACT.PAGE_LINKS_PER_RUN);
   const prefetched = prefetch(pageLinks, fetchPage);
   const overBudget = () => !ids && Date.now() - started > ENTITY_EXTRACT.RUN_BUDGET_MS;
@@ -669,7 +696,7 @@ Deno.serve(serveJev({
     pageLinks.map((link, i) => ({ link, page: prefetched[i] })),
     1,
     reporting(report, ({ link }) => ({ link_id: link.id, found_in: "page" }), async ({ link, page }) =>
-      overBudget() ? null : processPage(db, jev, link, await page, dryRun)),
+      overBudget() ? null : processPage(db, jev, link, await page, dryRun, dryRun ? titleNamesOf.get(link.id) : undefined)),
   );
 
   const results = [...titles, ...pageResults].filter(isPresent);

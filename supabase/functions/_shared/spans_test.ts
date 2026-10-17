@@ -81,3 +81,12 @@ Deno.test("the sentence that says a name", () => {
   assertEquals(sentenceWith("Il pleut. Le Palais de Tokyo ouvre. Fin.", "palais de tokyo", "fr"), "Le Palais de Tokyo ouvre.");
   assertEquals(sentenceWith("Il pleut.", "Tokyo"), null);
 });
+
+Deno.test("a name is never matched across a sentence end", () => {
+  assert(standsAlone("New York", ["New York Times"], "The New York Times reported from New York. Times are hard."));
+  assert(!standsAlone("New York", ["New York Times"], "The New York Times reported.\nThe New York Times again."));
+});
+
+Deno.test("an invalid page language falls back to the default locale", () => {
+  assertEquals(sentenceWith("Il pleut. Tokyo dort.", "Tokyo", "en_US"), "Tokyo dort.");
+});

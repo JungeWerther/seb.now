@@ -29,15 +29,26 @@ export function containsName(longer: string[], shorter: string[]): boolean {
 export const contains = (longer: Span, shorter: Span): boolean =>
   containsName(nameWords(longer.surface), nameWords(shorter.surface));
 
-// Whether `text` says `name` anywhere outside every one of `wholes`. A name the
-// text doesn't say as such (spelled otherwise) is taken to stand alone.
+// A name never runs across a sentence end or a line break.
+const BOUNDARY = /[.!?;]+(?:\s+|$)|\n+/u;
+
+// Whether `text` says `name` anywhere outside every one of `wholes`, reading
+// sentence by sentence so a name is never matched across a boundary ("New York.
+// Times are hard" holds no "New York Times"). A name the text doesn't say as
+// such (spelled otherwise) is taken to stand alone.
 export function standsAlone(name: string, wholes: string[], text: string): boolean {
-  const words = nameWords(text);
   const own = nameWords(name);
-  const covered = wholes.map(nameWords).filter((whole) => containsName(whole, own))
-    .flatMap((whole) => occurrences(words, whole).map((start) => [start, start + whole.length] as const));
-  const said = occurrences(words, own);
-  return !said.length || said.some((i) => !covered.some(([start, end]) => start <= i && i + own.length <= end));
+  const holders = wholes.map(nameWords).filter((whole) => containsName(whole, own));
+  let said = false;
+  for (const segment of text.split(BOUNDARY)) {
+    const words = nameWords(segment);
+    const covered = holders.flatMap((whole) => occurrences(words, whole).map((start) => [start, start + whole.length] as const));
+    for (const i of occurrences(words, own)) {
+      said = true;
+      if (!covered.some(([start, end]) => start <= i && i + own.length <= end)) return true;
+    }
+  }
+  return !said;
 }
 
 // The names of `names` that only ever appear inside one of `wholes` in `text`.
@@ -81,11 +92,21 @@ export async function readSpans<N extends Span>(
   };
 }
 
+// A page's declared language isn't always a valid locale ("en_US"); then the
+// default one reads its sentences.
+function sentenceSegmenter(lang?: string | null): Intl.Segmenter {
+  try {
+    return new Intl.Segmenter(lang ?? undefined, { granularity: "sentence" });
+  } catch {
+    return new Intl.Segmenter(undefined, { granularity: "sentence" });
+  }
+}
+
 // The first sentence of `text` that says `surface`, for asking about a name
 // read back from storage.
 export function sentenceWith(text: string, surface: string, lang?: string | null): string | null {
   const own = nameWords(surface);
-  for (const { segment } of new Intl.Segmenter(lang ?? undefined, { granularity: "sentence" }).segment(text)) {
+  for (const { segment } of sentenceSegmenter(lang).segment(text)) {
     if (occurrences(nameWords(segment), own).length) return segment.trim();
   }
   return null;
