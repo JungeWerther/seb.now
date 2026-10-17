@@ -1,7 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
-import { isPresent, type Report, reporting, serveJev } from "../_shared/jev_function.ts";
+import { isPresent, type Report, reporting } from "../_shared/helpers.ts";
+import { serveJev } from "../_shared/jev_function.ts";
 import { pool } from "../_shared/pool.ts";
 
 // Labels links with leaf topics by walking the topic tree with Jev: at each

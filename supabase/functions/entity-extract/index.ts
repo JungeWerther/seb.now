@@ -1,7 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient, JsonValue } from "../_shared/jev.ts";
-import { isPresent, reporting, serveJev } from "../_shared/jev_function.ts";
+import { isPresent, reporting } from "../_shared/helpers.ts";
+import { serveJev } from "../_shared/jev_function.ts";
 import { pool } from "../_shared/pool.ts";
 import { nameHints } from "../_shared/hints.ts";
 import { fold, pageCandidates, WORD } from "../_shared/names.ts";

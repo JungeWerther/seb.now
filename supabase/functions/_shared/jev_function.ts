@@ -5,12 +5,11 @@
 // answers with `{ model, dry_run, ...summary, errors }`.
 
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { json, type Report, type Row } from "./helpers.ts";
 import { JevClient } from "./jev.ts";
 
 const TYPESAFE_KEY_SECRET = "typesafe-ai-token";
 
-export type Row = Record<string, unknown>;
-export type Report = (error: Row) => void;
 
 export interface JevRun {
   db: SupabaseClient;
@@ -28,10 +27,6 @@ export interface JevFunction {
   maxLinkIds: number;
   // Requests that read but never write (beyond `dry_run`), e.g. an evaluation.
   readOnly?: (body: Row) => boolean;
-}
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body, null, 2), { status, headers: { "Content-Type": "application/json" } });
 }
 
 function linkIds(body: Row, max: number): string[] | null | undefined {
@@ -66,17 +61,3 @@ export function serveJev(
     return summary instanceof Response ? summary : json({ model: config.model, dry_run: dryRun, ...summary, errors });
   };
 }
-
-// `fn`, with a throw reported (tagged by `label`) and read as null.
-export function reporting<T, R>(report: Report, label: (item: T) => Row, fn: (item: T) => Promise<R>) {
-  return async (item: T): Promise<R | null> => {
-    try {
-      return await fn(item);
-    } catch (e) {
-      report({ ...label(item), error: String(e) });
-      return null;
-    }
-  };
-}
-
-export const isPresent = <T>(value: T | null): value is T => value !== null;

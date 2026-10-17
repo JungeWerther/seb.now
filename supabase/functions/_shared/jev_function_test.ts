@@ -1,5 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { isPresent, reporting, serveJev } from "./jev_function.ts";
+import { isPresent, reporting } from "./helpers.ts";
+import { serveJev } from "./jev_function.ts";
 import { pool } from "./pool.ts";
 
 Deno.test("pool keeps input order and never runs more than its size at once", async () => {
