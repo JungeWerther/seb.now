@@ -499,6 +499,39 @@
     #handle-save:disabled { opacity: 0.5; cursor: default; }
     #profile-hint { font-size: 0.8rem; color: gray; margin: 0.5rem 0 0; }
     #profile-status { font-size: 0.8rem; color: gray; min-height: 1.2em; margin: 0.4rem 0 0; }
+    /* Unread notifications: a red dot on the menu icon and on the Inbox bubble. */
+    #menu-btn { position: relative; }
+    .unread-dot {
+      width: 0.55rem;
+      height: 0.55rem;
+      border-radius: 50%;
+      background: var(--negative);
+      box-shadow: 0 0 0 2px var(--bg);
+    }
+    .unread-dot[hidden] { display: none; }
+    #menu-unread-dot { position: absolute; top: 0.1rem; right: 0.1rem; }
+    #inbox-bubble .bubble-icon { position: relative; }
+    #inbox-bubble .unread-dot { position: absolute; top: -0.1rem; right: -0.1rem; }
+    #inbox-count { font-variant-numeric: tabular-nums; color: gray; }
+    #inbox-count:empty { display: none; }
+    #inbox-status { font-size: 0.85rem; color: gray; margin: 0; }
+    #inbox-status:empty { display: none; }
+    #inbox-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+    #inbox-list button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      font: inherit;
+      color: inherit;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid rgba(128, 128, 128, 0.2);
+      border-radius: 12px;
+      background: var(--post-bg);
+      cursor: pointer;
+    }
+    #inbox-list .unread button { border-color: var(--negative); }
+    #inbox-list .inbox-what { margin: 0; font-size: 0.8rem; color: gray; }
+    #inbox-list .inbox-body { margin: 0.25rem 0 0; font-size: 0.9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
     #taste-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
     .taste-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.3rem 0.75rem; font-size: 0.85rem; }
     .taste-custom { margin-left: 0.4rem; font-size: 0.7rem; color: gray; }
@@ -1022,12 +1055,18 @@
             <circle cx="12" cy="10" r="4"/>
             <circle cx="12" cy="12" r="10"/>
           </svg>
+          <span class="unread-dot" id="menu-unread-dot" hidden></span>
         </button>
         <ul id="menu-bubbles">
           <li><div class="bubble balance" id="query-balance" title="Credits left for reading your searches">
             <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg></span>
             <span><span id="query-balance-count">1,000</span> credits</span>
           </div></li>
+          <li><button class="bubble" id="inbox-bubble" data-overlay="inbox-overlay" tabindex="-1">
+            <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg><span class="unread-dot" hidden></span></span>
+            <span>Inbox</span>
+            <span id="inbox-count"></span>
+          </button></li>
           <li><button class="bubble" data-overlay="taste-overlay" tabindex="-1">
             <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></span>
             <span>My Algorithm</span>
@@ -1062,6 +1101,14 @@
     <ol id="taste-list"></ol>
     <button id="taste-reset">Reset all to default</button>
     <template id="taste-clear-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></template>
+  </dialog>
+  <dialog id="inbox-overlay" class="overlay" aria-labelledby="inbox-title">
+    <div class="overlay-head">
+      <p class="overlay-title" id="inbox-title">Inbox</p>
+      <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
+    <p id="inbox-status"></p>
+    <ol id="inbox-list"></ol>
   </dialog>
   <dialog id="profile-overlay" class="overlay" aria-labelledby="profile-title">
     <div class="overlay-head">
@@ -3140,7 +3187,10 @@
         event.stopPropagation();
         const open = !bubbles.classList.contains("open");
         setOpen(open);
-        if (open) loadQueryBalance();
+        if (open) {
+          loadQueryBalance();
+          loadUnreadCount();
+        }
       });
       document.addEventListener("click", (event) => {
         if (!bubbles.contains(event.target)) setOpen(false);
@@ -3503,7 +3553,112 @@
       });
     }
 
-    const OVERLAY_LOADERS = { "taste-overlay": loadTaste, "profile-overlay": loadProfile };
+    // Notifications (public.notifications) are filled by a replies trigger;
+    // RLS shows each reader only their own. Their text is other readers' and
+    // other sites' replies, so it only reaches the DOM through textContent.
+    const NOTIFICATIONS_SHOWN = 50;
+    const NOTIFICATION_BODY_PREVIEW = 160;
+    const NOTIFICATION_SELECT = "id, kind, created_at, read_at, replies(link_id, body, profiles(handle), remote_actors(handle), links(title))";
+    const NOTIFICATION_PHRASES = { reply_to_you: "replied to you", reply_on_thread: "also replied" };
+
+    function showUnreadCount(count) {
+      const unread = count > 0;
+      document.getElementById("menu-unread-dot").hidden = !unread;
+      document.querySelector("#inbox-bubble .unread-dot").hidden = !unread;
+      document.getElementById("inbox-count").textContent = unread ? count.toLocaleString() : "";
+      document.getElementById("menu-btn").setAttribute("aria-label", unread ? `Menu, ${count} unread` : "Menu");
+    }
+
+    async function loadUnreadCount() {
+      if (!(await pendingSession)) return;
+      const { count, error } = await (await supabaseReady)
+        .from("notifications").select("id", { count: "exact", head: true }).is("read_at", null);
+      if (error) console.error("failed to load unread notifications", error);
+      else showUnreadCount(count ?? 0);
+    }
+
+    function renderNotification(notification) {
+      const reply = notification.replies;
+      const item = document.createElement("li");
+      item.classList.toggle("unread", !notification.read_at);
+      const button = document.createElement("button");
+      button.type = "button";
+      const what = document.createElement("p");
+      what.className = "inbox-what";
+      const who = reply.profiles?.handle || reply.remote_actors?.handle || "anonymous";
+      const where = reply.links?.title ? ` on ${reply.links.title}` : "";
+      const when = postedLabel(notification.created_at);
+      what.textContent = `${who} ${NOTIFICATION_PHRASES[notification.kind] ?? "replied"}${where}${when ? ` · ${when}` : ""}`;
+      const body = document.createElement("p");
+      body.className = "inbox-body";
+      body.textContent = reply.body.length > NOTIFICATION_BODY_PREVIEW
+        ? `${reply.body.slice(0, NOTIFICATION_BODY_PREVIEW)}…`
+        : reply.body;
+      button.append(what, body);
+      button.addEventListener("click", () => {
+        document.getElementById("inbox-overlay").close();
+        focusLink(reply.link_id);
+      });
+      item.appendChild(button);
+      return item;
+    }
+
+    // Unread ones come first, so every unread notification the count includes
+    // is shown on some open, however many there are.
+    const notificationPage = (client, unread, limit) => {
+      const query = client.from("notifications").select(NOTIFICATION_SELECT);
+      return (unread ? query.is("read_at", null) : query.not("read_at", "is", null))
+        .order("created_at", { ascending: false }).limit(limit);
+    };
+
+    async function fetchInbox(client) {
+      const unread = await notificationPage(client, true, NOTIFICATIONS_SHOWN);
+      const room = NOTIFICATIONS_SHOWN - (unread.data?.length ?? 0);
+      if (unread.error || room <= 0) return unread;
+      const read = await notificationPage(client, false, room);
+      return read.error ? read : { data: [...unread.data, ...read.data], error: null };
+    }
+
+    let inboxLoad = 0;
+
+    async function loadInbox() {
+      const load = ++inboxLoad;
+      const overlay = document.getElementById("inbox-overlay");
+      const current = () => load === inboxLoad && overlay.open;
+      const list = document.getElementById("inbox-list");
+      const status = document.getElementById("inbox-status");
+      list.replaceChildren();
+      status.textContent = "Loading…";
+      const session = await pendingSession;
+      if (!session) {
+        status.textContent = "";
+        return;
+      }
+      const client = await supabaseReady;
+      const { data, error } = await fetchInbox(client);
+      if (!current()) return;
+      if (error) {
+        status.textContent = "Couldn't load your inbox.";
+        return;
+      }
+      const notifications = (data ?? []).filter((n) => n.replies);
+      status.textContent = notifications.length ? "" : "Nothing yet. Replies to you and on posts you replied to land here.";
+      list.replaceChildren(...notifications.map(renderNotification));
+      const unreadIds = notifications.filter((n) => !n.read_at).map((n) => n.id);
+      if (!unreadIds.length) return;
+      const { error: markError } = await client.rpc("mark_notifications_read", { ids: unreadIds });
+      if (markError) console.error("failed to mark notifications read", markError);
+      loadUnreadCount();
+    }
+
+    function setupInbox() {
+      loadUnreadCount();
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") loadUnreadCount();
+      });
+    }
+
+    const OVERLAY_LOADERS = { "taste-overlay": loadTaste, "profile-overlay": loadProfile, "inbox-overlay": loadInbox };
 
     // Must match the replies_body_length check in the replies migration.
     const REPLY_MAX_LENGTH = 500;
@@ -4979,6 +5134,7 @@
     setupFeed(savedSearchQuery().trim());
     setupVisitReturns();
     setupMenu();
+    setupInbox();
     setupTaste();
     setupProfile();
     setupSearch();
