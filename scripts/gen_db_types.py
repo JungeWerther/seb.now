@@ -112,8 +112,14 @@ def main() -> None:
         fail("SUPABASE_DB_URL is empty: the SUPABASE_CONNECTION_STRING secret is missing")
     with psycopg.connect(url, connect_timeout=15) as conn:
         applied = {row[0] for row in conn.execute("select version from supabase_migrations.schema_migrations")}
-        if todo := pending(migration_files(), applied):
+        files = migration_files()
+        if todo := pending(files, applied):
             print(f"::notice title=db-types::{len(todo)} migration(s) not applied yet, so the types aren't checked")
+            return
+        if ahead := sorted(version for version in applied if version > files[-1][0]):
+            print(
+                f"::notice title=db-types::the database has {len(ahead)} migration(s) newer than this branch, so the types aren't checked"
+            )
             return
         columns = [Column(*row) for row in conn.execute(COLUMNS_QUERY)]
     OUTPUT_PATH.write_text(render(columns))
