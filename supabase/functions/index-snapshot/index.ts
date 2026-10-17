@@ -9,10 +9,11 @@ import { jsonResponses } from "../_shared/helpers.ts";
 // `index` bucket under a name of its own, so the CDN can keep it forever. Then
 // records it in index_state, where index_diff points pages at it, and removes
 // all but the newest KEEP_SNAPSHOTS (a page may still be fetching the one
-// before). Does nothing when the index hasn't changed since the last snapshot.
+// before). Builds when gen moved on since the latest snapshot; otherwise only
+// when something was added and the snapshot is older than MAX_AGE_MS or over
+// MAX_NEW_PAIRS mentions behind, since pages catch up with index_diff.
 //
 // POST {} builds if needed; POST {"force": true} always builds.
-
 
 interface State {
   gen: number;
@@ -20,6 +21,7 @@ interface State {
   snapshot_link_seq: number | null;
   snapshot_entity_seq: number | null;
   snapshot_pair_seq: number | null;
+  snapshot_at: string | null;
 }
 
 async function gzip(text: string): Promise<Uint8Array> {
@@ -43,12 +45,14 @@ Deno.serve(async (req: Request) => {
       ),
     );
     const top = (r: typeof links) => (r.data?.[0]?.seq as number | undefined) ?? 0;
-    if (
-      !links.error && !entities.error && !pairs.error &&
-      top(links) === state.snapshot_link_seq && top(entities) === state.snapshot_entity_seq &&
-      top(pairs) === state.snapshot_pair_seq
-    ) {
-      return json({ skipped: true, gen: state.gen });
+    if (!links.error && !entities.error && !pairs.error) {
+      const added = top(links) !== state.snapshot_link_seq || top(entities) !== state.snapshot_entity_seq ||
+        top(pairs) !== state.snapshot_pair_seq;
+      const age = state.snapshot_at ? Date.now() - Date.parse(state.snapshot_at) : Infinity;
+      const newPairs = top(pairs) - (state.snapshot_pair_seq ?? 0);
+      if (!added || (age < INDEX_SNAPSHOT.MAX_AGE_MS && newPairs < INDEX_SNAPSHOT.MAX_NEW_PAIRS)) {
+        return json({ skipped: true, gen: state.gen, added, age_ms: age, new_pairs: newPairs });
+      }
     }
   }
 
