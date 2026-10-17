@@ -4,6 +4,7 @@
 // `JevLog`, every call (failed ones too) is recorded in `public.jev_calls`.
 
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { exponential, retry } from "./retry.ts";
 
 const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 const RETRYABLE_STATUSES = [429, 529];
@@ -53,24 +54,23 @@ export class JevClient {
     const body = JSON.stringify({ model: this.model, state, questions });
     let attempts = 0;
     try {
-      for (;;) {
-        attempts++;
-        const res = await fetch(ENDPOINT, {
+      const { outcome: res } = await retry<Response>({
+        attempts: MAX_ATTEMPTS,
+        delayMs: exponential(BACKOFF_BASE_MS),
+        retryIf: (res) => RETRYABLE_STATUSES.includes(res.status),
+        onRetry: (res) => res.body?.cancel(),
+        onAttempt: (n) => attempts = n,
+      })(() =>
+        fetch(ENDPOINT, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.apiKey}` },
           body,
-        });
-        if (res.ok) {
-          const result: SystemOneResult<ChoiceAnswers<Q>> = await res.json();
-          await this.record({ state, questions, linkId, started, attempts, result });
-          return result;
-        }
-        if (!RETRYABLE_STATUSES.includes(res.status) || attempts >= MAX_ATTEMPTS) {
-          throw new Error(`TypeSafe ${res.status}: ${(await res.text()).slice(0, 300)}`);
-        }
-        await res.body?.cancel();
-        await new Promise((r) => setTimeout(r, BACKOFF_BASE_MS * 2 ** (attempts - 1)));
-      }
+        })
+      );
+      if (!res.ok) throw new Error(`TypeSafe ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      const result: SystemOneResult<ChoiceAnswers<Q>> = await res.json();
+      await this.record({ state, questions, linkId, started, attempts, result });
+      return result;
     } catch (e) {
       await this.record({ state, questions, linkId, started, attempts, error: String(e) });
       throw e;
