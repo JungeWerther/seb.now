@@ -1,14 +1,17 @@
 // Local QA of the entity_sense migration on an embedded Postgres shaped like
 // ours: drop a mention and undo it, merge two entities and undo it, and check
 // that every touched table comes back exactly as it was; then place a venue in
-// a city and check containment, the place-kind rule and the cycle guard.
+// a city and check containment, the place-kind rule and the cycle guard; and
+// that undoing a merge refuses once a place it rests on moved, or the kept
+// entity was enriched, outside entity_edits. Takes the migrations to run, in
+// order.
 import { PGlite } from "@electric-sql/pglite";
 import { ltree } from "@electric-sql/pglite/contrib/ltree";
 import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 
-const [migration] = process.argv.slice(2);
+const migrations = process.argv.slice(2);
 const db = new PGlite({ extensions: { ltree, pg_trgm } });
 
 await db.exec(`
@@ -89,7 +92,7 @@ await db.query(`update entities set wikidata_id = 'Q11208' where name = 'The Pen
 // A former name whose only mention collides with the target's on the same link.
 await mention(l2, "Department of War", "Department of War");
 
-await db.exec(readFileSync(migration, "utf8"));
+for (const migration of migrations) await db.exec(readFileSync(migration, "utf8"));
 
 const TABLES = ["entities", "link_entities", "identity_witnesses", "entity_relations", "entity_properties", "link_events", "sources"];
 const dump = async () => Object.fromEntries(await Promise.all(TABLES.map(async (t) =>
@@ -280,5 +283,55 @@ await place(await id("Impasse"), await id("Ruelle"));
 await db.query(`select apply_entity_edit($1)`, [intoHameau]);
 await db.query(`select set_place_parent($1, $2, 'wikidata')`, [await id("Impasse"), await id("Hameau")]);
 await assert.rejects(db.query(`select undo_entity_edit($1)`, [intoHameau]), /changed since/, "attribution counts as a change");
+
+// A place the merged-away entity was in, moved outside entity_edits after the
+// merge, blocks its undo: the saved path would no longer resolve.
+await db.exec(`insert into entities (name, kind) values ('Pa','place'), ('Qa','place'), ('Ra','place'), ('Aa1','place'), ('Ba1','place'), ('Inner','place')`);
+await place(await id("Aa1"), await id("Pa"));
+await place(await id("Inner"), await id("Aa1"));
+await place(await id("Ba1"), await id("Qa"));
+const movedBefore = await dump();
+const staleAnc = (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by) values ('qa-stale', 'merge', $1, 'Aa1', $2, 'Ba1', 'claude') returning id`, [await id("Aa1"), await id("Ba1")])).id;
+await db.query(`select apply_entity_edit($1)`, [staleAnc]);
+await place(await id("Pa"), await id("Ra"));
+const afterMove = await dump();
+await assert.rejects(db.query(`select undo_entity_edit($1)`, [staleAnc]), /moved since/, "a former ancestor moved since blocks undo");
+assert.deepEqual(await dump(), afterMove, "a refused undo changes nothing");
+assert.equal((await one(`select status from entity_edits where id = $1`, [staleAnc])).status, "applied", "and the edit stays applied");
+// Put back where it was (by hand: set_place_parent never unplaces), it undoes exactly.
+await db.query(`update entities set place_path = null, place_labeled_by = null where id = $1`, [await id("Pa")]);
+await db.query(`select undo_entity_edit($1)`, [staleAnc]);
+assert.deepEqual(await dump(), movedBefore, "once the ancestor is back, the merge undoes exactly");
+assert.equal((await one(`select place_within($1, $2) b`, [await id("Inner"), await id("Pa")])).b, true, "what was inside it is back too");
+
+// Enrichment of the kept entity after a merge blocks its undo, which would erase it.
+await db.exec(`insert into entities (name, kind) values ('Cambridge','place'), ('Cambridge MA','place')`);
+const enrichBefore = await dump();
+const enrich = async () => db.query(`update entities set wikidata_id = 'Q49111', country = 'US', wikidata_checked_at = now(), wikidata_p = 0.9 where name = 'Cambridge'`);
+const unenrich = async () => db.query(`update entities set wikidata_id = null, country = null, wikidata_checked_at = null, wikidata_p = null where name = 'Cambridge'`);
+const cam = (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by) values ('qa-enrich', 'merge', $1, 'Cambridge MA', $2, 'Cambridge', 'claude') returning id`, [await id("Cambridge MA"), await id("Cambridge")])).id;
+await db.query(`select apply_entity_edit($1)`, [cam]);
+assert.ok((await one(`select snapshot -> 'into_after' a from entity_edits where id = $1`, [cam])).a, "the merge records what it left");
+await enrich();
+await assert.rejects(db.query(`select undo_entity_edit($1)`, [cam]), /enriched since/, "later enrichment blocks undo");
+assert.equal((await one(`select wikidata_id from entities where name = 'Cambridge'`)).wikidata_id, "Q49111", "and stays");
+// Only the lookup state changed (checked, nothing found) counts as well.
+await unenrich();
+await db.query(`update entities set wikidata_checked_at = now() where name = 'Cambridge'`);
+await assert.rejects(db.query(`select undo_entity_edit($1)`, [cam]), /enriched since/, "a later lookup blocks undo");
+// An edit applied before into_after was recorded falls back to the merge's own rule.
+await db.query(`update entity_edits set snapshot = snapshot - 'into_after' where id = $1`, [cam]);
+await enrich();
+await assert.rejects(db.query(`select undo_entity_edit($1)`, [cam]), /enriched since/, "older snapshots are guarded too");
+await unenrich();
+await db.query(`select undo_entity_edit($1)`, [cam]);
+assert.deepEqual(await dump(), enrichBefore, "unchanged since the merge, it undoes exactly");
+// A merge that filled the kept entity from the merged-away one undoes as long as nothing else changed it.
+await db.query(`update entities set country = 'US' where name = 'Cambridge MA'`);
+const filled = (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by) values ('qa-enrich', 'merge', $1, 'Cambridge MA', $2, 'Cambridge', 'claude') returning id`, [await id("Cambridge MA"), await id("Cambridge")])).id;
+await db.query(`select apply_entity_edit($1)`, [filled]);
+await db.query(`update entity_edits set snapshot = snapshot - 'into_after' where id = $1`, [filled]);
+await db.query(`select undo_entity_edit($1)`, [filled]);
+assert.equal((await one(`select country from entities where name = 'Cambridge'`)).country, null, "the filled country is given back");
 
 console.log("entity_sense: all checks pass");

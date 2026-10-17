@@ -252,14 +252,19 @@ export const WIKIDATA = Object.freeze({
   RETRYABLE_STATUSES: [429, 503],
   MAX_ATTEMPTS: 4,
   BACKOFF_BASE_MS: 2000,
+  // Wikidata API requests in flight at once per isolate, across every place,
+  // search language and description read (a request's retries hold its slot):
+  // Wikimedia asks clients not to run requests in parallel, and four at once
+  // drew 429s.
+  MAX_CONCURRENT_REQUESTS: 1,
 });
 
 // place-resolve: links place entities to Wikidata and to the place they are in.
 export const PLACE_RESOLVE = Object.freeze({
   PLACES_PER_RUN: 20,
   MAX_ENTITY_IDS: 50,
-  // One place at a time: Wikimedia asks API clients not to run requests in
-  // parallel, and four at once drew 429s.
+  // Places proposed at once. Their Wikidata requests are limited separately,
+  // by WIKIDATA.MAX_CONCURRENT_REQUESTS.
   FETCH_CONCURRENCY: 1,
   // How sure Jev must be of an item before it is taken.
   MATCH_MIN_P: 0.6,

@@ -1,5 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import { bestClaim, readItem, wikidata } from "./wikidata.ts";
+import { limited } from "./limit.ts";
+import { WIKIDATA } from "./constants.ts";
 
 const ref = (id: string, extra: Record<string, unknown> = {}) => ({ mainsnak: { datavalue: { value: { id } } }, rank: "normal", ...extra });
 const ENTITIES: Record<string, Record<string, unknown>> = {
@@ -58,4 +60,47 @@ Deno.test("an API error in a 200 body fails instead of finding nothing", async (
   let failed = false;
   await wd.search("Paris").catch(() => failed = true);
   assertEquals(failed, true);
+});
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 1));
+
+Deno.test("a gate lets `size` calls run at once across the functions it wraps, in order", async () => {
+  const gate = limited(2);
+  let running = 0, most = 0;
+  const order: string[] = [];
+  const work = (name: string) => async (fail = false) => {
+    running++;
+    most = Math.max(most, running);
+    order.push(name);
+    await tick();
+    running--;
+    if (fail) throw new Error(name);
+    return name;
+  };
+  const [a, b] = [gate(work("a")), gate(work("b"))];
+  const results = await Promise.allSettled([a(), b(true), a(), b(), a(true), b()]);
+  assertEquals(most, 2);
+  assertEquals(order, ["a", "b", "a", "b", "a", "b"]);
+  assertEquals(results.map((r) => r.status), ["fulfilled", "rejected", "fulfilled", "fulfilled", "rejected", "fulfilled"]);
+  // A rejected call gave its slot back: the gate still runs two at once.
+  most = 0;
+  await Promise.all([a(), b(), a()]);
+  assertEquals(most, 2);
+});
+
+Deno.test("every Wikidata request a reader makes shares one limit, searches and descriptions alike", async () => {
+  const { fetchJson } = fakeFetch();
+  let running = 0, most = 0;
+  const slow = async (url: string) => {
+    running++;
+    most = Math.max(most, running);
+    await tick();
+    running--;
+    return fetchJson(url);
+  };
+  // Two readers, as two overlapping runs in one isolate would have.
+  const [one, two] = [wikidata(slow, ["en", "fr"]), wikidata(slow, ["en", "fr"])];
+  const [hits] = await Promise.all([one.search("Tokyo"), two.search("Tokyo"), two.search("Paris")]);
+  await Promise.all(hits.map((h) => one.describe(h)));
+  assertEquals(most, WIKIDATA.MAX_CONCURRENT_REQUESTS);
 });
