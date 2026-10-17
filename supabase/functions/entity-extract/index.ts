@@ -1,7 +1,8 @@
 import "jsr:@supabase/functions-js@2/edge-runtime.d.ts";
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient, JsonValue } from "../_shared/jev.ts";
-import { isPresent, json, reporting } from "../_shared/helpers.ts";
+import { isPresent, json, reporting, sumBy } from "../_shared/helpers.ts";
+import { linksToEnrich, markEnriched } from "../_shared/enrich.ts";
 import { serveJev } from "../_shared/jev_function.ts";
 import { pool } from "../_shared/pool.ts";
 import { nameHints } from "../_shared/hints.ts";
@@ -379,7 +380,7 @@ async function processTitle(db: SupabaseClient, jev: JevClient, link: Link, dryR
   const { mentions, dropped, inputTokens } = await mentionsOf(db, jev, link, phrases, link.title);
   if (!dryRun) {
     await saveMentions(db, link.id, mentions, "title");
-    const { error } = await db.from("link_enrichment").upsert({ link_id: link.id, entities_at: new Date().toISOString() });
+    const { error } = await markEnriched(db, "entities", [link.id]);
     if (error) throw new Error(error.message);
   }
   return { link_id: link.id, title: link.title, found_in: "title", candidates: phrases.map((p) => p.surface), mentions, dropped, inputTokens };
@@ -439,7 +440,7 @@ async function processPage(db: SupabaseClient, jev: JevClient, link: Link, page:
     });
     if (contentError) throw new Error(contentError.message);
     await saveMentions(db, link.id, mentions, "page");
-    const { error } = await db.from("link_enrichment").upsert({ link_id: link.id, page_entities_at: new Date().toISOString() });
+    const { error } = await markEnriched(db, "page_entities", [link.id]);
     if (error) throw new Error(error.message);
   }
   return { link_id: link.id, title: link.title, found_in: "page", status: page.status, candidates: phrases.map((p) => p.surface), mentions, dropped, inputTokens };
@@ -651,7 +652,7 @@ async function evaluate(db: SupabaseClient, jev: JevClient, ids: string[] | null
     if (withText) result.text = text;
     results.push(result);
   }
-  const sum = (f: (r: Record<string, unknown>) => number) => results.reduce((s, r) => s + f(r), 0);
+  const sum = (f: (r: Record<string, unknown>) => number) => sumBy(results, f);
   const goldTotal = sum((r) => r.gold as number);
   const mention = (k: string) => sum((r) => ((r.mentions as Record<string, number> | undefined)?.[k] ?? 0));
   return {
@@ -694,16 +695,8 @@ async function linksById(db: SupabaseClient, ids: string[]): Promise<Link[]> {
   return data;
 }
 
-async function unprocessedLinks(db: SupabaseClient, step: "entities" | "page_entities", max: number): Promise<Link[]> {
-  const { data: rows, error } = await db.rpc("links_to_enrich", { step, max_results: max });
-  if (error) throw new Error(error.message);
-  const ids = (rows as { link_id: string }[]).map((r) => r.link_id);
-  if (!ids.length) return [];
-  const { data, error: linksError } = await db.from("links").select("id, title, url").in("id", ids);
-  if (linksError) throw new Error(linksError.message);
-  const byId = new Map((data as Link[]).map((l) => [l.id, l]));
-  return ids.flatMap((id) => byId.get(id) ?? []);
-}
+const unprocessedLinks = (db: SupabaseClient, step: "entities" | "page_entities", max: number) =>
+  linksToEnrich<Link>(db, step, max, "id, title, url");
 
 Deno.serve(serveJev({
   fn: "entity-extract",
@@ -724,9 +717,9 @@ Deno.serve(serveJev({
     const staged = dryRun ? 0 : await stageDrops(db, batch, results);
     return {
       links: results.length,
-      drops: results.reduce((n, r) => n + r.drops.length, 0),
+      drops: sumBy(results, (r) => r.drops.length),
       staged,
-      input_tokens: results.reduce((n, r) => n + r.inputTokens, 0),
+      input_tokens: sumBy(results, "inputTokens"),
       results: results.map(({ link_id, title, drops }) => ({
         link_id,
         title,
@@ -758,8 +751,8 @@ Deno.serve(serveJev({
     links: results.length,
     mentions: mentions.length,
     new_entities: mentions.filter((m) => m.decision === "new").length,
-    dropped: results.reduce((n, r) => n + r.dropped.length, 0),
-    input_tokens: results.reduce((s, r) => s + r.inputTokens, 0),
+    dropped: sumBy(results, (r) => r.dropped.length),
+    input_tokens: sumBy(results, "inputTokens"),
     results,
   };
 }));

@@ -12,6 +12,7 @@ import {
   serveIngest,
   upsertLink,
 } from "../_shared/ingest.ts";
+import { sumBy } from "../_shared/helpers.ts";
 import { INGEST, WEB_FEED } from "../_shared/constants.ts";
 
 // Any site's own RSS 2.0 or Atom feed: the enabled web_feed rows in sources,
@@ -123,6 +124,6 @@ Deno.serve(serveIngest(async (db, report) => {
     };
   }));
 
-  const total = (key: keyof (typeof feeds)[number]) => feeds.reduce((sum, feed) => sum + feed[key], 0);
+  const total = (key: keyof (typeof feeds)[number]) => sumBy(feeds, key);
   return { feeds: sources.length, fetched: total("fetched"), upserted: total("upserted"), withImage: total("withImage") };
 }));

@@ -11,6 +11,8 @@ import {
   upsertLink,
 } from "../_shared/ingest.ts";
 import { CalendarEvent, lastDay, parseCalendar } from "../_shared/ical.ts";
+import { markEnriched } from "../_shared/enrich.ts";
+import { sumBy } from "../_shared/helpers.ts";
 import { ICAL, INGEST } from "../_shared/constants.ts";
 
 // Public event calendars (iCalendar .ics): the enabled ical_feed rows in
@@ -127,7 +129,7 @@ async function recordDates(db: SupabaseClient, linkId: string, event: CalendarEv
     labeled_by: "ical",
   });
   if (eventError) report({ url, error: eventError.message });
-  const { error: markError } = await db.from("link_enrichment").upsert({ link_id: linkId, events_at: new Date().toISOString() });
+  const { error: markError } = await markEnriched(db, "events", [linkId]);
   if (markError) report({ url, error: markError.message });
 }
 
@@ -161,6 +163,6 @@ Deno.serve(serveIngest(async (db, report) => {
     };
   });
 
-  const total = (key: keyof (typeof feeds)[number]) => feeds.reduce((sum, feed) => sum + feed[key], 0);
+  const total = (key: keyof (typeof feeds)[number]) => sumBy(feeds, key);
   return { feeds: sources.length, fetched: total("fetched"), upserted: total("upserted"), withImage: total("withImage") };
 }));

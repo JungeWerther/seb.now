@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js@2/edge-runtime.d.ts";
 import { enabledSources, extractTag, mapSeries, present, serveIngest, upsertLink } from "../_shared/ingest.ts";
+import { sumBy } from "../_shared/helpers.ts";
 import { YOUTUBE } from "../_shared/constants.ts";
 
 // Each followed channel's public Atom feed (no auth) lists its latest 15
@@ -81,7 +82,7 @@ Deno.serve(serveIngest(async (db, report) => {
     return !error;
   });
 
-  const total = (key: keyof (typeof channels)[number]) => channels.reduce((sum, channel) => sum + channel[key], 0);
+  const total = (key: keyof (typeof channels)[number]) => sumBy(channels, key);
   return {
     fetched: total("fetched"),
     skippedShorts: total("skippedShorts"),

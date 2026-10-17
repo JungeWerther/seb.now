@@ -1,7 +1,8 @@
 import "jsr:@supabase/functions-js@2/edge-runtime.d.ts";
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
-import { isPresent, type Report, reporting } from "../_shared/helpers.ts";
+import { isPresent, type Report, reporting, sumBy } from "../_shared/helpers.ts";
+import { linksToEnrich, markEnriched } from "../_shared/enrich.ts";
 import { serveJev } from "../_shared/jev_function.ts";
 import { pool } from "../_shared/pool.ts";
 import { JEV, TOPIC_LABEL } from "../_shared/constants.ts";
@@ -157,28 +158,15 @@ async function saveLabels(db: SupabaseClient, results: Awaited<ReturnType<typeof
     ? await db.from("link_topics").upsert(rows, { onConflict: "link_id,topic_id", ignoreDuplicates: true })
     : { error: null };
   if (error) report({ write: error.message });
-  if (results.length) {
-    const at = new Date().toISOString();
-    const { error: markError } = await db.from("link_enrichment").upsert(results.map((r) => ({ link_id: r.link_id, topics_at: at })));
-    if (markError) report({ enrichment: markError.message });
-  }
+  const { error: markError } = await markEnriched(db, "topics", results.map((r) => r.link_id));
+  if (markError) report({ enrichment: markError.message });
   return error ? 0 : rows.length;
-}
-
-async function unlabelledLinks(db: SupabaseClient): Promise<Link[]> {
-  const { data: rows, error } = await db.rpc("links_to_enrich", { step: "topics", max_results: TOPIC_LABEL.LINKS_PER_RUN });
-  if (error) throw new Error(error.message);
-  const ids = (rows as { link_id: string }[]).map((r) => r.link_id);
-  if (!ids.length) return [];
-  const { data, error: linksError } = await db.from("links").select("id, title, url, description").in("id", ids);
-  if (linksError) throw new Error(linksError.message);
-  return data;
 }
 
 Deno.serve(serveJev({ fn: "topic-label", model: JEV.MODEL, maxLinkIds: TOPIC_LABEL.MAX_LINK_IDS }, async ({ db, jev, ids, dryRun, report }) => {
   const children = await loadTopics(db);
   const names = new Map([...children.values()].flat().map((t) => [t.id, t.name]));
-  const links = ids ? await linksById(db, ids) : await unlabelledLinks(db);
+  const links = ids ? await linksById(db, ids) : await linksToEnrich<Link>(db, "topics", TOPIC_LABEL.LINKS_PER_RUN, "id, title, url, description");
   const label = reporting(report, (link: Link) => ({ link_id: link.id }), (link) => labelLink(jev, link, children, names));
   const results = (await pool(links, TOPIC_LABEL.CONCURRENCY, label)).filter(isPresent);
 
@@ -186,8 +174,8 @@ Deno.serve(serveJev({ fn: "topic-label", model: JEV.MODEL, maxLinkIds: TOPIC_LAB
   return {
     links: results.length,
     labels_written: written,
-    input_tokens: results.reduce((s, r) => s + r.inputTokens, 0),
-    requests: results.reduce((s, r) => s + r.requests, 0),
+    input_tokens: sumBy(results, "inputTokens"),
+    requests: sumBy(results, "requests"),
     results,
   };
 }));
