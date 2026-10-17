@@ -64,8 +64,12 @@ export function readItem(entity: Json, languages: readonly string[]): WikidataIt
 }
 
 export function wikidata(fetchJson: Fetch, languages: readonly string[] = WIKIDATA.LANGUAGES) {
-  const api = (params: Record<string, string>) =>
-    fetchJson(`${WIKIDATA.API}?${new URLSearchParams({ format: "json", ...params })}`);
+  // Wikidata reports API errors in a 200 body; those must fail, not read as "nothing found".
+  const api = async (params: Record<string, string>) => {
+    const data = await fetchJson(`${WIKIDATA.API}?${new URLSearchParams({ format: "json", ...params })}`);
+    if (data.error) throw new Error(`Wikidata: ${JSON.stringify(data.error).slice(0, 200)}`);
+    return data;
+  };
 
   // Fetches the items not yet known in one request, and remembers them.
   const fetchItems = async (ids: string[]): Promise<Map<string, WikidataItem>> => {

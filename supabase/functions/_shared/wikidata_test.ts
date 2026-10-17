@@ -52,3 +52,10 @@ Deno.test("search keeps located items, and items are fetched once", async () => 
   await wd.item("Q3");
   assertEquals(urls.length, before);
 });
+
+Deno.test("an API error in a 200 body fails instead of finding nothing", async () => {
+  const wd = wikidata(() => Promise.resolve({ error: { code: "maxlag" } }), ["en"]);
+  let failed = false;
+  await wd.search("Paris").catch(() => failed = true);
+  assertEquals(failed, true);
+});

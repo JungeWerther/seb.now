@@ -62,7 +62,8 @@ async function fetchJson(url: string): Promise<Record<string, unknown>> {
 }
 
 async function placesById(db: SupabaseClient, ids: string[]): Promise<Place[]> {
-  const { data, error } = await db.from("entities").select("id, name, wikidata_id, country").in("id", ids);
+  // Only places: an explicit id of a person or a work is skipped, never placed.
+  const { data, error } = await db.from("entities").select("id, name, wikidata_id, country").in("id", ids).eq("kind", "place");
   if (error) throw new Error(error.message);
   return data as Place[];
 }
@@ -141,20 +142,28 @@ async function placeFor(db: SupabaseClient, wd: Wikidata, qid: string): Promise<
     .eq("kind", "place").ilike("name", item.label.replace(/[%_\\]/g, "\\$&"));
   if (error) throw new Error(error.message);
   const same = (named as { id: string; wikidata_id: string | null }[])[0];
-  if (same) {
-    if (same.wikidata_id) return null;
+  if (same && !same.wikidata_id) {
     const { error: claimError } = await db.from("entities").update({ wikidata_id: qid }).eq("id", same.id);
     if (claimError) throw new Error(claimError.message);
+    // A no-match lookup recorded before it had an item is void: look it up again.
+    const { error: resetError } = await db.from("entity_enrichment").delete().eq("entity_id", same.id);
+    if (resetError) throw new Error(resetError.message);
     return same.id;
   }
+  // Another place already has the name (names are unique per kind): this one is
+  // named with what tells it apart.
+  const name = same ? `${item.label} (${item.description ?? qid})` : item.label;
   const { data: created, error: insertError } = await db.from("entities")
-    .insert({ name: item.label, kind: "place", wikidata_id: qid, country: await wd.isoOf(item) })
+    .insert({ name, kind: "place", wikidata_id: qid, country: await wd.isoOf(item) })
     .select("id").single();
   if (insertError) throw new Error(insertError.message);
   return created.id;
 }
 
-async function save(db: SupabaseClient, wd: Wikidata, { place, item, p }: Pick) {
+async function save(db: SupabaseClient, wd: Wikidata, { place: queued, item, p }: Pick) {
+  // Re-read: an earlier save in this run may have linked this place as a parent.
+  const [place] = await placesById(db, [queued.id]);
+  if (!place) return { place: queued.name, skipped: "gone" };
   const outcome: Record<string, unknown> = { place: place.name, item: item?.id ?? null, p };
   if (item) {
     const holder = item.id !== place.wikidata_id ? await entityWithItem(db, item.id) : null;
@@ -174,7 +183,9 @@ async function save(db: SupabaseClient, wd: Wikidata, { place, item, p }: Pick) 
       if (parentId && parentId !== place.id) {
         const { error: locationError } = await db.from("entity_locations")
           .upsert({ entity_id: place.id, parent_id: parentId, labeled_by: "wikidata", p: p ?? 1 });
-        // A cycle in Wikidata's own claims is refused by the table; the place stays unplaced.
+        // A cycle in Wikidata's own claims is refused by the table and leaves the
+        // place unplaced; any other failure is an error, and the place is retried.
+        if (locationError && !/would make a cycle/.test(locationError.message)) throw new Error(locationError.message);
         outcome.parent = locationError ? `refused: ${locationError.message}` : (await wd.item(item.parent!))?.label;
       }
     }
