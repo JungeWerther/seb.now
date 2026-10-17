@@ -46,11 +46,11 @@ export async function enabledSources(
   return data ?? [];
 }
 
-// `row` without its null and undefined fields. Upserting a row that leaves a
+// `row` without its null, undefined and empty-string fields. Upserting a row that leaves a
 // column out keeps what's stored there, so a flaky image fetch keeps an
 // earlier cover and an undated item keeps the time it was first ingested.
 export function present(row: Row): Row {
-  return Object.fromEntries(Object.entries(row).filter(([, value]) => value !== null && value !== undefined));
+  return Object.fromEntries(Object.entries(row).filter(([, value]) => value !== null && value !== undefined && value !== ""));
 }
 
 // Upserts one links row, reporting a failure under `label`. The stored row's

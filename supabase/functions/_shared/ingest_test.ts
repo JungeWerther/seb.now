@@ -1,13 +1,17 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import { decodeEntities, extractTag, httpUrl, mapSeries, pastDate, present } from "./ingest.ts";
 
-Deno.test("present drops only null and undefined fields", () => {
-  assertEquals(present({ a: 1, b: null, c: undefined, d: "", e: 0, f: false }), { a: 1, d: "", e: 0, f: false });
+Deno.test("present drops null, undefined and empty-string fields", () => {
+  assertEquals(present({ a: 1, b: null, c: undefined, d: "", e: 0, f: false }), { a: 1, e: 0, f: false });
+  // An empty <published></published> must not become created_at: "".
+  assertEquals(present({ created_at: extractTag("<published> </published>", "published") }), {});
 });
 
 Deno.test("decodeEntities unwraps CDATA and decodes named and numeric entities", () => {
   assertEquals(decodeEntities(" <![CDATA[Foo &amp; Bar]]> &#x27;s&nbsp;&#8217; "), "Foo & Bar 's ’");
   assertEquals(decodeEntities("&lt;b&gt; &quot;x&quot; &amp;amp;"), '<b> "x" &amp;');
+  // Decoded once: a double-encoded entity stays one level encoded.
+  assertEquals(decodeEntities("Foo&amp;nbsp;Bar"), "Foo&nbsp;Bar");
 });
 
 Deno.test("extractTag reads the first tag, with or without attributes", () => {
