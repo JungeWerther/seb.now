@@ -184,7 +184,11 @@ async function save(db: SupabaseClient, wd: Wikidata, pick: Pick) {
     const holder = item.id !== place.wikidata_id ? await entityWithItem(db, item.id) : null;
     if (holder) {
       const batch = `${PLACE_RESOLVE.MERGE_BATCH_PREFIX}-${new Date().toISOString().slice(0, 10)}`;
-      const { error } = await db.from("entity_edits").insert({
+      // One proposal per pair, however often the place is looked at.
+      const { data: proposed, error: proposedError } = await db.from("entity_edits").select("id")
+        .eq("op", "merge").eq("entity_id", place.id).eq("into_id", holder.id).in("status", ["staged", "applied"]).limit(1);
+      if (proposedError) throw new Error(proposedError.message);
+      const { error } = (proposed as unknown[]).length ? { error: null } : await db.from("entity_edits").insert({
         batch, op: "merge", entity_id: place.id, entity_name: place.name, into_id: holder.id, into_name: holder.name,
         reason: `same Wikidata item ${item.id}`, decided_by: "jev", p,
       });
