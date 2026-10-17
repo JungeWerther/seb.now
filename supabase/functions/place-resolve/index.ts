@@ -187,8 +187,13 @@ async function save(db: SupabaseClient, wd: Wikidata, pick: Pick) {
       outcome.staged_merge_into = holder.name;
     } else {
       const iso = place.country ? null : await wd.isoOf(item);
-      const { error } = await db.from("entities").update({ wikidata_id: item.id, ...(iso ? { country: iso } : {}) }).eq("id", place.id);
+      // Only while still unlinked (or already this item): an overlapping run
+      // may have linked it as a parent since it was read, and that link wins.
+      const { data: linked, error } = await db.from("entities")
+        .update({ wikidata_id: item.id, ...(iso ? { country: iso } : {}) })
+        .eq("id", place.id).or(`wikidata_id.is.null,wikidata_id.eq.${item.id}`).select("id");
       if (error) throw new Error(error.message);
+      if (!(linked as unknown[]).length) return save(db, wd, { place, item: null, p: null });
       const parentId = item.parent ? await placeFor(db, wd, item.parent) : null;
       if (parentId && parentId !== place.id) {
         const { error: locationError } = await db.rpc("set_place_parent", { entity: place.id, parent: parentId, labeled_by: "wikidata" });
