@@ -338,6 +338,33 @@ marks the link. `POST {"link_ids": [...], "dry_run": true}` reports without
 writing. Events aren't entities yet: a listing's headings are headlines, not
 clean names, so merging them into `entities` (kind `event`) is a later step.
 
+**Reversible graph edits and where places are**
+(`20261017180000_entity_sense.sql`). Every judged change to the entity graph
+goes through `public.entity_edits` (service_role only): `drop_mention` (a
+mention that isn't one, "Tokyo" read out of "Palais de Tokyo"), `merge` (two
+entities that are one), and `keep` / `part_of` (a record that two alike names
+were judged different, or one a part of the other, so they aren't asked
+again). Rows are staged (`status = 'staged'`, a `batch` label, `decided_by`
+claude/jev/manual, a `reason`), reviewed, and applied one at a time with
+`select public.apply_entity_edit(id)`, which stores a `snapshot` of every row it
+touched; `public.undo_entity_edit(id)` puts them back exactly. A drop removes the
+`link_entities` row and the label witnesses it left in `identity_witnesses`. A
+merge repoints mentions, label witnesses, relations (self-loops between the two
+go), properties, event venues, sources and child locations to the kept entity,
+drops rows that would collide, keeps the old name as a `labeled_by = 'merge'`
+label witness so it still resolves, fills the kept entity's empty fields, and
+supersedes staged edits that are about the merged-away one. Nothing applies an
+edit automatically; the `/entity-sense` and `/entity-resolution` skills stage
+batches for review. Where a place is lives in `public.entity_locations` (one
+parent per entity, the parent a place, no cycles, both checked by trigger;
+public-read, `labeled_by` wikidata/jev/manual), never in its name: "is it in
+Tokyo?" is `public.place_within(place, container)`, a walk up
+`public.place_ancestors(entity)`. `public.entity_enrichment` records when an
+entity was last looked up on Wikidata (`wikidata_at`, `wikidata_p`), and
+`public.places_to_resolve(max_results)` lists the places never looked up, most
+mentioned first. QA: `tests/qa`, `npm run sense` (drop and merge each undone to
+an identical database, containment, the place and cycle checks).
+
 **The entity index — `index-snapshot` + `index_diff`.** So the page can match
 entity names and run filter queries itself (no request per keystroke or query),
 it keeps a copy of the entity index: every mentioned entity's name and kind, and
