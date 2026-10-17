@@ -15,6 +15,7 @@ A migration counts as applied when its version is in schema_migrations.
 import os
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "supabase" / "migrations"
@@ -23,15 +24,11 @@ MIGRATION_FILE = re.compile(r"^(\d{14})_([a-z0-9_]+)\.sql$")
 
 def migration_files(directory: Path = MIGRATIONS_DIR) -> list[tuple[str, str, Path]]:
     """(version, name, path) for every migration file, oldest first."""
-    found = []
-    for path in sorted(directory.glob("*.sql")):
-        match = MIGRATION_FILE.match(path.name)
-        if not match:
-            raise SystemExit(f"{path.name}: migration files are named <14-digit version>_<snake_name>.sql")
-        found.append((match.group(1), match.group(2), path))
-    versions = [version for version, _, _ in found]
-    duplicates = sorted({v for v in versions if versions.count(v) > 1})
-    if duplicates:
+    paths = sorted(directory.glob("*.sql"))
+    if misnamed := [path.name for path in paths if not MIGRATION_FILE.match(path.name)]:
+        raise SystemExit(f"{misnamed[0]}: migration files are named <14-digit version>_<snake_name>.sql")
+    found = [(*MIGRATION_FILE.match(path.name).groups(), path) for path in paths]
+    if duplicates := sorted(version for version, count in Counter(v for v, _, _ in found).items() if count > 1):
         raise SystemExit(f"two migration files share a version: {', '.join(duplicates)}")
     return found
 
