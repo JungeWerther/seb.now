@@ -232,4 +232,22 @@ await db.query(`select undo_entity_edit($1)`, [a]);
 await db.query(`select undo_entity_edit($1)`, [b]);
 assert.deepEqual(await dump(), orderBefore, "and both undo exactly");
 
+// Merging a place into the place it lies in undoes at once; and a later merge
+// of a place the merged-away one was in must be undone first.
+await db.exec(`insert into entities (name, kind) values ('Quartier','place'), ('Rue','place'), ('Ville','place'), ('Cité','place')`);
+await place(await id("Quartier"), await id("Ville"));
+await place(await id("Rue"), await id("Quartier"));
+const inner = (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by) values ('qa-anc', 'merge', $1, 'Rue', $2, 'Quartier', 'claude') returning id`, [await id("Rue"), await id("Quartier")])).id;
+await db.query(`select apply_entity_edit($1)`, [inner]);
+await db.query(`select undo_entity_edit($1)`, [inner]);
+assert.equal((await one(`select place_within($1, $2) b`, [await id("Rue"), await id("Quartier")])).b, true, "an immediate undo of a merge into its own container works");
+const viaAnc = (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by) values ('qa-anc', 'merge', $1, 'Rue', $2, 'Cité', 'claude') returning id`, [await id("Rue"), await id("Cité")])).id;
+await db.query(`select apply_entity_edit($1)`, [viaAnc]);
+const ancMerge = (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by) values ('qa-anc', 'merge', $1, 'Quartier', $2, 'Ville', 'claude') returning id`, [await id("Quartier"), await id("Ville")])).id;
+await db.query(`select apply_entity_edit($1)`, [ancMerge]);
+await assert.rejects(db.query(`select undo_entity_edit($1)`, [viaAnc]), /later applied edits/, "an ancestor merged later orders the undos");
+await db.query(`select undo_entity_edit($1)`, [ancMerge]);
+await db.query(`select undo_entity_edit($1)`, [viaAnc]);
+assert.equal((await one(`select place_within($1, $2) b`, [await id("Rue"), await id("Quartier")])).b, true, "and Rue is back inside Quartier");
+
 console.log("entity_sense: all checks pass");

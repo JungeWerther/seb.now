@@ -196,7 +196,8 @@ begin
   where c.id <> f and (c.id = t
     or c.place_path operator(extensions.<@) public.place_self(f)
     or c.place_path operator(extensions.<@) public.place_self(t));
-  if (select place_path is null from public.entities where id = t) and public.place_parent(f) is not null then
+  if (select place_path is null from public.entities where id = t) and public.place_parent(f) is not null
+     and public.place_parent(f) <> t then
     perform public.set_place_parent(t, public.place_parent(f), (snap -> 'entity' ->> 'place_labeled_by'));
   end if;
   update public.entities c
@@ -204,11 +205,11 @@ begin
     extensions.subpath(c.place_path, extensions.nlevel(public.place_self(f)))
   where c.id <> f and c.place_path operator(extensions.<@) public.place_self(f);
   moved := moved || jsonb_build_object('place_paths', placed);
-  -- The target's place and everything inside it as left by this merge: undo
-  -- refuses if a later placement changed them.
-  snap := snap || jsonb_build_object('places_after', public.place_subtree(t));
 
   delete from public.entities where id = f;
+  -- The target's place and everything inside it as left by this merge (the
+  -- merged-away entity gone): undo refuses if a later placement changed them.
+  snap := snap || jsonb_build_object('places_after', public.place_subtree(t));
   update public.entities keep
   set nace_code = coalesce(keep.nace_code, (snap -> 'entity' ->> 'nace_code')),
       country = coalesce(keep.country, (snap -> 'entity' ->> 'country')),
@@ -233,6 +234,10 @@ begin
     -- Every entity whose rows this merge changed, for undo's ordering check.
     'touched', (select jsonb_agg(distinct x) from (
       select f::text x union select t::text union select p ->> 'id' from jsonb_array_elements(placed) p
+      -- The places the merged-away entity was in: undo puts it back under them.
+      union select a.id::text from public.entities a
+        where ('e' || a.seq)::extensions.ltree operator(extensions.<@) (snap -> 'entity' ->> 'place_path')::extensions.ltree
+          and a.id <> f
       union select e ->> 'entity_id' from jsonb_array_elements(snap -> 'edits') e
       union select e ->> 'into_id' from jsonb_array_elements(snap -> 'edits') e where e ->> 'into_id' is not null) u));
 end;
@@ -249,6 +254,9 @@ declare
   edit public.entity_edits;
   snap jsonb;
 begin
+  -- The placement lock comes first, before the edit row, in apply and undo
+  -- alike, so concurrent edits can't wait on each other in opposite orders.
+  perform pg_advisory_xact_lock(hashtext('public.entities.place_path'));
   select * into edit from public.entity_edits where id = edit_id for update;
   if not found then raise exception 'no edit %', edit_id; end if;
   if edit.status <> 'staged' then raise exception 'edit % is %, not staged', edit_id, edit.status; end if;
@@ -275,6 +283,7 @@ declare
   f uuid;
   t uuid;
 begin
+  perform pg_advisory_xact_lock(hashtext('public.entities.place_path'));
   select * into edit from public.entity_edits where id = edit_id for update;
   if not found then raise exception 'no edit %', edit_id; end if;
   if edit.status <> 'applied' then raise exception 'edit % is %, not applied', edit_id, edit.status; end if;
