@@ -3,6 +3,7 @@ import { memoize, once } from "../_shared/memo.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { constant, retry } from "../_shared/retry.ts";
 import { ACTIVITYPUB, ENV } from "../_shared/constants.ts";
+import { jsonResponses } from "../_shared/helpers.ts";
 
 // Real ActivityPub backend for the site: the DO Functions proxy forwards
 // <site>/.well-known/webfinger and <site>/ap/inbox here, and a DO ingress
@@ -367,9 +368,7 @@ async function verifyCavageSignature(req: Request, rawBody: string): Promise<Sig
 // Route handlers
 // ---------------------------------------------------------------------------
 
-function json(body: unknown, status: number, contentType = "application/json"): Response {
-  return new Response(JSON.stringify(body, null, 2), { status, headers: { "Content-Type": contentType } });
-}
+const json = jsonResponses({ indent: 2 });
 
 async function handleWebfinger(req: Request): Promise<Response> {
   const resource = new URL(req.url).searchParams.get("resource") ?? "";

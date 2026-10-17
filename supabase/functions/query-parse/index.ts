@@ -3,6 +3,7 @@ import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
 import { memoize, once } from "../_shared/memo.ts";
 import { ENV, JEV, QUERY_PARSE } from "../_shared/constants.ts";
+import { jsonResponses } from "../_shared/helpers.ts";
 
 // Reads what the search box is asking for, as the reader types: the page
 // proposes the topics whose names match the text (it holds the whole topic
@@ -57,9 +58,7 @@ interface Topic {
 type Reading = Awaited<ReturnType<typeof parse>>;
 
 
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
-}
+const json = jsonResponses({ headers: CORS });
 
 const admin: SupabaseClient = createClient(ENV.SUPABASE_URL, ENV.SUPABASE_SERVICE_ROLE_KEY);
 

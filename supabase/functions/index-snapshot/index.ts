@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { encodeSnapshot, type RawSnapshot } from "../_shared/index_snapshot.ts";
 import { ENV, INDEX_SNAPSHOT } from "../_shared/constants.ts";
+import { jsonResponses } from "../_shared/helpers.ts";
 
 // Builds the snapshot of the entity index the page keeps for itself (see
 // 20261016210000_entity_index.sql) and uploads it, gzipped, to the public
@@ -26,9 +27,7 @@ async function gzip(text: string): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-}
+const json = jsonResponses();
 
 Deno.serve(async (req: Request) => {
   const db = createClient(ENV.SUPABASE_URL, ENV.SUPABASE_SERVICE_ROLE_KEY);

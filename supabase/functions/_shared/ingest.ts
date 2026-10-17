@@ -5,10 +5,10 @@
 
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ENV, INGEST } from "./constants.ts";
+import { json, type Report, type Row } from "./helpers.ts";
 
 
-export type Report = (error: Record<string, unknown>) => void;
-export type Row = Record<string, unknown>;
+export type { Report, Row };
 
 // Runs `ingest` with a service_role client and an error sink, and answers
 // with its summary plus every error reported along the way.
@@ -19,9 +19,7 @@ export function serveIngest(
     const db = createClient(ENV.SUPABASE_URL, ENV.SUPABASE_SERVICE_ROLE_KEY);
     const errors: Row[] = [];
     const summary = await ingest(db, (error) => errors.push(error));
-    return new Response(JSON.stringify({ ...summary, errors }, null, 2), {
-      headers: { "Content-Type": "application/json" },
-    });
+    return json({ ...summary, errors });
   };
 }
 

@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ENV, MCP } from "../_shared/constants.ts";
+import { jsonResponses } from "../_shared/helpers.ts";
 
 // An MCP server (Streamable HTTP transport, stateless: every POST carries one
 // JSON-RPC message and gets one JSON response, no SSE stream). Hand-rolled
@@ -655,12 +656,7 @@ async function dispatch(message: Row, ctx: Context): Promise<Row | null> {
   }
 }
 
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-  });
-}
+const json = jsonResponses({ headers: CORS_HEADERS });
 
 // RFC 9728 protected-resource metadata: tells an MCP client which
 // authorization server issues tokens for the signed-in endpoint.

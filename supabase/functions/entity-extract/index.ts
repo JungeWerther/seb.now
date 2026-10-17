@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient, JsonValue } from "../_shared/jev.ts";
-import { isPresent, reporting } from "../_shared/helpers.ts";
+import { isPresent, json, reporting } from "../_shared/helpers.ts";
 import { serveJev } from "../_shared/jev_function.ts";
 import { pool } from "../_shared/pool.ts";
 import { nameHints } from "../_shared/hints.ts";
@@ -502,7 +502,7 @@ Deno.serve(serveJev({
   const started = Date.now();
   if (body.eval === true) {
     const evaluation = await evaluate(db, jev, ids, body.decide === true, body.text === true);
-    return new Response(JSON.stringify(evaluation, null, 2), { headers: { "Content-Type": "application/json" } });
+    return json(evaluation);
   }
 
   // One link at a time, so an entity a link creates is matchable by the next.
