@@ -820,7 +820,8 @@ line), shown in the kind band (`showKindHead`).
 
 **A topic's own page.** Every topic has a page at `seb.now/t/<path>` (its ltree
 id, `ai.agents`), on the same focused view (`focusTopic`): the band shows
-`#focus-topic` (name, path, post count and the topic's `description`) and the
+`#focus-topic` (name; "a kind of" the topic one level up, a link to that page;
+path, post count and the topic's `description`) and the
 list is every link labelled with the topic or one of its children, newest
 first, from `public.topic_links(topic, max_results, page_offset)` (security
 invoker, `topic` passed as text and cast to `ltree`; the count comes from

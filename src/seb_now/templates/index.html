@@ -872,8 +872,8 @@
       overflow-wrap: anywhere;
     }
     #focus-entity-meta, #focus-topic-meta, #focus-kind-meta { margin: 0; font-size: 0.8rem; color: gray; }
-    #focus-entity-meta a, #focus-kind-meta a { color: inherit; }
-    #focus-entity-meta a:hover, #focus-kind-meta a:hover { color: var(--fg); }
+    #focus-entity-meta a, #focus-topic-meta a, #focus-kind-meta a { color: inherit; }
+    #focus-entity-meta a:hover, #focus-topic-meta a:hover, #focus-kind-meta a:hover { color: var(--fg); }
     #focus-topic-description, #focus-kind-description { margin: 0.5rem 0 0; font-size: 0.85rem; color: #b8b8b8; max-width: 40rem; }
     #focus-topic-description:empty, #focus-kind-description:empty { display: none; }
     /* On a topic's or an entity's page, top right opposite ← Feed and
@@ -2736,8 +2736,8 @@
       return `${day(a)} ${time(a)} – ${a.toDateString() === new Date(b - 1).toDateString() ? "" : `${day(b)} `}${time(b)}`;
     }
 
-    // A topic's own page, seb.now/t/<path>: its name, path and definition on
-    // the band with a button that asks Claude for new sources covering it, and
+    // A topic's own page, seb.now/t/<path>: its name, the topic one level up
+    // (a link to its page), path and definition on the band with a button that asks Claude for new sources covering it, and
     // below it every link labelled with it or one of its children, newest
     // first (topic_links), a page at a time as you scroll.
     async function focusTopic(path, { name = "", push = true, saveFeed = true } = {}) {
@@ -2763,19 +2763,33 @@
       loadMore();
 
       const client = await supabaseReady;
-      const [{ data: topic, error }, { data: count }] = await Promise.all([
+      const parentPath = path.split(".").slice(0, -1).join(".");
+      const [{ data: topic, error }, { data: parent }, { data: count }] = await Promise.all([
         client.from("topics").select("name, description").eq("id", path).maybeSingle(),
+        parentPath
+          ? client.from("topics").select("id, name").eq("id", parentPath).maybeSingle()
+          : Promise.resolve({ data: null }),
         client.rpc("topic_link_count", { topic: path }),
       ]);
       if (generation !== focusGeneration) return;
       if (error || !topic) {
         focusTopicHead.hidden = true;
-      focusKindHead.hidden = true;
+        focusKindHead.hidden = true;
         focusStatus.textContent = error ? "Couldn't load this topic." : "This topic doesn't exist.";
       } else {
         document.getElementById("focus-topic-name").textContent = topic.name;
         const posts = count == null ? "" : ` · ${count} ${count === 1 ? "post" : "posts"}`;
-        document.getElementById("focus-topic-meta").textContent = `${path}${posts}`;
+        const meta = [];
+        if (parent) {
+          const link = document.createElement("a");
+          link.textContent = parent.name;
+          link.dataset.name = parent.name;
+          setTopicHref(link, parent.id);
+          meta.push("a kind of ", link, " · ");
+        } else {
+          meta.push("a top-level topic · ");
+        }
+        document.getElementById("focus-topic-meta").replaceChildren(...meta, `${path}${posts}`);
         document.getElementById("focus-topic-description").textContent = topic.description ?? "";
         findSources.href = findSourcesUrl(FIND_SOURCES_PROMPT, {
           name: topic.name,
