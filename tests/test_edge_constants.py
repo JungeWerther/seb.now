@@ -21,7 +21,13 @@ from pathlib import Path
 FUNCTIONS_DIR = Path(__file__).parent.parent / "supabase" / "functions"
 CONSTANTS_FILE = FUNCTIONS_DIR / "_shared" / "constants.ts"
 
-TOP_LEVEL_CONSTANT = re.compile(r"^(?:export )?const ([A-Z][A-Z0-9_]*)(?::[^=\n]+)? =\s*(\S)", re.M)
+# Comments between `=` and the value are skipped, so `= /* note */ 3` isn't
+# mistaken for a regex literal.
+TOP_LEVEL_CONSTANT = re.compile(
+    r"^(?:export\s+)?const\s+([A-Z][A-Z0-9_]*)\s*(?::[^=\n]+)?=(?!=)"
+    r"(?:\s|/\*[\s\S]*?\*/|//[^\n]*)*(\S)",
+    re.M,
+)
 ENV_READ = re.compile(r"\bDeno\.env\.get\(")
 
 ALLOWED = {
@@ -122,3 +128,14 @@ def test_environment_is_read_only_in_constants_ts() -> None:
 def test_detector_skips_regexes_and_finds_typed_constants() -> None:
     source = 'const A = 1;\nexport const B: number[] = [2];\nconst C =\n  /x/;\nconst d = 3;\n  const E = 4;\n'
     assert top_level_constants(source) == ["A", "B"]
+
+
+def test_detector_ignores_spacing_and_comments_before_the_value() -> None:
+    source = (
+        "const TIGHT=3;\n"
+        "export  const  SPACED =\t4;\n"
+        "const BLOCK = /* per-run limit */ 5;\n"
+        "const LINE = // per-run limit\n  6;\n"
+        "const PATTERN = /* a regex */ /x+/;\n"
+    )
+    assert top_level_constants(source) == ["TIGHT", "SPACED", "BLOCK", "LINE"]
