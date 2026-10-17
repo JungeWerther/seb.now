@@ -79,6 +79,12 @@ check("event (kind) + entity Event → superposed",
 check("events tomorrow in paris (plural, filler)",
   norm(page.typedFilter("events tomorrow in paris", [paris])).terms,
   [{ kind: "entity.event" }, { indexical: "tomorrow", at: "NOW" }, { entities: ["p1"] }]);
+const belfast = { id: "b1", seq: 5, name: "Belfast", kind: "place", kind_path: "entity.place" };
+const manOfTomorrow = { id: "w2", seq: 6, name: "Man of Tomorrow", kind: "work", kind_path: "entity.artifact.work" };
+const belfastTelegraph = { id: "c1", seq: 7, name: "Belfast Telegraph", kind: "company", kind_path: "entity.agent.org.company" };
+check("tomorrow in belfast → indexical ∧ place, longer partial names skipped",
+  norm(page.typedFilter("tomorrow in belfast", [belfast, manOfTomorrow, belfastTelegraph])).terms,
+  [{ indexical: "tomorrow", at: "NOW" }, { entities: ["b1"] }]);
 check("an unplaced word → not a filter", page.typedFilter("tonight jazz", []), null);
 check("this on the plain feed → not a filter", page.typedFilter("this tonight", []), null);
 check("typedIndexical('this') off-page → none", page.typedIndexical("this"), null);
