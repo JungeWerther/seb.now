@@ -1,4 +1,4 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import "jsr:@supabase/functions-js@2/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { encodeSnapshot, type RawSnapshot } from "../_shared/index_snapshot.ts";
 import { ENV, INDEX_SNAPSHOT } from "../_shared/constants.ts";

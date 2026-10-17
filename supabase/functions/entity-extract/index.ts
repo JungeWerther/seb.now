@@ -1,4 +1,4 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import "jsr:@supabase/functions-js@2/edge-runtime.d.ts";
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient, JsonValue } from "../_shared/jev.ts";
 import { isPresent, json, reporting } from "../_shared/helpers.ts";
@@ -393,7 +393,7 @@ function sectionTexts(page: PageContent): string[] {
 // says on its own ("Tokyo" after "Palais de Tokyo"): the page's own candidates
 // leave out everything the title says, so these are offered again with the
 // page sentence that says them.
-async function titleFragmentsOnPage(db: SupabaseClient, link: Link, known: Mention[], body: string, lang: string | null): Promise<Phrase[]> {
+async function titleFragmentsOnPage(db: SupabaseClient, link: Link, known: Mention[], body: string): Promise<Phrase[]> {
   if (!known.length || !body) return [];
   const titlePhrases = candidates(link.title, await nameHints(db, [link.title], null));
   return titlePhrases.flatMap((surface) => {
@@ -408,7 +408,7 @@ async function titleFragmentsOnPage(db: SupabaseClient, link: Link, known: Menti
 async function pagePhrases(db: SupabaseClient, link: Link, page: PageContent, known: Mention[], hints: NameHints): Promise<Phrase[]> {
   const ownPhrases = pageCandidates(page.sections, link.title, hints);
   const offered = new Set(ownPhrases.map((p) => p.surface.toLowerCase()));
-  const recovered = await titleFragmentsOnPage(db, link, known, sectionTexts(page).join("\n"), page.lang);
+  const recovered = await titleFragmentsOnPage(db, link, known, sectionTexts(page).join("\n"));
   return [...ownPhrases, ...recovered.filter((p) => !offered.has(p.surface.toLowerCase()))];
 }
 

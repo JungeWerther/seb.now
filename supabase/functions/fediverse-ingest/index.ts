@@ -1,4 +1,4 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import "jsr:@supabase/functions-js@2/edge-runtime.d.ts";
 import { decodeEntities, enabledSources, mapSeries, present, previewImage, serveIngest, upsertLink } from "../_shared/ingest.ts";
 import { FEDIVERSE } from "../_shared/constants.ts";
 
