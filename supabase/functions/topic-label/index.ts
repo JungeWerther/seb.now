@@ -1,6 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
+import { isPresent, type Report, reporting } from "../_shared/helpers.ts";
+import { serveJev } from "../_shared/jev_function.ts";
+import { pool } from "../_shared/pool.ts";
 
 // Labels links with leaf topics by walking the topic tree with Jev: at each
 // node one Choice over its children, keeping the BEAM_WIDTH best paths by
@@ -15,7 +18,6 @@ import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
 // (used to evaluate against the hand labels).
 
 const MODEL = "jev-1.13.0";
-const TYPESAFE_KEY_SECRET = "typesafe-ai-token";
 const BEAM_WIDTH = 3;
 const MAX_LABELS = 3;
 const MIN_LABEL_SCORE = 0.5;
@@ -149,16 +151,25 @@ async function labelLink(jev: JevClient, link: Link, children: Map<string, Topic
   return { link_id: link.id, title: link.title, labels, beam: beam.map(({ node, score }) => ({ node, score })), requests, inputTokens };
 }
 
-async function pool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let next = 0;
-  await Promise.all(Array.from({ length: Math.min(size, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      out[i] = await fn(items[i]);
-    }
-  }));
-  return out;
+async function linksById(db: SupabaseClient, ids: string[]): Promise<Link[]> {
+  const { data, error } = await db.from("links").select("id, title, url, description").in("id", ids);
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+// Writes the labels and marks every labelled link done; the labels written.
+async function saveLabels(db: SupabaseClient, results: Awaited<ReturnType<typeof labelLink>>[], report: Report): Promise<number> {
+  const rows = results.flatMap((r) => r.labels.map((l) => ({ link_id: r.link_id, ...l, labeled_by: "jev" })));
+  const { error } = rows.length
+    ? await db.from("link_topics").upsert(rows, { onConflict: "link_id,topic_id", ignoreDuplicates: true })
+    : { error: null };
+  if (error) report({ write: error.message });
+  if (results.length) {
+    const at = new Date().toISOString();
+    const { error: markError } = await db.from("link_enrichment").upsert(results.map((r) => ({ link_id: r.link_id, topics_at: at })));
+    if (markError) report({ enrichment: markError.message });
+  }
+  return error ? 0 : rows.length;
 }
 
 async function unlabelledLinks(db: SupabaseClient): Promise<Link[]> {
@@ -171,68 +182,19 @@ async function unlabelledLinks(db: SupabaseClient): Promise<Link[]> {
   return data;
 }
 
-Deno.serve(async (req: Request) => {
-  const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const body = await req.json().catch(() => ({}));
-  const dryRun = body?.dry_run === true;
-  const ids: unknown = body?.link_ids;
-  if (ids !== undefined && (!Array.isArray(ids) || ids.length > MAX_LINK_IDS || !ids.every((i) => typeof i === "string"))) {
-    return new Response(JSON.stringify({ error: `link_ids must be at most ${MAX_LINK_IDS} ids` }), { status: 400 });
-  }
-
-  const { data: apiKey, error: keyError } = await db.rpc("get_vault_secret", { secret_name: TYPESAFE_KEY_SECRET });
-  if (keyError || !apiKey) {
-    return new Response(JSON.stringify({ error: `no ${TYPESAFE_KEY_SECRET} in Vault` }), { status: 500 });
-  }
-  const jev = new JevClient(apiKey, MODEL, { db, fn: "topic-label", dryRun });
+Deno.serve(serveJev({ fn: "topic-label", model: MODEL, maxLinkIds: MAX_LINK_IDS }, async ({ db, jev, ids, dryRun, report }) => {
   const children = await loadTopics(db);
   const names = new Map([...children.values()].flat().map((t) => [t.id, t.name]));
+  const links = ids ? await linksById(db, ids) : await unlabelledLinks(db);
+  const label = reporting(report, (link: Link) => ({ link_id: link.id }), (link) => labelLink(jev, link, children, names));
+  const results = (await pool(links, CONCURRENCY, label)).filter(isPresent);
 
-  let links: Link[];
-  if (ids) {
-    const { data, error } = await db.from("links").select("id, title, url, description").in("id", ids as string[]);
-    if (error) throw new Error(error.message);
-    links = data;
-  } else {
-    links = await unlabelledLinks(db);
-  }
-
-  const errors: unknown[] = [];
-  const results = (await pool(links, CONCURRENCY, async (link) => {
-    try {
-      return await labelLink(jev, link, children, names);
-    } catch (e) {
-      errors.push({ link_id: link.id, error: String(e) });
-      return null;
-    }
-  })).filter((r) => r !== null);
-
-  let written = 0;
-  if (!dryRun) {
-    const rows = results.flatMap((r) => r!.labels.map((l) => ({ link_id: r!.link_id, ...l, labeled_by: "jev" })));
-    if (rows.length) {
-      const { error } = await db.from("link_topics").upsert(rows, { onConflict: "link_id,topic_id", ignoreDuplicates: true });
-      if (error) errors.push({ write: error.message });
-      else written = rows.length;
-    }
-    if (results.length) {
-      const at = new Date().toISOString();
-      const { error } = await db.from("link_enrichment").upsert(results.map((r) => ({ link_id: r!.link_id, topics_at: at })));
-      if (error) errors.push({ enrichment: error.message });
-    }
-  }
-
-  return new Response(
-    JSON.stringify({
-      model: MODEL,
-      dry_run: dryRun,
-      links: results.length,
-      labels_written: written,
-      input_tokens: results.reduce((s, r) => s + r!.inputTokens, 0),
-      requests: results.reduce((s, r) => s + r!.requests, 0),
-      errors,
-      results,
-    }, null, 2),
-    { headers: { "Content-Type": "application/json" } },
-  );
-});
+  const written = dryRun ? 0 : await saveLabels(db, results, report);
+  return {
+    links: results.length,
+    labels_written: written,
+    input_tokens: results.reduce((s, r) => s + r.inputTokens, 0),
+    requests: results.reduce((s, r) => s + r.requests, 0),
+    results,
+  };
+}));

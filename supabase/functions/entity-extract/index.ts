@@ -1,6 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient, JsonValue } from "../_shared/jev.ts";
+import { isPresent, reporting } from "../_shared/helpers.ts";
+import { serveJev } from "../_shared/jev_function.ts";
+import { pool } from "../_shared/pool.ts";
 import { nameHints } from "../_shared/hints.ts";
 import { fold, pageCandidates, WORD } from "../_shared/names.ts";
 import { fetchHtml, fetchPage, PageContent, pageText, readPage } from "../_shared/page.ts";
@@ -41,7 +44,6 @@ import { candidates } from "./candidates.ts";
 // "text": true adds the page text as read.
 
 const MODEL = "jev-1.13.0";
-const TYPESAFE_KEY_SECRET = "typesafe-ai-token";
 const NAME_MIN_P = 0.8;
 const MATCH_MIN_P = 0.5;
 const CANDIDATE_ENTITIES = 8;
@@ -483,6 +485,12 @@ async function createEntity(db: SupabaseClient, name: string, kind: Kind): Promi
   return same.id;
 }
 
+async function linksById(db: SupabaseClient, ids: string[]): Promise<Link[]> {
+  const { data, error } = await db.from("links").select("id, title, url").in("id", ids);
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 async function unprocessedLinks(db: SupabaseClient, step: "entities" | "page_entities", max: number): Promise<Link[]> {
   const { data: rows, error } = await db.rpc("links_to_enrich", { step, max_results: max });
   if (error) throw new Error(error.message);
@@ -494,67 +502,40 @@ async function unprocessedLinks(db: SupabaseClient, step: "entities" | "page_ent
   return ids.flatMap((id) => byId.get(id) ?? []);
 }
 
-Deno.serve(async (req: Request) => {
+Deno.serve(serveJev({
+  fn: "entity-extract",
+  model: MODEL,
+  maxLinkIds: MAX_LINK_IDS,
+  readOnly: (body) => body.eval === true,
+}, async ({ db, jev, ids, dryRun, body, report }) => {
   const started = Date.now();
-  const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const body = await req.json().catch(() => ({}));
-  const dryRun = body?.dry_run === true;
-  const ids: unknown = body?.link_ids;
-  if (ids !== undefined && (!Array.isArray(ids) || ids.length > MAX_LINK_IDS || !ids.every((i) => typeof i === "string"))) {
-    return new Response(JSON.stringify({ error: `link_ids must be at most ${MAX_LINK_IDS} ids` }), { status: 400 });
-  }
-  const { data: apiKey, error: keyError } = await db.rpc("get_vault_secret", { secret_name: TYPESAFE_KEY_SECRET });
-  if (keyError || !apiKey) {
-    return new Response(JSON.stringify({ error: `no ${TYPESAFE_KEY_SECRET} in Vault` }), { status: 500 });
-  }
-  const jev = new JevClient(apiKey, MODEL, { db, fn: "entity-extract", dryRun: dryRun || body?.eval === true });
-
-  if (body?.eval === true) {
-    const report = await evaluate(db, jev, (ids as string[] | undefined) ?? null, body?.decide === true, body?.text === true);
-    return new Response(JSON.stringify(report, null, 2), { headers: { "Content-Type": "application/json" } });
+  if (body.eval === true) {
+    const evaluation = await evaluate(db, jev, ids, body.decide === true, body.text === true);
+    return new Response(JSON.stringify(evaluation, null, 2), { headers: { "Content-Type": "application/json" } });
   }
 
-  let titleLinks: Link[];
-  if (ids) {
-    const { data, error } = await db.from("links").select("id, title, url").in("id", ids as string[]);
-    if (error) throw new Error(error.message);
-    titleLinks = data;
-  } else {
-    titleLinks = await unprocessedLinks(db, "entities", LINKS_PER_RUN);
-  }
-
-  const results = [];
-  const errors: unknown[] = [];
-  for (const link of titleLinks) {
-    try {
-      results.push(await processTitle(db, jev, link, dryRun));
-    } catch (e) {
-      errors.push({ link_id: link.id, found_in: "title", error: String(e) });
-    }
-  }
+  // One link at a time, so an entity a link creates is matchable by the next.
+  const titleLinks = ids ? await linksById(db, ids) : await unprocessedLinks(db, "entities", LINKS_PER_RUN);
+  const titles = await pool(titleLinks, 1, reporting(report, (link: Link) => ({ link_id: link.id, found_in: "title" }), (link) =>
+    processTitle(db, jev, link, dryRun)));
 
   const pageLinks = ids ? titleLinks : await unprocessedLinks(db, "page_entities", PAGE_LINKS_PER_RUN);
-  const pages = prefetch(pageLinks, fetchPage);
-  for (const [i, link] of pageLinks.entries()) {
-    if (!ids && Date.now() - started > RUN_BUDGET_MS) break;
-    try {
-      results.push(await processPage(db, jev, link, await pages[i], dryRun));
-    } catch (e) {
-      errors.push({ link_id: link.id, found_in: "page", error: String(e) });
-    }
-  }
-  const mentions = results.flatMap((r) => r.mentions);
-  return new Response(
-    JSON.stringify({
-      model: MODEL,
-      dry_run: dryRun,
-      links: results.length,
-      mentions: mentions.length,
-      new_entities: mentions.filter((m) => m.decision === "new").length,
-      input_tokens: results.reduce((s, r) => s + r.inputTokens, 0),
-      errors,
-      results,
-    }, null, 2),
-    { headers: { "Content-Type": "application/json" } },
+  const prefetched = prefetch(pageLinks, fetchPage);
+  const overBudget = () => !ids && Date.now() - started > RUN_BUDGET_MS;
+  const pageResults = await pool(
+    pageLinks.map((link, i) => ({ link, page: prefetched[i] })),
+    1,
+    reporting(report, ({ link }) => ({ link_id: link.id, found_in: "page" }), async ({ link, page }) =>
+      overBudget() ? null : processPage(db, jev, link, await page, dryRun)),
   );
-});
+
+  const results = [...titles, ...pageResults].filter(isPresent);
+  const mentions = results.flatMap((r) => r.mentions);
+  return {
+    links: results.length,
+    mentions: mentions.length,
+    new_entities: mentions.filter((m) => m.decision === "new").length,
+    input_tokens: results.reduce((s, r) => s + r.inputTokens, 0),
+    results,
+  };
+}));
