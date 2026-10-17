@@ -113,6 +113,10 @@ begin
   perform pg_advisory_xact_lock(hashtext('public.entities.place_path'));
   perform pg_advisory_xact_lock(hashtext(least(f, t)::text));
   perform pg_advisory_xact_lock(hashtext(greatest(f, t)::text));
+  -- Row locks on both: a concurrent insert referencing either (a new mention,
+  -- relation or location) takes a key-share lock on it, so it waits for this
+  -- merge and then fails on the deleted source instead of being cascaded away.
+  perform 1 from public.entities where id in (f, t) order by id for update;
   tname := (select name from public.entities where id = t);
   snap := jsonb_build_object(
     'entity', (select to_jsonb(e) from public.entities e where id = f),
@@ -236,7 +240,7 @@ begin
       select f::text x union select t::text union select p ->> 'id' from jsonb_array_elements(placed) p
       -- The places the merged-away entity was in: undo puts it back under them.
       union select a.id::text from public.entities a
-        where ('e' || a.seq)::extensions.ltree operator(extensions.<@) (snap -> 'entity' ->> 'place_path')::extensions.ltree
+        where extensions.index((snap -> 'entity' ->> 'place_path')::extensions.ltree, ('e' || a.seq)::extensions.ltree) >= 0
           and a.id <> f
       union select e ->> 'entity_id' from jsonb_array_elements(snap -> 'edits') e
       union select e ->> 'into_id' from jsonb_array_elements(snap -> 'edits') e where e ->> 'into_id' is not null) u));

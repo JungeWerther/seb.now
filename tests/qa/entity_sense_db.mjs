@@ -250,4 +250,18 @@ await db.query(`select undo_entity_edit($1)`, [ancMerge]);
 await db.query(`select undo_entity_edit($1)`, [viaAnc]);
 assert.equal((await one(`select place_within($1, $2) b`, [await id("Rue"), await id("Quartier")])).b, true, "and Rue is back inside Quartier");
 
+// The merged-away entity's own ancestors order the undos even when nothing
+// else links the two merges (A in P, B in unrelated Q; A→B, then P→R).
+await db.exec(`insert into entities (name, kind) values ('PP','place'), ('QQ','place'), ('RR','place'), ('AA','place'), ('BB','place')`);
+await place(await id("AA"), await id("PP"));
+await place(await id("BB"), await id("QQ"));
+const aToB = (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by) values ('qa-anc2', 'merge', $1, 'AA', $2, 'BB', 'claude') returning id`, [await id("AA"), await id("BB")])).id;
+await db.query(`select apply_entity_edit($1)`, [aToB]);
+const pToR = (await one(`insert into entity_edits (batch, op, entity_id, entity_name, into_id, into_name, decided_by) values ('qa-anc2', 'merge', $1, 'PP', $2, 'RR', 'claude') returning id`, [await id("PP"), await id("RR")])).id;
+await db.query(`select apply_entity_edit($1)`, [pToR]);
+await assert.rejects(db.query(`select undo_entity_edit($1)`, [aToB]), /later applied edits/, "merging away a former ancestor orders the undos");
+await db.query(`select undo_entity_edit($1)`, [pToR]);
+await db.query(`select undo_entity_edit($1)`, [aToB]);
+assert.equal((await one(`select place_within($1, $2) b`, [await id("AA"), await id("PP")])).b, true, "AA is back inside PP");
+
 console.log("entity_sense: all checks pass");
