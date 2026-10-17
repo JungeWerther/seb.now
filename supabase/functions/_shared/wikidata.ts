@@ -2,8 +2,12 @@
 // where it is: search by name, read items' labels, descriptions and the
 // claims that place them (P131 located in, P17 country, P297 ISO code, P625
 // coordinates). Items are memoized, so a run that meets "Paris" twenty times
-// fetches it once.
+// fetches it once. Every API call goes through one gate per isolate
+// (WIKIDATA.MAX_CONCURRENT_REQUESTS), however many places, searches and
+// descriptions are being read at once: Wikimedia asks clients not to run
+// requests in parallel.
 
+import { limited } from "./limit.ts";
 import { memoize } from "./memo.ts";
 import { WIKIDATA } from "./constants.ts";
 
@@ -22,6 +26,10 @@ export interface WikidataItem {
 
 type Json = Record<string, unknown>;
 type Fetch = (url: string) => Promise<Json>;
+
+// Shared by every reader in the isolate, so two runs (or two `wikidata()`
+// readers) never add up to more requests at once than the limit.
+const gate = limited(WIKIDATA.MAX_CONCURRENT_REQUESTS);
 
 interface Claim {
   rank?: string;
@@ -64,9 +72,11 @@ export function readItem(entity: Json, languages: readonly string[]): WikidataIt
 }
 
 export function wikidata(fetchJson: Fetch, languages: readonly string[] = WIKIDATA.LANGUAGES) {
+  // The caller's fetch, retries included, holds its slot until it settles.
+  const fetchGated = gate(fetchJson);
   // Wikidata reports API errors in a 200 body; those must fail, not read as "nothing found".
   const api = async (params: Record<string, string>) => {
-    const data = await fetchJson(`${WIKIDATA.API}?${new URLSearchParams({ format: "json", ...params })}`);
+    const data = await fetchGated(`${WIKIDATA.API}?${new URLSearchParams({ format: "json", ...params })}`);
     if (data.error) throw new Error(`Wikidata: ${JSON.stringify(data.error).slice(0, 200)}`);
     return data;
   };
