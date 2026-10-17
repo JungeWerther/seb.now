@@ -12,8 +12,8 @@ parent link is how the hierarchy shows. A page with no parent goes in
 A page that is itself a node of a tree (its parent link opens the same kind of
 page it is: a kind's parent is a kind, a topic's a topic) also lists its
 children, exactly one level below it, in its Kinds section via
-`showChildKinds`, the children taken from a one-level source
-(`ONE_LEVEL_SOURCES`).
+`showChildKinds(path, nodes, chipKind)`, passing its own `path`; the component
+itself keeps only the nodes one level below it, so no caller can list more.
 """
 
 import re
@@ -25,9 +25,6 @@ FLAT_PAGES = {
     "focusTerm": "a name's senses, each linked as a chip; the words have no parent",
     "focusOrder": "a sort order, which sits in no tree",
 }
-
-# Ways a page may find its children that only reach one level down.
-ONE_LEVEL_SOURCES = ("isChildPath(", 'rpc("topic_children"')
 
 # The identifiers a page function holds its own id or path in.
 RAW_IDS = ("path", "id", "term", "sort")
@@ -124,7 +121,21 @@ def _tree_pages(source: str) -> list[str]:
     return pages
 
 
-def test_every_tree_page_lists_its_children_one_level_down() -> None:
+def test_child_kinds_are_one_level_below_the_page() -> None:
+    source = _source()
+    assert re.search(
+        r"\.filter\(\(\{ id \}\) => isChildPath\(path\)\(id\)\)",
+        _function_body(source, "showChildKinds"),
+    ), "showChildKinds no longer keeps only the nodes one level below the page's path"
+    one_level = re.search(
+        r"const isChildPath = \(parent\) => \(child\) =>([^;]+);", source
+    )
+    assert one_level and 'split(".").length + 1' in one_level.group(1), (
+        "isChildPath no longer means exactly one level down"
+    )
+
+
+def test_every_tree_page_lists_its_children() -> None:
     source = _source()
     pages = _tree_pages(source)
     assert {"focusKind", "focusTopic"} <= set(pages), (
@@ -133,15 +144,14 @@ def test_every_tree_page_lists_its_children_one_level_down() -> None:
     missing = [
         page
         for page in pages
-        if not (
-            _calls(body := _function_body(source, page), "showChildKinds")
-            and any(src in body for src in ONE_LEVEL_SOURCES)
+        if not any(
+            re.match(r"\s*path\s*,", call)
+            for call in _calls(_function_body(source, page), "showChildKinds")
         )
     ]
     assert not missing, (
-        "These tree pages don't list their children one level below them: call "
-        "showChildKinds(children, chipKind) with children from one of "
-        f"{ONE_LEVEL_SOURCES}:\n" + "\n".join(missing)
+        "These tree pages don't list their children: call showChildKinds(path, nodes, chipKind) "
+        "with the page's own path:\n" + "\n".join(missing)
     )
 
 

@@ -2582,11 +2582,14 @@
     const isChildPath = (parent) => (child) =>
       child.startsWith(`${parent}.`) && child.split(".").length === parent.split(".").length + 1;
 
-    // A tree page's children, one level below it (a kind's subkinds, a
-    // topic's subtopics), as chips in its Kinds section; `chipKind` is the
-    // tree, which picks the page each chip opens.
-    function showChildKinds(children, chipKind) {
-      showFocusSection("focus-kinds", children.map(({ label, id }) => tagItem(label, "", chipKind, id)));
+    // A tree page's children, the `nodes` exactly one level below `path` (a
+    // kind's subkinds, a topic's subtopics), as chips in its Kinds section;
+    // `chipKind` is the tree, which picks the page each chip opens.
+    function showChildKinds(path, nodes, chipKind) {
+      showFocusSection(
+        "focus-kinds",
+        nodes.filter(({ id }) => isChildPath(path)(id)).map(({ label, id }) => tagItem(label, "", chipKind, id)),
+      );
     }
 
     // The band's bottom, in page coordinates, where its fade begins.
@@ -2817,7 +2820,7 @@
           count != null && countLabel(count, "post", "posts"),
         );
         document.getElementById("focus-topic-description").textContent = topic.description ?? "";
-        showChildKinds((children ?? []).map((c) => ({ label: c.name, id: c.id })), "topic");
+        showChildKinds(path, (children ?? []).map((c) => ({ label: c.name, id: c.id })), "topic");
         findSources.href = findSourcesUrl(FIND_SOURCES_PROMPT, {
           name: topic.name,
           path,
@@ -2880,10 +2883,7 @@
         count && countLabel(count.posts, "post", "posts"),
       );
       document.getElementById("focus-kind-description").textContent = kind.description ?? "";
-      showChildKinds(
-        kinds.filter((k) => isChildPath(path)(k.path)).map((k) => ({ label: k.label, id: k.path })),
-        "kind",
-      );
+      showChildKinds(path, kinds.map((k) => ({ label: k.label, id: k.path })), "kind");
       // Indexicals that pick out things of this kind ("tonight", a Period)
       // are listed first, ahead of its entities.
       await loadTopicIndex();

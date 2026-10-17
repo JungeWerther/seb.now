@@ -898,7 +898,8 @@ then its facts, joined by " · ", never its raw id or path.
 `tests/test_parent_links.py` enforces all three; pages with no parent (a post,
 a term, a sort order) are in its `FLAT_PAGES`. A page that is a node of
 a tree (a kind, a topic) also lists its children one level below it in its
-Kinds section through `showChildKinds`, which the same test enforces.
+Kinds section through `showChildKinds(path, nodes, chipKind)`, which itself keeps only the
+nodes one level below `path`; the same test enforces both.
 
 **A kind's own page.** Every entity kind has a page at `seb.now/k/<path>` (its
 path in `public.kinds`, `entity.agent.org.company`), on the same focused view
