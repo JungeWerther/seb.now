@@ -242,13 +242,20 @@ export const WIKIDATA = Object.freeze({
   ISO_CODE: "P297",
   COORDINATES: "P625",
   END_TIME: "P582",
+  // Wikimedia rate-limits busy clients with 429 (and 503 when overloaded):
+  // those are retried with growing waits, other failures aren't.
+  RETRYABLE_STATUSES: [429, 503],
+  MAX_ATTEMPTS: 4,
+  BACKOFF_BASE_MS: 2000,
 });
 
 // place-resolve: links place entities to Wikidata and to the place they are in.
 export const PLACE_RESOLVE = Object.freeze({
   PLACES_PER_RUN: 20,
   MAX_ENTITY_IDS: 50,
-  FETCH_CONCURRENCY: 4,
+  // One place at a time: Wikimedia asks API clients not to run requests in
+  // parallel, and four at once drew 429s.
+  FETCH_CONCURRENCY: 1,
   // How sure Jev must be of an item before it is taken.
   MATCH_MIN_P: 0.6,
   // Posts shown to Jev as where the place was mentioned.

@@ -4,6 +4,7 @@ import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
 import { isPresent, json, reporting } from "../_shared/helpers.ts";
 import { serveJev } from "../_shared/jev_function.ts";
 import { pool } from "../_shared/pool.ts";
+import { exponential, retry } from "../_shared/retry.ts";
 import { Wikidata, wikidata, WikidataItem } from "../_shared/wikidata.ts";
 import { ENTITY_EXTRACT, JEV, PLACE_RESOLVE, WIKIDATA } from "../_shared/constants.ts";
 
@@ -52,11 +53,21 @@ interface Pick {
   p: number | null;
 }
 
+// A Wikidata read, retried while Wikimedia says it is too busy.
+const fetchWithRetry = retry<Response>({
+  attempts: WIKIDATA.MAX_ATTEMPTS,
+  delayMs: exponential(WIKIDATA.BACKOFF_BASE_MS),
+  retryIf: (res) => WIKIDATA.RETRYABLE_STATUSES.includes(res.status),
+  onRetry: (res) => res.body?.cancel(),
+});
+
 async function fetchJson(url: string): Promise<Record<string, unknown>> {
-  const res = await fetch(url, {
-    headers: { "User-Agent": WIKIDATA.USER_AGENT, Accept: "application/json" },
-    signal: AbortSignal.timeout(WIKIDATA.FETCH_TIMEOUT_MS),
-  });
+  const { outcome: res } = await fetchWithRetry(() =>
+    fetch(url, {
+      headers: { "User-Agent": WIKIDATA.USER_AGENT, Accept: "application/json" },
+      signal: AbortSignal.timeout(WIKIDATA.FETCH_TIMEOUT_MS),
+    })
+  );
   if (!res.ok) throw new Error(`Wikidata ${res.status}`);
   return await res.json();
 }
