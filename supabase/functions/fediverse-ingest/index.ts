@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js@2/edge-runtime.d.ts";
 import { decodeEntities, enabledSources, mapSeries, present, previewImage, serveIngest, upsertLink } from "../_shared/ingest.ts";
+import { errorMessage, stripTags, truncate } from "../_shared/text.ts";
 import { FEDIVERSE } from "../_shared/constants.ts";
 
 // Public Mastodon REST API - no auth needed for public statuses. Not raw
@@ -20,7 +21,7 @@ type Status = {
 // real whitespace between spans - only block-level tags (p, br) represent
 // an actual word/sentence break, so only those become a space.
 function stripHtml(html: string): string {
-  const withBreaks = html.replace(/<\/(p|br)\s*\/?>/gi, " ").replace(/<[^>]+>/g, "");
+  const withBreaks = stripTags(html.replace(/<\/(p|br)\s*\/?>/gi, " "));
   return decodeEntities(withBreaks).replace(/\s+/g, " ");
 }
 
@@ -41,7 +42,7 @@ function titleFrom(status: { content: string; card?: { title?: string } | null }
   if (status.card?.title) return status.card.title;
   const text = stripHtml(status.content);
   if (!text) return `Post by ${displayName}`;
-  return text.length > 140 ? text.slice(0, 140) + "…" : text;
+  return truncate(text, FEDIVERSE.TITLE_MAX_CHARS, { atWord: false });
 }
 
 // Mastodon's card already carries a preview image when it generated one.
@@ -86,7 +87,7 @@ Deno.serve(serveIngest(async (db, report) => {
       });
       return { instance, handle, fetched: statuses.length, upserted: linkIds.filter(Boolean).length };
     } catch (e) {
-      report({ instance, handle, error: e instanceof Error ? e.message : String(e) });
+      report({ instance, handle, error: errorMessage(e) });
       return { instance, handle, fetched: 0, upserted: 0 };
     }
   });

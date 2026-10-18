@@ -13,6 +13,7 @@ import {
   upsertLink,
 } from "../_shared/ingest.ts";
 import { sumBy } from "../_shared/helpers.ts";
+import { errorMessage, stripTags, truncate } from "../_shared/text.ts";
 import { INGEST, WEB_FEED } from "../_shared/constants.ts";
 
 // Any site's own RSS 2.0 or Atom feed: the enabled web_feed rows in sources,
@@ -40,21 +41,18 @@ function atomLink(block: string): string | null {
 
 // Titles can carry markup (Atom type="html"); the feed shows plain text.
 function plainTitle(title: string): string {
-  return decodeEntities(title.replace(/<[^>]+>/g, "")).replace(/\s+/g, " ");
+  return decodeEntities(stripTags(title)).replace(/\s+/g, " ");
 }
 
 // A summary is usually escaped HTML: decoded once to get the markup, stripped,
 // then decoded again for the entities inside it. Cut at a word boundary.
 function plainDescription(raw: string | null): string | null {
   if (!raw) return null;
-  const text = decodeEntities(raw.replace(/<[^>]+>/g, " "))
+  const text = decodeEntities(stripTags(raw, " "))
     .replace(/\s+/g, " ")
     .replace(WORDPRESS_FOOTER, "")
     .trim();
-  if (text.length < WEB_FEED.DESCRIPTION_MIN_CHARS) return null;
-  if (text.length <= WEB_FEED.DESCRIPTION_MAX_CHARS) return text;
-  const cut = text.slice(0, WEB_FEED.DESCRIPTION_MAX_CHARS - 1);
-  return `${cut.slice(0, cut.lastIndexOf(" ") > 0 ? cut.lastIndexOf(" ") : cut.length)}…`;
+  return text.length < WEB_FEED.DESCRIPTION_MIN_CHARS ? null : truncate(text, WEB_FEED.DESCRIPTION_MAX_CHARS);
 }
 
 function parseFeed(xml: string, feedUrl: string): Item[] {
@@ -94,7 +92,7 @@ async function readFeed(feedUrl: string, report: Report): Promise<Item[]> {
     }
     return parseFeed(await res.text(), feedUrl);
   } catch (e) {
-    report({ feed: feedUrl, error: e instanceof Error ? e.message : String(e) });
+    report({ feed: feedUrl, error: errorMessage(e) });
     return [];
   }
 }

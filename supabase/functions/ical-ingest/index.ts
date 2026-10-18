@@ -13,6 +13,8 @@ import {
 import { CalendarEvent, lastDay, parseCalendar } from "../_shared/ical.ts";
 import { markEnriched } from "../_shared/enrich.ts";
 import { sumBy } from "../_shared/helpers.ts";
+import { pool } from "../_shared/pool.ts";
+import { errorMessage, truncate } from "../_shared/text.ts";
 import { ICAL, INGEST } from "../_shared/constants.ts";
 
 // Public event calendars (iCalendar .ics): the enabled ical_feed rows in
@@ -32,13 +34,6 @@ function eventPage(event: CalendarEvent): string | null {
   return event.url ?? httpUrl(event.description?.match(LUMA_PAGE_LINE)?.[1]);
 }
 
-function cut(text: string, max: number): string {
-  if (text.length <= max) return text;
-  const head = text.slice(0, max - 1);
-  const space = head.lastIndexOf(" ");
-  return `${space > 0 ? head.slice(0, space) : head}…`;
-}
-
 function plainDescription(raw: string | null): string | null {
   if (!raw) return null;
   const text = raw
@@ -47,7 +42,7 @@ function plainDescription(raw: string | null): string | null {
     .replace(LUMA_HOSTED_BY, "")
     .replace(/\s+/g, " ")
     .trim();
-  return text.length < ICAL.DESCRIPTION_MIN_CHARS ? null : cut(text, ICAL.DESCRIPTION_MAX_CHARS);
+  return text.length < ICAL.DESCRIPTION_MIN_CHARS ? null : truncate(text, ICAL.DESCRIPTION_MAX_CHARS);
 }
 
 // The place's name: LOCATION's first comma-separated part. An online event's
@@ -55,12 +50,12 @@ function plainDescription(raw: string | null): string | null {
 function venueName(location: string | null): string | null {
   if (!location || httpUrl(location)) return null;
   const name = location.split(",")[0].trim();
-  return name ? cut(name, ICAL.VENUE_MAX_CHARS) : null;
+  return name ? truncate(name, ICAL.VENUE_MAX_CHARS) : null;
 }
 
 function evidence(event: CalendarEvent): string {
   const when = [event.start, event.end].filter((t) => t).map((t) => `${t!.date}${t!.time ? ` ${t!.time}` : ""}`).join(" – ");
-  return cut([when, event.location].filter((s) => s).join(", "), ICAL.EVIDENCE_MAX_CHARS);
+  return truncate([when, event.location].filter((s) => s).join(", "), ICAL.EVIDENCE_MAX_CHARS);
 }
 
 function todayIn(zone: string): string {
@@ -75,18 +70,6 @@ function upcoming(events: CalendarEvent[]): CalendarEvent[] {
     .filter((e) => !e.cancelled && lastDay(e) >= today && e.start.instant.getTime() <= horizon)
     .sort((a, b) => a.start.instant.getTime() - b.start.instant.getTime())
     .slice(0, ICAL.EVENTS_PER_FEED);
-}
-
-async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let next = 0;
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      out[i] = await fn(items[i]);
-    }
-  }));
-  return out;
 }
 
 // Upcoming events with a page of their own, or none when the calendar can't be
@@ -105,7 +88,7 @@ async function readCalendar(feedUrl: string, report: Report): Promise<{ event: C
       .map((event) => ({ event, url: eventPage(event) }))
       .filter((e): e is { event: CalendarEvent; url: string } => !!e.url);
   } catch (e) {
-    report({ feed: feedUrl, error: e instanceof Error ? e.message : String(e) });
+    report({ feed: feedUrl, error: errorMessage(e) });
     return [];
   }
 }
@@ -142,11 +125,11 @@ Deno.serve(serveIngest(async (db, report) => {
     const events = (await readCalendar(feedUrl, report)).filter(({ url }) => !seen.has(url));
     events.forEach(({ url }) => seen.add(url));
 
-    const images = await mapLimit(events, ICAL.IMAGE_CONCURRENCY, ({ url }) => previewImage(url));
+    const images = await pool(events, ICAL.IMAGE_CONCURRENCY, ({ url }) => previewImage(url));
     const linkIds = await mapSeries(events, async ({ event, url }, i) => {
       const linkId = await upsertLink(db, {
         url,
-        title: cut(event.summary, ICAL.TITLE_MAX_CHARS),
+        title: truncate(event.summary, ICAL.TITLE_MAX_CHARS),
         origin: "feed",
         submitted_by: null,
         // Which followed calendar listed it; the database tags the link with it.

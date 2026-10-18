@@ -98,6 +98,8 @@ export const ICAL = Object.freeze({
 // fediverse-ingest.
 export const FEDIVERSE = Object.freeze({
   POSTS_PER_ACCOUNT: 10,
+  // A post's own text as its title: 140 characters and an ellipsis.
+  TITLE_MAX_CHARS: 141,
 });
 
 // _shared/page.ts: fetching and reading a link's page.
