@@ -16,8 +16,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from itertools import combinations
 
-from typesafe_sdk import JSONContent, TypeSafeClient
-
 from jev_fill import MAX_QUESTIONS_PER_REQUEST, Filled, SystemOneClient, chunks
 from terms import (
     EXTENSION_FORM,
@@ -29,6 +27,7 @@ from terms import (
     to_metta,
     typed_links,
 )
+from typesafe_sdk import JSONContent, TypeSafeClient
 
 MODEL = "jev-1.13.0"
 SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+")
@@ -108,9 +107,7 @@ def state_for(text: str, mentions: list[Mention], locate: Locate) -> str:
     return text if locate is Locate.WINDOW else marked_text(text, mentions)
 
 
-def pair_contexts(
-    text: str, mentions: list[Mention], locate: Locate
-) -> dict[str, dict[str, JSONContent]]:
+def pair_contexts(text: str, mentions: list[Mention], locate: Locate) -> dict[str, dict[str, JSONContent]]:
     return {
         f"{a.id}-{b.id}": {
             "reading": READING[locate],
@@ -121,9 +118,7 @@ def pair_contexts(
     }
 
 
-def mention_contexts(
-    text: str, mentions: list[Mention], locate: Locate
-) -> dict[str, dict[str, JSONContent]]:
+def mention_contexts(text: str, mentions: list[Mention], locate: Locate) -> dict[str, dict[str, JSONContent]]:
     reading = READING[locate].replace("`a` and `b` are phrases", "`phrase` is a phrase")
     return {m.id: {"reading": reading, "phrase": reference(text, m, locate)} for m in mentions}
 
@@ -148,10 +143,16 @@ def judge_text(
     mentions = find_mentions(text, phrases)
     state = state_for(text, mentions, locate)
     questions = {
-        **{k: q for key, ctx in mention_contexts(text, mentions, locate).items()
-           for k, q in KIND_FORM.questions(ctx, key).items()},
-        **{k: q for key, ctx in pair_contexts(text, mentions, locate).items()
-           for k, q in EXTENSION_FORM.questions(ctx, key).items()},
+        **{
+            k: q
+            for key, ctx in mention_contexts(text, mentions, locate).items()
+            for k, q in KIND_FORM.questions(ctx, key).items()
+        },
+        **{
+            k: q
+            for key, ctx in pair_contexts(text, mentions, locate).items()
+            for k, q in EXTENSION_FORM.questions(ctx, key).items()
+        },
     }
     answers = {}
     for batch in chunks(questions, MAX_QUESTIONS_PER_REQUEST):
