@@ -410,12 +410,32 @@ the CDN can cache it for a year, then records it in `public.index_state` and
 keeps the newest 3. `public.index_diff(link_seq, entity_seq, pair_seq)` (public)
 returns what was added past a watermark (mentions, their links' minutes, new or
 mentioned entities), plus the current `gen`, watermark, kinds and latest
-snapshot. Diffs only carry additions: deleting a mention or an entity, moving a
-mention to another entity (folding duplicates) or renaming or re-kinding an
-entity bumps `index_state.gen` (triggers; an upsert that only rewrites a
-mention's `p` doesn't), and a page whose copy is of an older gen reloads the
-snapshot, asking the database directly until a snapshot of the current gen
-exists. Over 2,000 new mentions also means reload.
+snapshot. **Removals and changes ride the diff too**
+(`20261018000300_index_changes.sql`, QA: `tests/qa`, `npm run index`): deleting a
+mention, an entity or a link, moving a mention to another entity (folding
+duplicates) or renaming or re-kinding an entity writes the keys it touched to
+`public.index_changes` (statement triggers with transition tables; an upsert
+that only rewrites a mention's `p` doesn't count), and
+`index_diff(link_seq, entity_seq, pair_seq, change_seq)` answers each key past
+the page's change watermark (`wm.c`, also in the snapshot) with its present
+state: `pairs`/`entities` for what exists, `unpairs`/`gone_entities`/`gone_links`
+for what doesn't. Answering with the present, not the history, makes a diff
+idempotent, so it is asked from `INDEX_DIFF_OVERLAP` below the watermark like
+additions; entities nothing mentions are left out, as in a snapshot. Each
+logging trigger bumps gen (taking `index_state`'s row lock) *before* allocating
+a change seq, so loggers allocate one transaction at a time and no watermark can
+pass a change that commits later; keep that order in any new logging trigger.
+Those triggers still bump `index_state.gen`, for pages from before the log (which
+reload on it) and for `index-snapshot`'s rebuild rule; a page with `wm.c` goes by
+`index_state.reset_gen` instead, the gen of the last bump the log can't carry —
+any gen update made outside those triggers (`index_state_reset` tells them apart
+by a transaction-local `seb.index_change` setting), such as `undo_entity_edit`
+restoring rows under their old seqs. A copy below `reset_gen`, over 2,000 new
+mentions or 2,000 changes behind, or with `wm.c` below
+`index_state.changes_pruned_seq` reloads the snapshot (one of at least
+`reset_gen`), asking the database directly until one exists. The log keeps its
+newest 10,000 changes, pruned by `index_snapshot_published`. Without
+`change_seq` the diff is the old additions-only one.
 
 A user's preference is derived, not stored: the
 `public.user_topic_preferences` view (`security_invoker`, so RLS on
@@ -659,8 +679,10 @@ on the page's own copy of the entity index once it has loaded (`entityIndex`,
 `INDEX_REFRESH_MS` while visible): the snapshot from the `index` bucket
 (decompressed with `DecompressionStream`, decoded by `decodeIndexSnapshot`) is
 kept in IndexedDB (`seb-now-index`) and brought up to date with `index_diff`,
-asked from `INDEX_DIFF_OVERLAP` below its watermark; a newer `gen` reloads the
-snapshot. `matchLocalEntities` is `match_entities` ported (same word rules, little
+asked from `INDEX_DIFF_OVERLAP` below its watermark and applied by
+`applyIndexDiff` (removals, then the present state); `indexCopyCurrent` decides
+between that and reloading the snapshot (`reset_gen` for a copy with `wm.c`, else
+gen equality, after which the copy takes the diff's `wm.c` on). `matchLocalEntities` is `match_entities` ported (same word rules, little
 words and ranking, seq instead of id on ties), with ids fetched by seq only for
 the matched entities (`withEntityIds`); `filterLocalLinks` is `filter_links`
 (`Filter.local` holds the terms with entity seqs, a term with several senses as
