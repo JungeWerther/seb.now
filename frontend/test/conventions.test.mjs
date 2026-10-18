@@ -141,16 +141,38 @@ test("Mapping and Cases tables are named <value>By<Key>", () => {
   assert.deepEqual(misnamed, []);
 });
 
+// The `if (… in …)` checks in `fn`'s own body: a nested function is checked
+// on its own.
+function fieldIfsIn(fn) {
+  let count = 0;
+  const visit = (node) => {
+    if (node !== fn && ts.isFunctionLike(node)) return;
+    if (ts.isIfStatement(node) && ts.isBinaryExpression(node.expression)
+      && node.expression.operatorToken.kind === ts.SyntaxKind.InKeyword) count++;
+    ts.forEachChild(node, visit);
+  };
+  visit(fn);
+  return count;
+}
+
+test("an if on a field counts for its own function only", () => {
+  const tree = ts.createSourceFile("t.ts", `function outer(xs: object[]) {
+    xs.map((x) => { if ("a" in x) return 1; return 0; });
+    xs.map((x) => { if ("b" in x) return 1; return 0; });
+  }
+  function chain(x: object) { if ("a" in x) return 1; if ("b" in x) return 2; return 0; }`, ts.ScriptTarget.Latest, true);
+  const counts = {};
+  walk(tree, (node) => { if (ts.isFunctionLike(node)) counts[nameOf(node) ?? "(anonymous)"] = fieldIfsIn(node); });
+  assert.equal(counts.outer, 0);
+  assert.equal(counts.chain, 2);
+});
+
 test("no if-chains on fields", () => {
   const chains = [];
   for (const { file, tree } of sources) {
     walk(tree, (node) => {
       if (!ts.isFunctionLike(node)) return;
-      let fieldIfs = 0;
-      walk(node, (inner) => {
-        if (ts.isIfStatement(inner) && ts.isBinaryExpression(inner.expression)
-          && inner.expression.operatorToken.kind === ts.SyntaxKind.InKeyword) fieldIfs++;
-      });
+      const fieldIfs = fieldIfsIn(node);
       if (fieldIfs > 1) chains.push(`${file} ${nameOf(node) ?? "(anonymous)"}: use Cases and match`);
     });
   }

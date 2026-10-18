@@ -2272,12 +2272,16 @@
       chronological: ({ query, cursor }) => fetchLinks({ query, before: cursor }),
     };
 
+    // One page of the feed. Only a page for the feed still showing (the same
+    // `generation`) moves its offset and cursor on.
     async function fetchPage() {
       // An indexical's or a term's page lists nothing until its filter is read
       // (or ever, for "this" read on no page).
       if ((feed.indexical || feed.term) && !feed.filter) return emptyPage();
+      const { generation } = feed;
       const field = Object.keys(pageFetcherByFeedField).find((key) => feed[key]);
       const page = await (field ? pageFetcherByFeedField[field](feed) : fetchRanked(feed.asOf, feed.offset));
+      if (generation !== feed.generation) return page;
       return Result.map(page, (p) => {
         feed.offset += p.count;
         if (p.cursor) feed.cursor = p.cursor;
