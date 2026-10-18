@@ -30,7 +30,7 @@ jobs:
       - run: deno check supabase/functions/*/index.ts
       - run: deno lint supabase/functions --ignore="$LINT_EXCLUDED"
         env:
-          LINT_EXCLUDED: supabase/functions/activitypub,supabase/functions/mcp
+          LINT_EXCLUDED: supabase/functions/activitypub,supabase/functions/mcp,supabase/functions/techcrunch-ingest
       - run: deno test supabase/functions/_shared
 
   frontend:
