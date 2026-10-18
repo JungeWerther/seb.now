@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import math
+import random
+import statistics
+import string
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -30,7 +33,11 @@ from phase_ngrams import (
 )
 
 D = 256
-NOISE = 4 / math.sqrt(2 * D)  # about 4 sd of Re⟨u, v⟩ for independent phasors
+SD = 1 / math.sqrt(
+    2 * D
+)  # sd of Re⟨u, v⟩ / D for independent phasors, and of a bundle's error
+SAMPLE = 300
+SEED = 0
 
 token = st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=6)
 name = st.lists(token, min_size=1, max_size=4).map(" ".join)
@@ -38,6 +45,27 @@ name = st.lists(token, min_size=1, max_size=4).map(" ".join)
 
 def close(u: list[complex], v: list[complex], tol: float = 1e-9) -> bool:
     return all(abs(a - b) <= tol for a, b in zip(u, v, strict=True))
+
+
+def random_tokens(rng: random.Random, n: int) -> list[str]:
+    """n distinct lowercase tokens from a fixed seed, so statistical checks are reproducible."""
+    out: set[str] = set()
+    while len(out) < n:
+        out.add("".join(rng.choices(string.ascii_lowercase, k=rng.randint(2, 6))))
+    return sorted(out)
+
+
+def random_names(rng: random.Random, n: int) -> list[str]:
+    return [" ".join(random_tokens(rng, rng.randint(1, 4))) for _ in range(n)]
+
+
+def looks_like_noise(values: list[float], sd: float) -> bool:
+    """Mean within 4 standard errors of 0 and sample sd within 25% of sd."""
+    mean = statistics.fmean(values)
+    return (
+        abs(mean) < 4 * sd / math.sqrt(len(values))
+        and abs(statistics.pstdev(values) / sd - 1) < 0.25
+    )
 
 
 def test_trigrams_are_pg_trgm_style() -> None:
@@ -80,17 +108,23 @@ def test_similarity_is_symmetric_bounded_and_reflexive(a: str, b: str) -> None:
     assert -1 - 1e-9 <= similarity(u, v) <= 1 + 1e-9
 
 
-@given(token, token)
-def test_distinct_tokens_are_nearly_orthogonal(s: str, t: str) -> None:
-    if s != t:
-        assert abs(similarity(phasor(s, D), phasor(t, D))) / D < NOISE
+def test_distinct_tokens_are_nearly_orthogonal() -> None:
+    pool = random_tokens(random.Random(SEED), 2 * SAMPLE)
+    sims = [
+        similarity(phasor(s, D), phasor(t, D)) / D
+        for s, t in zip(pool[::2], pool[1::2], strict=True)
+    ]
+    assert looks_like_noise(sims, SD)
 
 
-@settings(max_examples=30, deadline=None)
-@given(name, name)
-def test_bundle_similarity_estimates_set_cosine(a: str, b: str) -> None:
-    wa, wb = weights(a), weights(b)
-    assert abs(similarity(bundle(wa, D), bundle(wb, D)) - set_cosine(wa, wb)) < NOISE
+def test_bundle_similarity_estimates_set_cosine() -> None:
+    rng = random.Random(SEED)
+    errors = []
+    for a, b in zip(random_names(rng, SAMPLE), random_names(rng, SAMPLE), strict=True):
+        wa, wb = weights(a), weights(b)
+        errors.append(similarity(bundle(wa, D), bundle(wb, D)) - set_cosine(wa, wb))
+    assert abs(statistics.fmean(errors)) < 4 * SD / math.sqrt(SAMPLE)
+    assert math.sqrt(statistics.fmean(e * e for e in errors)) < 1.25 * SD
 
 
 @given(token, token, token)
@@ -110,23 +144,33 @@ def test_binding_with_one_key_keeps_similarity(a: str, b: str, key: str) -> None
     )
 
 
-@given(token, token)
-def test_a_bound_pair_is_unlike_its_parts(a: str, b: str) -> None:
-    x, y = phasor(a, D), phasor(b, D)
-    if a != b:
-        assert abs(similarity(bind(x, y), x)) / D < NOISE
+def test_a_bound_pair_is_unlike_its_parts() -> None:
+    pool = random_tokens(random.Random(SEED), 2 * SAMPLE)
+    pairs = zip(pool[::2], pool[1::2], strict=True)
+    sims = [
+        similarity(bind(phasor(a, D), phasor(b, D)), phasor(a, D)) / D for a, b in pairs
+    ]
+    assert looks_like_noise(sims, SD)
 
 
 @given(token, token)
-def test_a_plain_product_loses_order_but_ordered_bigram_keeps_it(
+def test_a_plain_product_commutes_but_ordered_bigram_is_bind_after_permute(
     a: str, b: str
 ) -> None:
-    assert close(bind(phasor(a, D), phasor(b, D)), bind(phasor(b, D), phasor(a, D)))
-    if a != b:
-        assert (
-            abs(similarity(ordered_bigram(a, b, D), ordered_bigram(b, a, D))) / D
-            < NOISE
-        )
+    x, y = phasor(a, D), phasor(b, D)
+    assert close(bind(x, y), bind(y, x))
+    assert close(ordered_bigram(a, b, D), bind(x, permute(y)))
+    assert close(unbind(ordered_bigram(a, b, D), permute(y)), x)
+
+
+def test_ordered_bigram_tells_the_two_orders_apart() -> None:
+    pool = random_tokens(random.Random(SEED), 2 * SAMPLE)
+    pairs = zip(pool[::2], pool[1::2], strict=True)
+    sims = [
+        similarity(ordered_bigram(a, b, D), ordered_bigram(b, a, D)) / D
+        for a, b in pairs
+    ]
+    assert looks_like_noise(sims, SD)
 
 
 def test_permute_is_a_cyclic_shift() -> None:
@@ -162,7 +206,7 @@ def test_rope_swap_costs_what_the_frequencies_predict() -> None:
     forward = encode_sequence(["apple", "beats", "uber"], D)
     swapped = encode_sequence(["uber", "beats", "apple"], D)
     expected = (1 + 2 * sum(math.cos(2 * w) for w in rope_frequencies(D)) / D) / 3
-    assert abs(similarity(forward, swapped) - expected) < NOISE
+    assert abs(similarity(forward, swapped) - expected) < 4 * SD
     assert similarity(forward, swapped) < 1 - 1e-3
 
 

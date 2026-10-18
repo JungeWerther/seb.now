@@ -181,9 +181,10 @@ class PhaseIndex:
         w = self.index.idf_vector() if self.use_idf else np.ones(len(ordered))
         table = token_phasors(ordered, self.d)
         raw = self.index.binary.multiply(w).tocsr() @ table
-        self.vectors = (raw / np.linalg.norm(raw, axis=1, keepdims=True)).astype(
-            np.complex64
-        )
+        norms = np.linalg.norm(raw, axis=1, keepdims=True)
+        self.vectors = np.divide(
+            raw, norms, out=np.zeros_like(raw), where=norms > 0
+        ).astype(np.complex64)
         self.table = table
 
     def encode(self, text: str) -> NDArray:
@@ -206,7 +207,7 @@ class PhaseIndex:
         return vec / n if n else vec
 
     def score(self, text: str) -> NDArray:
-        return (self.vectors.conj() @ self.encode(text)).real
+        return (self.vectors @ self.encode(text).conj()).real
 
     def self_check(self, sample: list[int]) -> float:
         idf = self.index.idf if self.use_idf else None

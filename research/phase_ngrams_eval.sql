@@ -35,10 +35,10 @@ r as (
        from entity_candidates(p.q, 9) with ordinality c(id, name, kind, description, example_title, similarity, ord)
        join entities e on e.id = c.id) ec,
     clock_timestamp() t1,
-    (select json_agg(json_build_array(z.seq, round(z.sim::numeric, 3)) order by z.sim desc, z.seq)
-       from (select e.seq, extensions.similarity(lower(e.name), lower(p.q)) sim from entities e
+    (select json_agg(json_build_array(z.seq, round(z.sim::numeric, 3)) order by z.sim desc, z.created_at)
+       from (select e.seq, e.created_at, extensions.similarity(lower(e.name), lower(p.q)) sim from entities e
              where lower(e.name) operator(extensions.%) lower(p.q) and e.kind <> 'source'
-             order by 2 desc, e.created_at limit 9) z) nm,
+             order by sim desc, e.created_at limit 9) z) nm,
     clock_timestamp() t2
   from p)
 select json_agg(json_build_array(src, q, tgt, self, ec, nm,
