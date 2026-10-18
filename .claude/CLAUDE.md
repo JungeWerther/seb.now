@@ -413,8 +413,13 @@ entity names and run filter queries itself (no request per keystroke or query),
 it keeps a copy of the entity index: every mentioned entity's name and kind, and
 which links mention it (`20261016210000_entity_index.sql`). Rows are counted by a
 `seq` identity column on `links`, `entities` and `link_entities`. The
-**`index-snapshot`** Edge Function (`9-59/10 * * * *`, does nothing when nothing
-changed since the last snapshot) calls `public.index_snapshot()` (service_role
+**`index-snapshot`** Edge Function (`9-59/10 * * * *`) builds a new snapshot only
+when `gen` moved on since the latest one, or when something was added and the
+latest is older than `INDEX_SNAPSHOT.MAX_AGE_MS` (an hour) or over
+`INDEX_SNAPSHOT.MAX_NEW_PAIRS` (1,000) mentions behind — pages catch up from it
+with `index_diff`, which carries nothing past 2,000 mentions asked from
+`INDEX_DIFF_OVERLAP` (500) below the watermark, so that cap must stay under
+1,500; otherwise it does nothing. It calls `public.index_snapshot()` (service_role
 only), delta-encodes it (`_shared/index_snapshot.ts`, which documents the format;
 keep the page's decoder in sync), gzips it and uploads it to the public `index`
 Storage bucket as `snapshots/<gen>-<l>-<e>-<p>.json.gz`, a new name each time so
