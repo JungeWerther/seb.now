@@ -20,6 +20,6 @@ export default tseslint.config(
   },
   {
     files: ["test/**/*.mjs", "eslint.config.js"],
-    languageOptions: { globals: { URL: "readonly", setTimeout: "readonly" } },
+    languageOptions: { globals: { URL: "readonly", setTimeout: "readonly", process: "readonly" } },
   },
 );

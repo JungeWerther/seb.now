@@ -5,9 +5,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
-const source = readFileSync(new URL("../../src/seb_now/templates/filter.js", import.meta.url), "utf8");
-const { Filter, filterKey, filterPageKey, nextFilterCursor, memoize } = vm.runInNewContext(
-  `${source}\n;({ Filter, filterKey, filterPageKey, nextFilterCursor, memoize })`,
+const compiled = (name) => readFileSync(new URL(`../../src/seb_now/templates/${name}.js`, import.meta.url), "utf8");
+const source = `${compiled("prelude")}\n${compiled("filter")}`;
+const { Filter, Result, filterKey, filterPageKey, nextFilterCursor, memoize } = vm.runInNewContext(
+  `${source}\n;({ Filter, Result, filterKey, filterPageKey, nextFilterCursor, memoize })`,
   { setTimeout },
 );
 
@@ -69,29 +70,32 @@ test("pages of one filter have different keys", () => {
 
 test("a page in flight is shared, then served from the cache", async () => {
   let calls = 0;
-  const load = memoize((k) => k, async (k) => { calls++; return `page ${k}`; });
+  const load = memoize((k) => k, async (k) => { calls++; return Result.ok(`page ${k}`); });
   const [a, b] = await Promise.all([load("x"), load("x")]);
-  assert.equal(a, "page x");
-  assert.equal(b, "page x");
+  assert.equal(a.data, "page x");
+  assert.equal(b.data, "page x");
   await load("x");
   assert.equal(calls, 1);
 });
 
-test("failed loads aren't cached", async () => {
+test("failed loads aren't cached, and a rejection comes back as a failure", async () => {
   let calls = 0;
-  const load = memoize((k) => k, async () => { calls++; return calls === 1 ? null : "ok"; });
-  assert.equal(await load("x"), null);
-  assert.equal(await load("x"), "ok");
-  const rejecting = memoize((k) => k, async () => { calls++; throw new Error("down"); });
-  await assert.rejects(rejecting("y"));
-  await assert.rejects(rejecting("y"));
-  assert.equal(calls, 4);
+  const down = new Error("down");
+  const load = memoize((k) => k, async () => { calls++; return calls === 1 ? Result.fail(down) : Result.ok("ok"); });
+  assert.equal((await load("x")).error, down);
+  assert.deepEqual(plain(await load("x")), { data: "ok", error: null });
+  const rejecting = memoize((k) => k, async () => { calls++; throw down; });
+  assert.equal((await rejecting("y")).error, down);
+  assert.equal((await rejecting("y")).data, null);
+  const throwing = memoize((k) => k, () => { calls++; throw "plain"; });
+  assert.equal((await throwing("z")).error.message, "plain");
+  assert.equal(calls, 5);
 });
 
 test("pages expire and the least recently used is evicted", async () => {
   let clock = 0;
   let calls = 0;
-  const load = memoize((k) => k, async (k) => { calls++; return k; }, { ttlMs: 10, maxEntries: 2, now: () => clock });
+  const load = memoize((k) => k, async (k) => { calls++; return Result.ok(k); }, { ttlMs: 10, maxEntries: 2, now: () => clock });
   await load("a");
   await load("b");
   await load("a"); // a is now the most recently used

@@ -3,9 +3,10 @@
 import { readFileSync } from "node:fs";
 
 const html = readFileSync(process.argv[2], "utf8");
-// Filter lives in frontend/src/filter.ts; site.py inlines its compiled script
-// into the page, so it's prepended here the same way.
-const filterJs = readFileSync(new URL("../../src/seb_now/templates/filter.js", import.meta.url), "utf8");
+// Filter lives in frontend/src/filter.ts (on prelude.ts); site.py inlines
+// their compiled scripts into the page, so they're prepended here the same way.
+const compiled = (name) => readFileSync(new URL(`../../src/seb_now/templates/${name}.js`, import.meta.url), "utf8");
+const filterJs = `${compiled("prelude")}\n${compiled("filter")}`;
 
 // The source of a top-level `function name(...) {...}` or `const name = ...;`.
 function grab(name) {

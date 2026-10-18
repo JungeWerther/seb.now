@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
-const source = readFileSync(new URL("../../src/seb_now/templates/senses.js", import.meta.url), "utf8");
+const compiled = (name) => readFileSync(new URL(`../../src/seb_now/templates/${name}.js`, import.meta.url), "utf8");
+const source = `${compiled("prelude")}\n${compiled("senses")}`;
 const { lexicon, claimNames, commonKindPath, senseLabel } = vm.runInNewContext(
   `${source}\n;({ lexicon, claimNames, commonKindPath, senseLabel })`,
 );

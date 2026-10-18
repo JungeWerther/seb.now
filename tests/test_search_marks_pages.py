@@ -47,10 +47,30 @@ def _tag_literals(body: str) -> list[str]:
     return [_balanced(body, m.start()) for m in re.finditer(r"\{\s*kind\b", body)]
 
 
+# A single sense's tag is built by its case in this table (`match`).
+SENSE_TAGS = "tagBySenseField"
+
+
+def _sense_tag_cases(source: str) -> list[str]:
+    match = re.search(rf"const {SENSE_TAGS} = \{{", source)
+    assert match, f"{SENSE_TAGS} not found in index.html"
+    table = _balanced(source, match.end() - 1)
+    starts = [m.start() for m in re.finditer(r"^\s+\w+: \(", table, re.MULTILINE)]
+    return [table[a:b] for a, b in zip(starts, [*starts[1:], len(table)], strict=True)]
+
+
+def _tag_sources(source: str) -> str:
+    return "\n".join([_function_body(source, "tagTokens"), *_sense_tag_cases(source)])
+
+
 def test_every_search_tag_has_a_page() -> None:
-    tags = _tag_literals(_function_body(_source(), "tagTokens"))
+    source = _source()
+    tags = _tag_literals(_function_body(source, "tagTokens"))
     assert tags, "tagTokens builds no tags — has it been renamed?"
-    missing = [tag for tag in tags if "page: markPage(" not in tag]
+    cases = _sense_tag_cases(source)
+    assert cases, f"{SENSE_TAGS} has no cases"
+    missing = [tag for tag in tags if "page: markPage(" not in tag and f"...match({SENSE_TAGS}" not in tag]
+    missing += [case for case in cases if "page: markPage(" not in case]
     assert not missing, (
         "These search-box highlights open no page — give each its own page and pass it as "
         "`page: markPage(name, setXHref, id)`:\n" + "\n".join(missing)
@@ -67,7 +87,7 @@ def test_every_search_mark_is_a_link() -> None:
 
 def test_every_page_a_tag_opens_is_routed() -> None:
     source = _source()
-    setters = set(re.findall(r"markPage\([^,]+,\s*(set\w+Href),", _function_body(source, "tagTokens")))
+    setters = set(re.findall(r"markPage\([^,]+,\s*(set\w+Href),", _tag_sources(source)))
     assert setters, "tagTokens names no set*Href"
     link_page = _function_body(source, "setupLinkPage")
     for setter in sorted(setters):

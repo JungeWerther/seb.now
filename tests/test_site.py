@@ -864,8 +864,10 @@ def test_render_inlines_the_compiled_filter_script_into_the_page_script() -> Non
     html = render([])
     script = html[html.index('<script type="module">') : html.index("</script>")]
 
+    assert "__PRELUDE_JS__" not in html
     assert "__FILTER_JS__" not in html
     assert "__SENSES_JS__" not in html
+    assert "const Result = {" in script and "function match(" in script
     assert "function filterKey(" in script and "const Filter = {" in script
     assert "function claimNames(" in script and "function senseLabel(" in script
     assert "const fetchServerFiltered = memoize(filterPageKey" in script
