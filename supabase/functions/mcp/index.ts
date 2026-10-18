@@ -127,7 +127,9 @@ const limit = integer({
   default: MCP.DEFAULT_LIMIT,
   description: `How many links to return (1-${MCP.MAX_LIMIT}).`,
 });
-const linkId = uuid({ description: "The link id, as returned by the other tools." });
+const linkIdSchema = { description: "The link id, as returned by the other tools." };
+const linkId = uuid(linkIdSchema);
+const paddedLinkId = uuid(linkIdSchema, { trimmedTo: MCP.MAX_QUERY_LENGTH });
 const strength = (description?: string) =>
   number({ exclusiveMinimum: 0, maximum: 1, default: 1, ...(description ? { description } : {}) });
 
@@ -393,7 +395,7 @@ const getLinkTool = tool({
   title: "Link details",
   description: "One link by id: its description, topics, vote counts and replies.",
   auth: "anon",
-  input: { id: linkId },
+  input: { id: paddedLinkId },
   annotations: readOnly,
   handler: async ({ id }, { db }) => {
     type Reply = { body: string; created_at: string; profiles: { handle: string | null } | null };
@@ -425,7 +427,7 @@ const voteTool = tool({
     "asked for it.",
   auth: "user",
   input: {
-    link_id: linkId,
+    link_id: paddedLinkId,
     vote: oneOf({ enum: ["up", "down", "clear"] }),
   },
   annotations: writes(true),

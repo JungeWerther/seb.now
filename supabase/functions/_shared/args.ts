@@ -78,9 +78,14 @@ export const string = (
       : fail(`${at} must be ${shape}`));
 };
 
-export const uuid = (schema: { description?: string } = {}) =>
-  field("string", schema, (value, at) =>
-    typeof value === "string" && UUID.test(value) ? value : fail(`${at} must be an id (a UUID)`));
+// `trimmedTo` first reads it as a trimmed string of at most that many characters.
+export const uuid = (schema: { description?: string } = {}, { trimmedTo }: { trimmedTo?: number } = {}) => {
+  const text = trimmedTo === undefined ? undefined : string({}, { maxLength: trimmedTo });
+  return field("string", schema, (value, at) => {
+    const id = text ? text.parse(value, at) : value;
+    return typeof id === "string" && UUID.test(id) ? id : fail(`${at} must be an id (a UUID)`);
+  });
+};
 
 export const oneOf = <const V extends readonly string[]>(schema: { enum: V; default?: V[number]; description?: string }) =>
   field("string", schema, (value, at) =>

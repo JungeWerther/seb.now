@@ -86,3 +86,14 @@ Deno.test("a missing or non-object value reads as an object without fields", () 
   assertEquals(defaults.parse("x", ""), { limit: 0 });
   assertEquals(defaults.schema, { type: "object", properties: { limit: { type: "integer", minimum: 0, default: 0 } } });
 });
+
+Deno.test("a uuid is strict unless it is read as a trimmed string first", () => {
+  const strict = uuid();
+  const padded = uuid({}, { trimmedTo: 40 });
+  assertThrows(() => strict.parse(` ${ID} `, "id"), InvalidArgs, "id must be an id (a UUID)");
+  assertEquals(padded.parse(` ${ID} `, "id"), ID);
+  assertThrows(() => padded.parse(`${ID}${" ".repeat(5)}`, "id"), InvalidArgs, "id must be a non-empty string of at most 40 characters");
+  assertThrows(() => padded.parse(undefined, "id"), InvalidArgs, "id must be a non-empty string of at most 40 characters");
+  assertThrows(() => padded.parse(" abc ", "id"), InvalidArgs, "id must be an id (a UUID)");
+  assertEquals(padded.schema, { type: "string" });
+});
