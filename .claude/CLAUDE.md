@@ -421,8 +421,11 @@ the page's change watermark (`wm.c`, also in the snapshot) with its present
 state: `pairs`/`entities` for what exists, `unpairs`/`gone_entities`/`gone_links`
 for what doesn't. Answering with the present, not the history, makes a diff
 idempotent, so it is asked from `INDEX_DIFF_OVERLAP` below the watermark like
-additions; entities nothing mentions are left out, as in a snapshot. Those
-triggers still bump `index_state.gen`, for pages from before the log (which
+additions; entities nothing mentions are left out, as in a snapshot. Each
+logging trigger bumps gen (taking `index_state`'s row lock) *before* allocating
+a change seq, so loggers allocate one transaction at a time and no watermark can
+pass a change that commits later; keep that order in any new logging trigger.
+Those triggers still bump `index_state.gen`, for pages from before the log (which
 reload on it) and for `index-snapshot`'s rebuild rule; a page with `wm.c` goes by
 `index_state.reset_gen` instead, the gen of the last bump the log can't carry —
 any gen update made outside those triggers (`index_state_reset` tells them apart

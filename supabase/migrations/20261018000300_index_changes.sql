@@ -60,6 +60,11 @@ create trigger index_state_reset
 before update on public.index_state
 for each row execute function public.index_state_reset();
 
+-- Every logging trigger calls this before it allocates any index_changes seq.
+-- The gen update takes index_state's row lock, held to commit, so loggers
+-- allocate seqs one transaction at a time: every seq still uncommitted is
+-- above every committed one, and no watermark (max seq read by a snapshot or
+-- a diff) can pass a change that commits later.
 create function public.index_change_bump()
 returns void
 language plpgsql
@@ -91,12 +96,12 @@ set search_path = public
 as $$
 begin
   if not exists (select 1 from gone) then return null; end if;
+  perform index_change_bump();
   insert into index_changes (link_seq, entity_seq)
   select l.seq, e.seq
   from gone g
   join links l on l.id = g.link_id
   join entities e on e.id = g.entity_id;
-  perform index_change_bump();
   return null;
 end
 $$;
@@ -123,6 +128,7 @@ begin
   ) then
     return null;
   end if;
+  perform index_change_bump();
   insert into index_changes (link_seq, entity_seq)
   select l.seq, e.seq
   from old_rows o
@@ -131,7 +137,6 @@ begin
   join links l on l.id = k.link_id
   join entities e on e.id = k.entity_id
   where o.link_id is distinct from n.link_id or o.entity_id is distinct from n.entity_id;
-  perform index_change_bump();
   return null;
 end
 $$;
@@ -150,13 +155,20 @@ security definer
 set search_path = public, extensions
 as $$
 begin
+  if not exists (
+    select 1 from old_rows o join new_rows n on n.id = o.id
+    where o.name is distinct from n.name or o.kind is distinct from n.kind
+      or o.kind_path is distinct from n.kind_path
+  ) then
+    return null;
+  end if;
+  perform index_change_bump();
   insert into index_changes (entity_seq)
   select n.seq
   from old_rows o
   join new_rows n on n.id = o.id
   where o.name is distinct from n.name or o.kind is distinct from n.kind
     or o.kind_path is distinct from n.kind_path;
-  if found then perform index_change_bump(); end if;
   return null;
 end
 $$;
@@ -174,8 +186,9 @@ security definer
 set search_path = public
 as $$
 begin
+  if not exists (select 1 from gone) then return null; end if;
+  perform index_change_bump();
   insert into index_changes (entity_seq) select seq from gone;
-  if found then perform index_change_bump(); end if;
   return null;
 end
 $$;
@@ -186,8 +199,10 @@ after delete on public.entities
 referencing old table as gone
 for each statement execute function public.index_log_entity_deleted();
 
--- Deleted links. Their mentions go by cascade, which bumps gen there; a link
--- nothing mentioned isn't in the index and needs no bump of its own.
+-- Deleted links. A link nothing mentioned isn't in the index, but this can't
+-- tell (its mentions are already gone by cascade), so it bumps gen like the
+-- others: index-snapshot then rebuilds rather than leave pages behind a log
+-- they would have to reload past.
 create function public.index_log_link_deleted()
 returns trigger
 language plpgsql
@@ -195,6 +210,8 @@ security definer
 set search_path = public
 as $$
 begin
+  if not exists (select 1 from gone) then return null; end if;
+  perform index_change_bump();
   insert into index_changes (link_seq) select seq from gone;
   return null;
 end

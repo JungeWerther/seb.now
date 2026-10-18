@@ -224,6 +224,33 @@ await check("pruning the log makes a page far behind reload", async () => {
   assert.equal((await diffFrom(now, 500)).reload, false);
 });
 
+await check("every logging trigger takes index_state's lock before it allocates a change seq", async () => {
+  // PGlite is one connection, so the race (a later seq committing while an
+  // earlier one is still open) can't be staged here; this pins the order that
+  // rules it out: the row lock is held to commit and taken before any insert.
+  const { rows } = await db.query(`select proname, prosrc from pg_proc where proname like 'index_log_%'`);
+  assert.equal(rows.length, 5);
+  for (const { proname, prosrc } of rows) {
+    const bump = prosrc.indexOf("perform index_change_bump()");
+    const insert = prosrc.indexOf("insert into index_changes");
+    assert.ok(bump >= 0 && insert > bump, `${proname} bumps before it logs`);
+  }
+});
+
+await check("deleting links nothing mentions moves gen, so index-snapshot rebuilds", async () => {
+  const before = await state();
+  await db.exec(`insert into links (title) select 'bare ' || i from generate_series(1, 2001) i`);
+  const wm = (await snapshot()).wm;
+  await db.exec(`delete from links where title like 'bare %'`);
+  const after = await state();
+  assert.ok(after.gen > before.gen, "gen moved");
+  assert.equal(after.reset_gen, before.reset_gen);
+  assert.equal((await diffFrom(wm)).reload, true, "over 2,000 changes behind");
+  const rebuilt = (await snapshot()).wm;
+  assert.equal(rebuilt.c, (await one(`select max(seq)::int as c from index_changes`)).c);
+  assert.equal((await diffFrom(rebuilt, 500)).reload, false, "a snapshot built now is usable");
+});
+
 await check("the migration bumped gen once as a reset", async () => {
   assert.equal(start.reset_gen, start.gen);
 });
