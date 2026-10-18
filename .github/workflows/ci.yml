@@ -29,7 +29,10 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - run: deno check supabase/functions/entity-extract/index.ts supabase/functions/event-extract/index.ts supabase/functions/index-snapshot/index.ts supabase/functions/ical-ingest/index.ts supabase/functions/place-resolve/index.ts
+      - run: deno check supabase/functions/*/index.ts
+      - run: deno lint supabase/functions --ignore="$LINT_EXCLUDED"
+        env:
+          LINT_EXCLUDED: supabase/functions/activitypub,supabase/functions/mcp,supabase/functions/techcrunch-ingest
       - run: deno test supabase/functions/_shared
 
   frontend:

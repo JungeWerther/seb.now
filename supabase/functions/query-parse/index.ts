@@ -1,5 +1,6 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import "jsr:@supabase/functions-js@2/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
+import { serviceClient, vaultSecret } from "../_shared/clients.ts";
 import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
 import { memoize, once } from "../_shared/memo.ts";
 import { ENV, JEV, QUERY_PARSE } from "../_shared/constants.ts";
@@ -60,13 +61,11 @@ type Reading = Awaited<ReturnType<typeof parse>>;
 
 const json = jsonResponses({ headers: CORS });
 
-const admin: SupabaseClient = createClient(ENV.SUPABASE_URL, ENV.SUPABASE_SERVICE_ROLE_KEY);
+const admin = serviceClient();
 
-const client = once(async (): Promise<JevClient> => {
-  const { data: apiKey, error } = await admin.rpc("get_vault_secret", { secret_name: JEV.TYPESAFE_KEY_SECRET });
-  if (error || !apiKey) throw new Error(`no ${JEV.TYPESAFE_KEY_SECRET} in Vault`);
-  return new JevClient(apiKey, JEV.MODEL, { db: admin, fn: "query-parse" });
-});
+const client = once(async (): Promise<JevClient> =>
+  new JevClient(await vaultSecret(JEV.TYPESAFE_KEY_SECRET), JEV.MODEL, { db: admin, fn: "query-parse" })
+);
 
 // A reading anyone has had, from this isolate's memory, else query_readings.
 const storedReading = memoize((key: string) => key, async (key: string): Promise<Reading | null> => {

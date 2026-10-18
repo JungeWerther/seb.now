@@ -1,5 +1,5 @@
-// Small helpers any function can use: JSON responses, the null filter, and
-// `reporting`, which turns a step's failure into a reported null.
+// Small helpers any function can use: JSON responses, the null filter, `sumBy`,
+// and `reporting`, which turns a step's failure into a reported null.
 
 export type Row = Record<string, unknown>;
 export type Report = (error: Row) => void;
@@ -24,4 +24,12 @@ export function reporting<T, R>(report: Report, label: (item: T) => Row, fn: (it
       report({ ...label(item), error: String(e) });
       return null;
     });
+}
+
+type NumberKey<T> = { [K in keyof T]: T[K] extends number ? K : never }[keyof T];
+
+// The sum over `items` of a numeric field, or of what `by` reads from each.
+export function sumBy<T>(items: readonly T[], by: NumberKey<T> | ((item: T) => number)): number {
+  const value = typeof by === "function" ? by : (item: T) => item[by] as number;
+  return items.reduce((sum, item) => sum + value(item), 0);
 }

@@ -33,6 +33,11 @@ export const JEV = Object.freeze({
   TYPESAFE_KEY_SECRET: "typesafe-ai-token",
 });
 
+// _shared/clients.ts.
+export const VAULT = Object.freeze({
+  CACHED_SECRETS: 8,
+});
+
 // _shared/ingest.ts: what every ingest function shares.
 export const INGEST = Object.freeze({
   IMAGE_FETCH_TIMEOUT_MS: 5000,
@@ -93,6 +98,8 @@ export const ICAL = Object.freeze({
 // fediverse-ingest.
 export const FEDIVERSE = Object.freeze({
   POSTS_PER_ACCOUNT: 10,
+  // A post's own text as its title: 140 characters and an ellipsis.
+  TITLE_MAX_CHARS: 141,
 });
 
 // _shared/page.ts: fetching and reading a link's page.
