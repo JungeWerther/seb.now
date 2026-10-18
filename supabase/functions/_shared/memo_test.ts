@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
-import { memoize, once } from "./memo.ts";
+import { lazy, memoize, once } from "./memo.ts";
 
 Deno.test("once shares one load and retries after a failure", async () => {
   let calls = 0;
@@ -46,4 +46,11 @@ Deno.test("priming with null keeps nothing, so the next call loads", async () =>
   assertEquals(await load("a"), "loaded 1");
   load.prime(["a"], null);
   assertEquals(await load("a"), "loaded 2");
+});
+
+Deno.test("lazy makes its value once, on first use", () => {
+  let calls = 0;
+  const value = lazy(() => ++calls);
+  assertEquals(calls, 0);
+  assertEquals([value(), value()], [1, 1]);
 });

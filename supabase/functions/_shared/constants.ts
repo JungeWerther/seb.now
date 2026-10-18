@@ -33,6 +33,11 @@ export const JEV = Object.freeze({
   TYPESAFE_KEY_SECRET: "typesafe-ai-token",
 });
 
+// _shared/clients.ts.
+export const VAULT = Object.freeze({
+  CACHED_SECRETS: 8,
+});
+
 // _shared/ingest.ts: what every ingest function shares.
 export const INGEST = Object.freeze({
   IMAGE_FETCH_TIMEOUT_MS: 5000,
