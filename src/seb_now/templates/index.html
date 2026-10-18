@@ -4160,11 +4160,14 @@
     // time. A snapshot from the public `index` bucket (made by index-snapshot,
     // under a new name each time, so the CDN keeps it) is kept in IndexedDB;
     // `index_diff` brings it up to date when the page opens and every
-    // INDEX_REFRESH_MS while it's visible. Diffs only add: when `gen` moved on
-    // (something was deleted, renamed or folded) the snapshot is loaded again,
-    // and until one of the current gen exists the page asks the database, as
-    // it does before the index has loaded or where IndexedDB, gzip streams or
-    // the bucket aren't there.
+    // INDEX_REFRESH_MS while it's visible. A copy with a change watermark
+    // (`wm.c`, 20261018000300_index_changes.sql) also takes what was deleted,
+    // renamed or folded from the diff, as each touched key's present state;
+    // only a copy from before `reset_gen` (a change the log can't carry) or too
+    // far behind loads the snapshot again. A copy without one (kept by an
+    // older page) goes on as before until `gen` moves. Until a usable snapshot
+    // exists the page asks the database, as it does before the index has
+    // loaded or where IndexedDB, gzip streams or the bucket aren't there.
     const INDEX_FORMAT = 1;
     const INDEX_DB_NAME = "seb-now-index";
     const INDEX_DB_STORE = "index";
@@ -4330,19 +4333,56 @@
 
     async function fetchIndexDiff(wm) {
       const below = (n) => Math.max(0, n - INDEX_DIFF_OVERLAP);
-      const { data, error } = await (await supabaseReady).rpc("index_diff", wm
-        ? { link_seq: below(wm.l), entity_seq: below(wm.e), pair_seq: below(wm.p) }
-        : {});
+      const args = wm ? { link_seq: below(wm.l), entity_seq: below(wm.e), pair_seq: below(wm.p) } : {};
+      if (wm && Number.isInteger(wm.c)) args.change_seq = below(wm.c);
+      const { data, error } = await (await supabaseReady).rpc("index_diff", args);
       if (error) throw error;
       return data;
     }
 
-    // Adds a diff's rows; true when it added anything.
+    // Whether the copy can take this diff rather than be reloaded.
+    function indexCopyCurrent(diff) {
+      return Number.isInteger(entityIndex.wm?.c) && diff.reset_gen != null
+        ? entityIndex.gen >= diff.reset_gen
+        : diff.gen === entityIndex.gen;
+    }
+
+    function unindexMention(linkSeq, entitySeq) {
+      const link = entityIndex.links.get(linkSeq);
+      if (!link?.entities.delete(entitySeq)) return false;
+      if (!link.entities.size) entityIndex.links.delete(linkSeq);
+      const links = entityIndex.entityLinks.get(entitySeq);
+      links?.delete(linkSeq);
+      if (links && !links.size) entityIndex.entityLinks.delete(entitySeq);
+      return true;
+    }
+
+    // Applies a diff: removals first, then the present state of what was added
+    // or touched (the two never name the same key, so a diff asked again from
+    // below the watermark changes nothing). An entity left with no mentions
+    // goes, as in a snapshot. True when anything changed.
     function applyIndexDiff(diff) {
       let changed = false;
+      const orphans = new Set();
+      for (const linkSeq of diff.gone_links ?? []) {
+        for (const entitySeq of [...(entityIndex.links.get(linkSeq)?.entities ?? [])]) {
+          unindexMention(linkSeq, entitySeq);
+          orphans.add(entitySeq);
+          changed = true;
+        }
+      }
+      for (const entitySeq of diff.gone_entities ?? []) {
+        for (const linkSeq of [...(entityIndex.entityLinks.get(entitySeq) ?? [])]) unindexMention(linkSeq, entitySeq);
+        if (entityIndex.entities.delete(entitySeq)) changed = true;
+      }
+      for (const [linkSeq, entitySeq] of diff.unpairs ?? []) {
+        if (!unindexMention(linkSeq, entitySeq)) continue;
+        orphans.add(entitySeq);
+        changed = true;
+      }
       for (const [seq, name, kindPath, kind] of diff.entities) {
         const known = entityIndex.entities.get(seq);
-        if (known && known.name === name && known.kind_path === kindPath) continue;
+        if (known && known.name === name && known.kind_path === kindPath && known.kind === kind) continue;
         indexEntity(seq, name, kindPath, kind);
         changed = true;
       }
@@ -4355,6 +4395,10 @@
         const link = entityIndex.links.get(linkSeq);
         if (link) link.minute = minute;
       }
+      for (const entitySeq of orphans) {
+        if (!entityIndex.entityLinks.has(entitySeq)) entityIndex.entities.delete(entitySeq);
+      }
+      entityIndex.gen = diff.gen;
       entityIndex.wm = diff.wm;
       if (changed) entityIndex.version++;
       return changed;
@@ -4371,14 +4415,14 @@
           if (stored?.v === INDEX_FORMAT) loadIndexState(stored);
         }
         let diff = await fetchIndexDiff(entityIndex.gen ? entityIndex.wm : null);
-        if (diff.reload || diff.gen !== entityIndex.gen) {
-          if (!diff.snapshot || diff.snapshot.gen !== diff.gen) {
+        if (diff.reload || !indexCopyCurrent(diff)) {
+          if (!diff.snapshot || diff.snapshot.gen < (diff.reset_gen ?? diff.gen)) {
             entityIndex.ready = false;
             return;
           }
           loadIndexState(await fetchIndexSnapshot(diff.snapshot.path));
           diff = await fetchIndexDiff(entityIndex.wm);
-          if (diff.reload || diff.gen !== entityIndex.gen) {
+          if (diff.reload || !indexCopyCurrent(diff)) {
             entityIndex.ready = false;
             return;
           }

@@ -3,7 +3,9 @@
 //
 //   v        1
 //   gen      index_state.gen it was built at
-//   wm       {l, e, p}: the highest links / entities / link_entities seq it covers
+//   wm       {l, e, p, c}: the highest links / entities / link_entities seq it
+//            covers, and the highest index_changes seq (snapshots built before
+//            20261018000300_index_changes.sql have no `c`)
 //   kinds    [[kind_path, kind], ...]: an entity's kind is its position here
 //   entities {seq, name, kind}: parallel arrays, by seq; `seq` delta-encoded
 //            (the first value as is, then each the difference from the one before)
@@ -18,7 +20,7 @@
 export interface RawSnapshot {
   v: number;
   gen: number;
-  wm: { l: number; e: number; p: number };
+  wm: { l: number; e: number; p: number; c?: number };
   kinds: [string, string][];
   entities: { seq: number[]; name: string[]; kind: number[] };
   links: { seq: number[]; minute: number[]; entities: number[][] };
