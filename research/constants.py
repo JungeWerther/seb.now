@@ -45,3 +45,19 @@ CHAR_NGRAM_LOWERCASE = False  # capitalisation is part of the signal
 # kind_predicates.py — one yes/no probe per kind
 KIND_PREDICATE_THRESHOLD = 0.5  # a predicate "fires" at or above this probability
 KIND_PREDICATE_TOP_COMBOS = 6
+
+# phase_ngrams.py — hashed phase vectors over folded character trigrams
+PHASE_DIM = 256  # circles per token; unrelated tokens' inner product has sd 1/sqrt(2 * PHASE_DIM)
+PHASE_DIM_LARGE = 1024
+PHASE_QUANTUM_BITS = 16  # each phase is a 16-bit fraction of a turn, read from the token's SHAKE-256 digest
+ROPE_BASE = 10000.0  # RoPE's frequency base: dimension j turns by ROPE_BASE ** (-j / d) radians per position
+SIMHASH_BITS = 64
+IDF_SMOOTHING = 1.0  # idf = log((n + s) / (df + s)) + 1, scikit-learn's smooth_idf form
+
+# phase_ngrams_eval.py — name matching against entity_candidates
+MATCH_EVAL_TOP_K = 8  # entity_candidates' default max_results
+MATCH_EVAL_TRGM_THRESHOLD = 0.3  # entity_candidates' pg_trgm.similarity_threshold
+MATCH_EVAL_SELF_CHECK_NAMES = 20
+MATCH_EVAL_SIMHASH_QUERIES = 500
+MATCH_EVAL_SIMHASH_BANDS = 16  # LSH prefilter: SIMHASH_BITS split into this many bands
+MATCH_EVAL_SEED = 0
