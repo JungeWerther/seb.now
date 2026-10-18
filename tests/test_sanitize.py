@@ -44,7 +44,7 @@ def test_is_safe_slug_accepts_plain_slugs(slug: str) -> None:
     assert is_safe_slug(slug)
 
 
-@pytest.mark.parametrize("slug", ["", "../etc", "a/b", "Hello", "-x", "x-", "a b", "a\"b", "a%2fb"])
+@pytest.mark.parametrize("slug", ["", "../etc", "a/b", "Hello", "-x", "x-", "a b", 'a"b', "a%2fb"])
 def test_is_safe_slug_rejects_paths_and_markup(slug: str) -> None:
     assert not is_safe_slug(slug)
 

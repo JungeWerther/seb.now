@@ -15,13 +15,22 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+
 import numpy as np
+from constants import (
+    KIND_PREDICATE_THRESHOLD,
+    KIND_PREDICATE_TOP_COMBOS,
+    KIND_PROBE_C,
+    KIND_PROBE_CLASS_WEIGHT,
+    KIND_PROBE_MAX_ITER,
+    KIND_PROBE_MIN_EXAMPLES,
+    KIND_PROBE_SEED,
+    KIND_PROBE_TEST_FRACTION,
+)
+from kind_probe import Entity, embed_names, kind_at_depth, load_entities
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
-
-from constants import KIND_PREDICATE_THRESHOLD, KIND_PREDICATE_TOP_COMBOS, KIND_PROBE_C, KIND_PROBE_CLASS_WEIGHT, KIND_PROBE_MAX_ITER, KIND_PROBE_MIN_EXAMPLES, KIND_PROBE_SEED, KIND_PROBE_TEST_FRACTION
-from kind_probe import Entity, embed_names, kind_at_depth, load_entities
 
 
 @dataclass(frozen=True)
@@ -79,7 +88,9 @@ def run_depth(entities: list[Entity], embed: dict[str, np.ndarray], depth: int) 
         p = fit(x[tr], y[tr, j], x[te])
         pc = fit(x[tr], y_control[tr, j], x[te])
         probs.append(p)
-        preds.append(Predicate(kind, int(y[:, j].sum()), roc_auc_score(y[te, j], p), roc_auc_score(y_control[te, j], pc)))
+        preds.append(
+            Predicate(kind, int(y[:, j].sum()), roc_auc_score(y[te, j], p), roc_auc_score(y_control[te, j], pc))
+        )
     fired = np.stack(probs, axis=1) >= KIND_PREDICATE_THRESHOLD
     truth = y[te]
 

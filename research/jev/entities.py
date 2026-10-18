@@ -124,7 +124,8 @@ def build_entities(judgment: TextJudgment) -> EntityGraph:
             mentions.append(MentionAtom(mention_name(by_id[i]), by_id[i].text, entity.name, strength, confidence))
         conflicts += [
             (a, b, same[a, b][0])
-            for x, a in enumerate(group) for b in group[x + 1 :]
+            for x, a in enumerate(group)
+            for b in group[x + 1 :]
             if same[a, b][0] < CONFLICT_THRESHOLD
         ]
 
@@ -137,7 +138,7 @@ def build_entities(judgment: TextJudgment) -> EntityGraph:
         for link in links_between(
             ea.name, eb.name, pair, ea.p_individual, eb.p_individual, ea.is_individual, eb.is_individual
         ):
-            x, y = (sorted((link.a, link.b)) if link.type in SYMMETRIC_LINKS else (link.a, link.b))
+            x, y = sorted((link.a, link.b)) if link.type in SYMMETRIC_LINKS else (link.a, link.b)
             evidence[link.type, x, y].append(PlnLink(link.type, x, y, link.strength, link.confidence))
     links = [revise(group) for group in evidence.values()]
     return EntityGraph(entities, mentions, links, conflicts)

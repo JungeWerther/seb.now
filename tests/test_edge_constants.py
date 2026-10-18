@@ -128,7 +128,7 @@ def test_environment_is_read_only_in_constants_ts() -> None:
 
 
 def test_detector_skips_regexes_and_finds_typed_constants() -> None:
-    source = 'const A = 1;\nexport const B: number[] = [2];\nconst C =\n  /x/;\nconst d = 3;\n  const E = 4;\n'
+    source = "const A = 1;\nexport const B: number[] = [2];\nconst C =\n  /x/;\nconst d = 3;\n  const E = 4;\n"
     assert top_level_constants(source) == ["A", "B"]
 
 

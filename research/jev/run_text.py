@@ -1,12 +1,12 @@
 """Rebuild TextJudgments from the live answers (relayed via pg_net) and emit typed MeTTa."""
-import json
 
-from typesafe_sdk import ChoiceAnswer, ScoreAnswer
+import json
 
 import bank_text
 import sample_text
 from terms import EXTENSION_FORM, KIND_FORM
 from text_pairs import Locate, TextJudgment, find_mentions, pair_contexts, text_metta
+from typesafe_sdk import ChoiceAnswer, ScoreAnswer
 
 
 def answers_from(path: str) -> dict:
@@ -16,8 +16,12 @@ def answers_from(path: str) -> dict:
             out[key] = ChoiceAnswer(choice=max(a["p"], key=a["p"].get), probabilities=a["p"], confidence=a["c"])
         else:
             probs = {i: a["p"].get(str(i), 0.0) for i in range(6)}
-            out[key] = ScoreAnswer(score=sum(i * v for i, v in probs.items()), legend={i: "" for i in range(6)},
-                                   probabilities=probs, confidence=a["c"])
+            out[key] = ScoreAnswer(
+                score=sum(i * v for i, v in probs.items()),
+                legend={i: "" for i in range(6)},
+                probabilities=probs,
+                confidence=a["c"],
+            )
     return out
 
 

@@ -17,9 +17,7 @@ def _bare_tuple_subscripts(source: str) -> list[str]:
     return [
         ast.unparse(node)
         for node in ast.walk(tree)
-        if isinstance(node, ast.Subscript)
-        and isinstance(node.value, ast.Name)
-        and node.value.id == "tuple"
+        if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name) and node.value.id == "tuple"
     ]
 
 
