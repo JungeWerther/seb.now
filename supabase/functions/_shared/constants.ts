@@ -236,6 +236,12 @@ export const INDEX_SNAPSHOT = Object.freeze({
   KEEP_SNAPSHOTS: 3,
   // Snapshot names never change content, so they can be cached for a year.
   CACHE_SECONDS: "31536000",
+  // Pages catch up from the latest snapshot with index_diff, so one of the
+  // current gen is only replaced once it is this old and something was added,
+  MAX_AGE_MS: 60 * 60 * 1000,
+  // or once this many mentions were added past it: index_diff carries none past
+  // 2,000 (INDEX_DIFF_MAX_PAIRS), asked from INDEX_DIFF_OVERLAP (500) below.
+  MAX_NEW_PAIRS: 1000,
 });
 
 // _shared/wikidata.ts: Wikidata's public API and the properties that place an item.
