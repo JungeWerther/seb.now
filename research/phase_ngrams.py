@@ -151,15 +151,10 @@ def rope_frequencies(d: int = PHASE_DIM, base: float = ROPE_BASE) -> list[float]
 
 
 def rotate(v: Sequence[complex], position: float, base: float = ROPE_BASE) -> Vector:
-    return [
-        x * cmath.exp(1j * omega * position)
-        for x, omega in zip(v, rope_frequencies(len(v), base), strict=True)
-    ]
+    return [x * cmath.exp(1j * omega * position) for x, omega in zip(v, rope_frequencies(len(v), base), strict=True)]
 
 
-def encode_sequence(
-    sequence: Sequence[str], d: int = PHASE_DIM, offset: int = 0
-) -> Vector:
+def encode_sequence(sequence: Sequence[str], d: int = PHASE_DIM, offset: int = 0) -> Vector:
     """RoPE-style: Σ_k e^{iω(k + offset)} ⊙ e^{iθ_{t_k}}, normalised."""
     total = [0j] * d
     for k, token in enumerate(sequence):
@@ -183,9 +178,7 @@ class Idf:
         return math.log((self.n + IDF_SMOOTHING) / (self.df[token] + IDF_SMOOTHING)) + 1
 
 
-def weights(
-    text: str, idf: Callable[[str], float] | None = None, with_words: bool = False
-) -> dict[str, float]:
+def weights(text: str, idf: Callable[[str], float] | None = None, with_words: bool = False) -> dict[str, float]:
     return {t: idf(t) if idf else 1.0 for t in tokens(text, with_words)}
 
 
@@ -198,16 +191,12 @@ def encode(
     return bundle(weights(text, idf, with_words), d)
 
 
-def encode_title(
-    title: str, d: int = PHASE_DIM, idf: Callable[[str], float] | None = None
-) -> Vector:
+def encode_title(title: str, d: int = PHASE_DIM, idf: Callable[[str], float] | None = None) -> Vector:
     """A title's bag of trigrams plus, with equal weight, its ordered word bigrams."""
     title_words = words(title)
     pairs = [0j] * d
     for first, second in pairwise(title_words):
-        pairs = [
-            a + b for a, b in zip(pairs, ordered_bigram(first, second, d), strict=True)
-        ]
+        pairs = [a + b for a, b in zip(pairs, ordered_bigram(first, second, d), strict=True)]
     bag = encode(title, d, idf)
     return normalise([a + b for a, b in zip(bag, normalise(pairs), strict=True)])
 
@@ -224,9 +213,7 @@ def set_cosine(a: Mapping[str, float], b: Mapping[str, float]) -> float:
 
 def plane(index: int, d: int) -> list[float]:
     """A random direction in R^{2d}, coordinates uniform in [-1, 1)."""
-    quanta = struct.unpack(
-        f"<{2 * d}H", phase_digest(f"{PLANE_SEED_PREFIX}{index}", 2 * d)
-    )
+    quanta = struct.unpack(f"<{2 * d}H", phase_digest(f"{PLANE_SEED_PREFIX}{index}", 2 * d))
     return [q / (1 << (PHASE_QUANTUM_BITS - 1)) - 1 for q in quanta]
 
 

@@ -84,12 +84,8 @@ def load(data_dir: Path) -> tuple[list[int], list[str], list[Query]]:
         query = by_key.get(key)
         if query is None:
             query = by_key[key] = Query(text, source, self_seq)
-            query.sql["entity_candidates"] = [
-                (s, p) for s, p in candidates or [] if s != self_seq
-            ]
-            query.sql["pg_trgm names"] = [
-                (s, p) for s, p in names or [] if s != self_seq
-            ]
+            query.sql["entity_candidates"] = [(s, p) for s, p in candidates or [] if s != self_seq]
+            query.sql["pg_trgm names"] = [(s, p) for s, p in names or [] if s != self_seq]
             query.sql_ms = {
                 "entity_candidates": ms_candidates,
                 "pg_trgm names": ms_names,
@@ -122,9 +118,7 @@ class Index:
         )
 
     def idf_vector(self) -> NDArray:
-        return np.array(
-            [self.idf(t) for t in sorted(self.columns, key=self.columns.get)]
-        )
+        return np.array([self.idf(t) for t in sorted(self.columns, key=self.columns.get)])
 
 
 def jaccard_scorer(index: Index) -> Callable[[str], NDArray]:
@@ -158,15 +152,8 @@ def cosine_scorer(index: Index, use_idf: bool) -> Callable[[str], NDArray]:
 
 
 def token_phasors(tokens: list[str], d: int) -> NDArray:
-    quanta = np.stack(
-        [
-            np.frombuffer(pn.phase_digest(pn.TOKEN_SEED_PREFIX + t, d), dtype="<u2")
-            for t in tokens
-        ]
-    )
-    return np.exp(1j * quanta.astype(np.float64) * pn.TURN_PER_QUANTUM).astype(
-        np.complex64
-    )
+    quanta = np.stack([np.frombuffer(pn.phase_digest(pn.TOKEN_SEED_PREFIX + t, d), dtype="<u2") for t in tokens])
+    return np.exp(1j * quanta.astype(np.float64) * pn.TURN_PER_QUANTUM).astype(np.complex64)
 
 
 @dataclass
@@ -182,27 +169,19 @@ class PhaseIndex:
         table = token_phasors(ordered, self.d)
         raw = self.index.binary.multiply(w).tocsr() @ table
         norms = np.linalg.norm(raw, axis=1, keepdims=True)
-        self.vectors = np.divide(
-            raw, norms, out=np.zeros_like(raw), where=norms > 0
-        ).astype(np.complex64)
+        self.vectors = np.divide(raw, norms, out=np.zeros_like(raw), where=norms > 0).astype(np.complex64)
         self.table = table
 
     def encode(self, text: str) -> NDArray:
-        q = pn.weights(
-            text, self.index.idf if self.use_idf else None, self.index.with_words
-        )
-        known = [
-            (self.index.columns[t], v) for t, v in q.items() if t in self.index.columns
-        ]
+        q = pn.weights(text, self.index.idf if self.use_idf else None, self.index.with_words)
+        known = [(self.index.columns[t], v) for t, v in q.items() if t in self.index.columns]
         unknown = [t for t in q if t not in self.index.columns]
         vec = np.zeros(self.d, dtype=np.complex64)
         if known:
             cols, ws = zip(*known, strict=True)
             vec += np.asarray(ws, dtype=np.float32) @ self.table[list(cols)]
         if unknown:
-            vec += np.asarray(
-                [q[t] for t in unknown], dtype=np.float32
-            ) @ token_phasors(unknown, self.d)
+            vec += np.asarray([q[t] for t in unknown], dtype=np.float32) @ token_phasors(unknown, self.d)
         n = np.linalg.norm(vec)
         return vec / n if n else vec
 
@@ -215,12 +194,7 @@ class PhaseIndex:
             float(
                 np.max(
                     np.abs(
-                        self.vectors[i]
-                        - np.asarray(
-                            pn.encode(
-                                self.index.names[i], self.d, idf, self.index.with_words
-                            )
-                        )
+                        self.vectors[i] - np.asarray(pn.encode(self.index.names[i], self.d, idf, self.index.with_words))
                     )
                 )
             )
@@ -262,19 +236,14 @@ def measure(
     hits, rr, by_source = [], [], defaultdict(list)
     for q, ranking in zip(queries, rankings, strict=True):
         rank = next(
-            (
-                i
-                for i, (s, _) in enumerate(ranking[:MATCH_EVAL_TOP_K], 1)
-                if s in q.targets
-            ),
+            (i for i, (s, _) in enumerate(ranking[:MATCH_EVAL_TOP_K], 1) if s in q.targets),
             None,
         )
         hits.append(rank is not None)
         rr.append(1 / rank if rank else 0.0)
         by_source[q.source].append(rank is not None)
     tops = [
-        (r[0][1], r[0][0] in q.targets) if r else (-math.inf, False)
-        for q, r in zip(queries, rankings, strict=True)
+        (r[0][1], r[0][0] in q.targets) if r else (-math.inf, False) for q, r in zip(queries, rankings, strict=True)
     ]
     tops.sort(key=lambda t: -t[0])
     covered = tops[: round(coverage * len(tops))]
@@ -283,12 +252,8 @@ def measure(
         recall=statistics.mean(hits),
         mrr=statistics.mean(rr),
         precision_at_threshold=statistics.mean(at_threshold) if at_threshold else None,
-        coverage_at_threshold=len(at_threshold) / len(tops)
-        if threshold is not None
-        else None,
-        precision_at_matched_coverage=statistics.mean(ok for _, ok in covered)
-        if covered
-        else 0.0,
+        coverage_at_threshold=len(at_threshold) / len(tops) if threshold is not None else None,
+        precision_at_matched_coverage=statistics.mean(ok for _, ok in covered) if covered else 0.0,
         recall_by_source={s: statistics.mean(v) for s, v in sorted(by_source.items())},
     )
 
@@ -308,9 +273,7 @@ def timed(
 
 
 def simhash_codes(vectors: NDArray, bits: int) -> NDArray:
-    planes = np.asarray(
-        [pn.plane(i, vectors.shape[1]) for i in range(bits)], dtype=np.float32
-    )
+    planes = np.asarray([pn.plane(i, vectors.shape[1]) for i in range(bits)], dtype=np.float32)
     real = np.concatenate([vectors.real, vectors.imag], axis=1)
     return (real @ planes.T) >= 0
 
@@ -323,21 +286,13 @@ def simhash_prefilter(
     width = SIMHASH_BITS // MATCH_EVAL_SIMHASH_BANDS
     weights = 1 << np.arange(width)
     bands = np.stack(
-        [
-            codes[:, b * width : (b + 1) * width] @ weights
-            for b in range(MATCH_EVAL_SIMHASH_BANDS)
-        ],
+        [codes[:, b * width : (b + 1) * width] @ weights for b in range(MATCH_EVAL_SIMHASH_BANDS)],
         axis=1,
     )
     hits, fractions = [], []
     for q in queries:
         qcode = simhash_codes(phase.encode(q.text)[None, :], SIMHASH_BITS)[0]
-        qbands = np.asarray(
-            [
-                qcode[b * width : (b + 1) * width] @ weights
-                for b in range(MATCH_EVAL_SIMHASH_BANDS)
-            ]
-        )
+        qbands = np.asarray([qcode[b * width : (b + 1) * width] @ weights for b in range(MATCH_EVAL_SIMHASH_BANDS)])
         mask = (bands == qbands).any(axis=1)
         fractions.append(float(mask.mean()))
         scores = np.where(mask, phase.score(q.text), -np.inf)
@@ -375,9 +330,7 @@ def main() -> None:
             MATCH_EVAL_TRGM_THRESHOLD,
         )
 
-    trigram_index, word_index = (
-        Index(names, with_words) for with_words in (False, True)
-    )
+    trigram_index, word_index = (Index(names, with_words) for with_words in (False, True))
     results["jaccard"] = (
         *timed(jaccard_scorer(trigram_index), queries, rank),
         MATCH_EVAL_TRGM_THRESHOLD,
@@ -388,9 +341,7 @@ def main() -> None:
             *timed(cosine_scorer(trigram_index, use_idf), queries, rank),
             None,
         )
-    sample = random.Random(MATCH_EVAL_SEED).sample(
-        range(len(names)), MATCH_EVAL_SELF_CHECK_NAMES
-    )
+    sample = random.Random(MATCH_EVAL_SEED).sample(range(len(names)), MATCH_EVAL_SELF_CHECK_NAMES)
     best: PhaseIndex | None = None
     for index, d, use_idf in (
         (trigram_index, PHASE_DIM, False),
@@ -400,17 +351,13 @@ def main() -> None:
     ):
         phase = PhaseIndex(index, d, use_idf)
         drift = phase.self_check(sample)
-        assert drift < 1e-3, (
-            f"numpy encoding drifted from phase_ngrams.encode by {drift}"
-        )
+        assert drift < 1e-3, f"numpy encoding drifted from phase_ngrams.encode by {drift}"
         tag = f"phase d={d} {'idf' if use_idf else 'flat'}{' +words' if index.with_words else ''}"
         results[tag] = (*timed(phase.score, queries, rank), None)
         if d == PHASE_DIM and use_idf and not index.with_words:
             best = phase
 
-    baseline = measure(
-        queries, results["pg_trgm names"][0], MATCH_EVAL_TRGM_THRESHOLD, 0.0
-    )
+    baseline = measure(queries, results["pg_trgm names"][0], MATCH_EVAL_TRGM_THRESHOLD, 0.0)
     coverage = baseline.coverage_at_threshold or 0.0
     print(
         f"\nk = {MATCH_EVAL_TOP_K}; threshold {MATCH_EVAL_TRGM_THRESHOLD}; matched coverage = {coverage:.3f} (pg_trgm names' top-1 at the threshold)\n"
@@ -434,9 +381,7 @@ def main() -> None:
             + f" | {at_t} | {m.precision_at_matched_coverage:.3f} | {percentile(ms, 50):.2f} | {percentile(ms, 95):.2f} |"
         )
     if best is not None:
-        subset = random.Random(MATCH_EVAL_SEED).sample(
-            queries, min(MATCH_EVAL_SIMHASH_QUERIES, len(queries))
-        )
+        subset = random.Random(MATCH_EVAL_SEED).sample(queries, min(MATCH_EVAL_SIMHASH_QUERIES, len(queries)))
         recall, fraction = simhash_prefilter(best, subset, seqs, position)
         print(
             f"\nSimHash prefilter ({SIMHASH_BITS} bits, {MATCH_EVAL_SIMHASH_BANDS} bands) on phase d={PHASE_DIM} idf, "
