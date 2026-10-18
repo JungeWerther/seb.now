@@ -9,7 +9,7 @@ anything not in it is a DIRECT_LINK.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from urllib.parse import urlparse
 
 from seb_now.constants import SourceType

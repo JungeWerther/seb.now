@@ -25,8 +25,6 @@ import random
 from itertools import product
 
 import torch
-from torch import Tensor, nn
-
 from algebra import (
     Combinable,
     Embed,
@@ -44,10 +42,19 @@ from constants import (
     TRAINABLE_EMBED_LEARNING_RATE,
     TRAINABLE_EMBED_TRAIN_STEPS,
 )
+from torch import Tensor, nn
 
 VOCAB = [
-    "macro", "prices", "rose", "fell", "today",
-    "after", "announcement", "analysts", "surprised", "sharply",
+    "macro",
+    "prices",
+    "rose",
+    "fell",
+    "today",
+    "after",
+    "announcement",
+    "analysts",
+    "surprised",
+    "sharply",
 ]
 WORD_TO_INDEX = {word: i for i, word in enumerate(VOCAB)}
 
@@ -121,10 +128,7 @@ def evaluate(model: TrainableEmbed) -> None:
         combine_emb=vec_add,
         is_close=lambda a, b: vec_isclose(a, b, tol=TRAINABLE_EMBED_LAW_CHECK_TOLERANCE),
     )
-    samples = [
-        SampleTriple(x, y, z)
-        for x, y, z in product(TEXTS[:2], TEXTS[2:3], TEXTS[3:4])
-    ]
+    samples = [SampleTriple(x, y, z) for x, y, z in product(TEXTS[:2], TEXTS[2:3], TEXTS[3:4])]
     report = combinable.check(samples)
     print(f"  homomorphism failures: {len(report.failures(LawCheckKind.HOMOMORPHISM))} / {report.total}")
     print(f"  full law failures:     {len(report.failures(LawCheckKind.FULL_LAW))} / {report.total}")

@@ -206,7 +206,9 @@ def probe(names: list[str], labels: list[str], featurize: Featurize, depth: int,
 
 
 def report(results: list[ProbeResult]) -> None:
-    print(f"\n{'depth':>5} {'features':>8} {'classes':>7} {'test':>6} {'majority':>8} {'probe':>6} {'control':>7} {'select.':>7}")
+    print(
+        f"\n{'depth':>5} {'features':>8} {'classes':>7} {'test':>6} {'majority':>8} {'probe':>6} {'control':>7} {'select.':>7}"
+    )
     for r in results:
         print(
             f"{r.depth:>5} {r.features:>8} {r.classes:>7} {r.test:>6} "

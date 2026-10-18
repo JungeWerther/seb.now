@@ -13,24 +13,51 @@ from seb_now.constants import (
     ARTICLE_ENTITY_CHIPS,
     ARTICLE_TOPIC_CHIPS,
     FAVICON_URL_TEMPLATE,
-    FIND_ENTITY_SOURCES_PROMPT,
-    FIND_SOURCES_URL_TEMPLATE,
     FEED_PAGE_SIZE,
     FEED_SKELETON_ROWS,
+    FIND_ENTITY_SOURCES_PROMPT,
+    FIND_SOURCES_URL_TEMPLATE,
     SUPABASE_JS_URL,
     SourceType,
 )
-from seb_now.site import Article, Chip, _top_entities, _top_topics, build_articles, render
+from seb_now.site import Article, Chip, FeedRow, _top_entities, _top_topics, build_articles, render
 
 DOMAIN_SOURCE_TYPES = {
     "nytimes.com": SourceType.MAINSTREAM_MEDIA,
     "youtube.com": SourceType.YOUTUBE_LONGFORM,
 }
 
+
+def _row(**overrides: object) -> FeedRow:
+    fields: FeedRow = {
+        "id": str(uuid4()),
+        "title": "A link",
+        "url": "https://example.com/a",
+        "image_url": None,
+        "author": None,
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "link_topics": [],
+        "link_entities": [],
+    }
+    return {**fields, **overrides}
+
+
 FEED_FIXTURE = [
-    {"id": "11111111-1111-1111-1111-111111111111", "title": "Fed signals rate cut as inflation cools", "url": "https://www.nytimes.com/a"},
-    {"id": "22222222-2222-2222-2222-222222222222", "title": "Fed chair explains the rate decision in full", "url": "https://www.youtube.com/watch?v=a"},
-    {"id": "33333333-3333-3333-3333-333333333333", "title": "My take on the Fed's rate cut", "url": "https://sebswrites.example.com/posts/a"},
+    _row(
+        id="11111111-1111-1111-1111-111111111111",
+        title="Fed signals rate cut as inflation cools",
+        url="https://www.nytimes.com/a",
+    ),
+    _row(
+        id="22222222-2222-2222-2222-222222222222",
+        title="Fed chair explains the rate decision in full",
+        url="https://www.youtube.com/watch?v=a",
+    ),
+    _row(
+        id="33333333-3333-3333-3333-333333333333",
+        title="My take on the Fed's rate cut",
+        url="https://sebswrites.example.com/posts/a",
+    ),
 ]
 
 
@@ -145,16 +172,23 @@ def test_render_shows_favicon_column_with_letter_fallback() -> None:
     html = render([article])
 
     favicon_url = FAVICON_URL_TEMPLATE.format(host="reuters.com")
-    assert f'<span class="favicon" data-letter="R" aria-hidden="true"><img src="{favicon_url}" alt="" loading="lazy"></span>' in html
+    assert (
+        f'<span class="favicon" data-letter="R" aria-hidden="true"><img src="{favicon_url}" alt="" loading="lazy"></span>'
+        in html
+    )
     assert html.index('class="favicon"') < html.index('class="card-body"')
 
+
 def test_build_articles_keeps_feed_topics() -> None:
-    topics = [Chip("ai.models", "AI models"), Chip("tech.open_source", "Open source")]
-    feed = [{**FEED_FIXTURE[0], "topics": topics}, FEED_FIXTURE[1]]
+    link_topics = [
+        {"p": 0.9, "topics": {"id": "ai.models", "name": "AI models"}},
+        {"p": 0.7, "topics": {"id": "tech.open_source", "name": "Open source"}},
+    ]
+    feed = [{**FEED_FIXTURE[0], "link_topics": link_topics}, FEED_FIXTURE[1]]
 
     articles = build_articles(feed, DOMAIN_SOURCE_TYPES)
 
-    assert articles[0].topics == tuple(topics)
+    assert articles[0].topics == (Chip("ai.models", "AI models"), Chip("tech.open_source", "Open source"))
     assert articles[1].topics == ()
 
 
@@ -165,7 +199,7 @@ def test_top_topics_orders_by_p_and_caps_at_chip_count() -> None:
         {"p": 0.7, "topics": {"id": "tech.open_source", "name": "Open source"}},
     ]
 
-    expected = [Chip("ai.models", "AI models"), Chip("tech.open_source", "Open source")][:ARTICLE_TOPIC_CHIPS]
+    expected = (Chip("ai.models", "AI models"), Chip("tech.open_source", "Open source"))[:ARTICLE_TOPIC_CHIPS]
     assert _top_topics(link_topics) == expected
 
 
@@ -198,19 +232,19 @@ def test_render_links_topic_chips_and_omits_them_when_untagged() -> None:
 
 def test_top_entities_orders_by_p_and_caps_at_chip_count() -> None:
     link_entities = [
-        {"p": 0.8, "entities": {"id": "e1", "name": "OpenAI"}},
-        {"p": 1.0, "entities": {"id": "e2", "name": "Sam Altman"}},
-        {"p": 0.9, "entities": {"id": "e3", "name": "Microsoft"}},
-        {"p": 0.85, "entities": {"id": "e4", "name": "Anthropic"}},
-        {"p": 0.95, "entities": None},
+        {"p": 0.8, "found_in": "title", "entities": {"id": "e1", "name": "OpenAI"}},
+        {"p": 1.0, "found_in": "title", "entities": {"id": "e2", "name": "Sam Altman"}},
+        {"p": 0.9, "found_in": "title", "entities": {"id": "e3", "name": "Microsoft"}},
+        {"p": 0.85, "found_in": "title", "entities": {"id": "e4", "name": "Anthropic"}},
+        {"p": 0.95, "found_in": "title", "entities": None},
     ]
 
-    expected = [
+    expected = (
         Chip("e2", "Sam Altman"),
         Chip("e3", "Microsoft"),
         Chip("e4", "Anthropic"),
         Chip("e1", "OpenAI"),
-    ][:ARTICLE_ENTITY_CHIPS]
+    )[:ARTICLE_ENTITY_CHIPS]
     assert _top_entities(link_entities) == expected
 
 
@@ -282,7 +316,9 @@ def test_render_gives_each_article_a_reply_button_and_empty_reply_list() -> None
 def test_link_page_focuses_a_tapped_post_above_its_related_links() -> None:
     html = render([])
 
-    focus = html[html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))]
+    focus = html[
+        html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))
+    ]
     for list_id in ("focus-entities", "focus-topics"):
         assert f'id="{list_id}"' in focus
         assert f'id="{list_id}-title" hidden' in focus
@@ -294,7 +330,7 @@ def test_link_page_focuses_a_tapped_post_above_its_related_links() -> None:
     assert "history.pushState" in script and "`/p/${id}`" in script
     assert "focusLink(li.dataset.linkId, { from: li })" in script
     assert "setupLinkPage();" in script
-    assert "class=\"details-btn\"" not in html
+    assert 'class="details-btn"' not in html
     # The feed is found with querySelector("ul.articles"), so no other list may
     # carry that class.
     assert html.count('<ul class="articles') == 1
@@ -329,7 +365,9 @@ def test_template_never_assigns_non_literal_html() -> None:
     html = render([])
     script = html[html.index('<script type="module">') :]
     for match in re.finditer(r"\.(innerHTML|outerHTML)\s*=\s*(.)", script):
-        assert match.group(2) in "'\"", f"non-literal {match.group(1)} assignment: {script[match.start():match.start() + 80]}"
+        assert match.group(2) in "'\"", (
+            f"non-literal {match.group(1)} assignment: {script[match.start() : match.start() + 80]}"
+        )
     assert "insertAdjacentHTML" not in script
     assert "document.write" not in script
 
@@ -520,10 +558,8 @@ def test_render_escapes_markup_in_titles_and_topics() -> None:
 
 def test_load_feed_drops_non_http_links_and_covers(monkeypatch: pytest.MonkeyPatch) -> None:
     rows = [
-        {"id": str(uuid4()), "url": "javascript:alert(1)", "title": "evil", "image_url": None,
-         "created_at": "2026-01-01T00:00:00+00:00", "link_topics": []},
-        {"id": str(uuid4()), "url": "https://example.com", "title": "ok", "image_url": "javascript:alert(1)",
-         "created_at": "2026-01-01T00:00:00+00:00", "link_topics": []},
+        _row(url="javascript:alert(1)", title="evil"),
+        _row(url="https://example.com", title="ok", image_url="javascript:alert(1)"),
     ]
 
     class _Query:
@@ -542,10 +578,10 @@ def test_load_feed_drops_non_http_links_and_covers(monkeypatch: pytest.MonkeyPat
     client = type("C", (), {"table": lambda self, _name: _Query()})()
     monkeypatch.setattr(site, "get_unauthenticated_client", lambda: client)
 
-    feed = site.load_feed()
+    articles = build_articles(site.load_feed(), DOMAIN_SOURCE_TYPES)
 
-    assert [item["title"] for item in feed] == ["ok"]
-    assert feed[0]["image_url"] == ""
+    assert [article.title for article in articles] == ["ok"]
+    assert articles[0].image_url is None
 
 
 def test_page_script_only_links_http_urls() -> None:
@@ -583,7 +619,7 @@ def test_domain_line_shows_a_handle_alone_and_follows_with_a_name() -> None:
 
 def test_render_shows_the_author_on_the_domain_line() -> None:
     articles = build_articles(
-        [{"id": "a", "title": "Iran", "url": "https://www.youtube.com/watch?v=YSLWEsv-8MM", "author": "@Channel5YouTube"}],
+        [_row(title="Iran", url="https://www.youtube.com/watch?v=YSLWEsv-8MM", author="@Channel5YouTube")],
         DOMAIN_SOURCE_TYPES,
     )
 
@@ -600,20 +636,18 @@ def test_domain_line_links_to_its_source_and_the_source_is_not_an_entity_chip() 
         {"p": 1.0, "found_in": "source", "entities": {"id": source_id, "name": "Channel 5"}},
         {"p": 0.9, "found_in": "title", "entities": {"id": "e1", "name": "Iran"}},
     ]
-    assert _top_entities(labels) == [Chip("e1", "Iran")]
+    assert _top_entities(labels) == (Chip("e1", "Iran"),)
     assert _source(labels) == Chip(source_id, "Channel 5")
     assert _source(labels[1:]) is None
 
     articles = build_articles(
         [
-            {
-                "id": "a",
-                "title": "Iran",
-                "url": "https://www.youtube.com/watch?v=YSLWEsv-8MM",
-                "author": "@Channel5YouTube",
-                "entities": _top_entities(labels),
-                "source": _source(labels),
-            }
+            _row(
+                title="Iran",
+                url="https://www.youtube.com/watch?v=YSLWEsv-8MM",
+                author="@Channel5YouTube",
+                link_entities=labels,
+            )
         ],
         DOMAIN_SOURCE_TYPES,
     )
@@ -676,14 +710,19 @@ def test_article_template_carries_an_empty_posted_date_to_fill() -> None:
 def test_entity_page_lists_every_link_mentioning_it_and_chips_open_it() -> None:
     html = render([])
 
-    focus = html[html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))]
+    focus = html[
+        html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))
+    ]
     assert '<div id="focus-entity" hidden>' in focus
     assert 'id="focus-entity-name"' in focus and 'id="focus-entity-meta"' in focus
     script = html[html.index('<script type="module">') :]
     assert 'rpc("entity_links"' in script
     assert "`/e/${id}`" in script
     # Chips are links, but a plain click opens the page in place.
-    assert "closest(\"a[href^='/e/'], a[href^='/t/'], a[href^='/k/'], a[href^='/i/'], a[href^='/s/'], a[href^='/o/']\")" in script
+    assert (
+        "closest(\"a[href^='/e/'], a[href^='/t/'], a[href^='/k/'], a[href^='/i/'], a[href^='/s/'], a[href^='/o/']\")"
+        in script
+    )
     assert "focusEntity(id, { name: chip.dataset.name ?? chip.textContent })" in script
     assert "else if (entityId) focusEntity(entityId, { push: false });" in script
     # Entity ids become hrefs only when they look like one.
@@ -693,7 +732,9 @@ def test_entity_page_lists_every_link_mentioning_it_and_chips_open_it() -> None:
 def test_topic_page_lists_its_links_with_a_find_sources_button_and_chips_open_it() -> None:
     html = render([])
 
-    focus = html[html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))]
+    focus = html[
+        html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))
+    ]
     assert '<div id="focus-topic" hidden>' in focus
     head = focus[focus.index('<div id="focus-head">') :]
     button = head[head.index('<a id="find-sources"') :]
@@ -712,7 +753,9 @@ def test_topic_page_lists_its_links_with_a_find_sources_button_and_chips_open_it
 def test_kind_page_lists_links_its_subkinds_and_top_entities_and_kinds_link_there() -> None:
     html = render([])
 
-    focus = html[html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))]
+    focus = html[
+        html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))
+    ]
     assert '<div id="focus-kind" hidden>' in focus
     assert 'id="focus-kinds-title"' in focus and 'id="focus-kinds"' in focus
     script = _page_script(html)
@@ -746,7 +789,7 @@ def test_a_clicked_link_records_its_visit_with_keepalive_and_how_the_reader_came
     assert 'window.addEventListener("pagehide"' in script
     assert 'performance.getEntriesByType("navigation")' in script
     assert "sessionStorage.setItem(VISIT_STORAGE_KEY" in script
-    assert 'upsert({' in script and 'away_ms: Math.round(awayMs)' in script
+    assert "upsert({" in script and "away_ms: Math.round(awayMs)" in script
     assert "setupVisitReturns();" in script
 
 
@@ -762,7 +805,9 @@ def test_visit_returns_only_send_values_the_link_visits_checks_allow() -> None:
     mapping = re.search(r"const NAVIGATION_RETURN_KINDS = \{([^}]*)\}", script).group(1)
     sent_kinds = set(re.findall(r'"(\w+)"', calls)) | set(re.findall(r': "(\w+)"', mapping))
     assert sent_kinds <= return_kinds, sent_kinds - return_kinds
-    sent_actions = set(re.findall(r'noteNextAction\("(\w+)"', script)) | set(re.findall(r'value === 1 \? "(\w+)" : "(\w+)"', script)[0])
+    sent_actions = set(re.findall(r'noteNextAction\("(\w+)"', script)) | set(
+        re.findall(r'value === 1 \? "(\w+)" : "(\w+)"', script)[0]
+    )
     assert sent_actions == next_actions, sent_actions ^ next_actions
 
 
@@ -775,8 +820,8 @@ def test_typed_terms_are_superpositions_of_senses_and_indexicals_have_pages() ->
     assert "return senses.length === 1 && only !== undefined ? only : { any: senses };" in script
     # Indexicals come from the database and are read in a context.
     assert 'client.from("indexicals").select("term, kind_path, context, description")' in script
-    assert 'return { indexical: indexical.term, at: localNow() };' in script
-    assert 'return { indexical: indexical.term, focus: queryContext.focus.focus };' in script
+    assert "return { indexical: indexical.term, at: localNow() };" in script
+    assert "return { indexical: indexical.term, focus: queryContext.focus.focus };" in script
     assert "queryContext.focus = currentFocus();" in script
     # Their own pages.
     assert "async function focusIndexical(term" in script

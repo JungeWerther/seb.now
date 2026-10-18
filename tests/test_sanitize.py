@@ -51,7 +51,7 @@ def test_is_safe_slug_accepts_plain_slugs(slug: str) -> None:
     assert is_safe_slug(slug)
 
 
-@pytest.mark.parametrize("slug", ["", "../etc", "a/b", "Hello", "-x", "x-", "a b", "a\"b", "a%2fb"])
+@pytest.mark.parametrize("slug", ["", "../etc", "a/b", "Hello", "-x", "x-", "a b", 'a"b', "a%2fb"])
 def test_is_safe_slug_rejects_paths_and_markup(slug: str) -> None:
     assert not is_safe_slug(slug)
 
@@ -64,7 +64,10 @@ def test_script_json_cannot_close_a_script_tag() -> None:
 
 def _rendered_pages() -> list[str]:
     url = "https://example.supabase.co"
-    return [render([], supabase_url=url, supabase_anon_key="k"), render_consent(supabase_url=url, supabase_anon_key="k")]
+    return [
+        render([], supabase_url=url, supabase_anon_key="k"),
+        render_consent(supabase_url=url, supabase_anon_key="k"),
+    ]
 
 
 @pytest.mark.parametrize("html", _rendered_pages(), ids=["index", "consent"])
@@ -82,7 +85,7 @@ def test_csp_script_src_names_exact_files_not_whole_origins(html: str) -> None:
 def test_page_stays_hidden_unless_its_script_finds_it_unframed(html: str) -> None:
     assert "html:not(.unframed) body { display: none !important; }" in html
     script = PAGE_SCRIPT_PATTERN.search(html).group(1).lstrip()
-    assert script.startswith('if (window.top !== window.self) throw new Error(')
+    assert script.startswith("if (window.top !== window.self) throw new Error(")
     assert 'document.documentElement.classList.add("unframed");' in script
 
 
