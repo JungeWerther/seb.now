@@ -751,11 +751,29 @@ inline script go through `script_json` (escapes `<`/`>`/`&`, so a value can't
 close the `<script>`); post slugs must match `POST_SLUG_PATTERN` since they
 become file paths. The backstop is a `<meta>` Content-Security-Policy:
 `index.html` allows only its own inline module script, by a SHA-256 hash that
-`site.py` computes over the final rendered script, plus the pinned
-`SUPABASE_JS_MODULE_URL` origin; post pages allow no script at all. So
+`site.py` computes over the final rendered script, plus exactly one file,
+`SUPABASE_JS_URL` (supabase-js's self-contained UMD build on jsDelivr, pinned,
+loaded with `SUPABASE_JS_INTEGRITY` as its SRI hash); never a whole CDN origin,
+since any package on it could then run (`tests/test_sanitize.py` checks every
+script-src host names a file). Post pages allow no script at all. So
 inline event handlers (`onerror=` etc.) can't be used in markup — image
 error handling is one capture-phase listener in the page script — and bumping
-supabase-js means changing `SUPABASE_JS_MODULE_URL`, not the template.
+supabase-js means changing `SUPABASE_JS_URL` and `SUPABASE_JS_INTEGRITY`
+together (`openssl dgst -sha384 -binary dist/umd/supabase.js | base64` on the
+npm package's file), not the template. An ESM build doesn't fit: esm.sh and
+jsDelivr's `+esm` modules import further modules (each dependency, node
+polyfills), so a CSP allowing one URL would block them.
+
+**Framing (clickjacking).** A `<meta>` CSP can't set `frame-ancestors`, and DO
+App Platform static sites can't send custom response headers (no
+`X-Frame-Options`/CSP header option in the app spec), so the index and consent
+pages defend themselves: their CSS hides `body` until `html.unframed` is set,
+and the first lines of their module script throw if `window.top !==
+window.self` and otherwise add that class. A framed copy (including a
+sandboxed frame with scripts off) therefore never shows anything to click.
+Post pages have no script and nothing to click, so they're left framable. If
+the site ever moves behind something that can set headers, add
+`Content-Security-Policy: frame-ancestors 'none'` there.
 
 **Header menu.** The header's left icon (Lucide `circle-user-round`) opens a
 dropdown of round "bubbles" (`#menu-bubbles`), one per menu item. Each bubble
@@ -1033,8 +1051,9 @@ moved `SWIPE_CAPTURE_SLOP_PX`, and never starts on a `<button>` —
 capturing on `pointerdown` retargets a plain tap's `click` to the swipe
 area, so links and buttons inside would never receive it.
 
-supabase-js is loaded with a dynamic `import()` (`supabaseReady`), not a
-static import, so the page script — swipe handlers included — runs before
+supabase-js is loaded by a `<script>` element the page script adds
+(`supabaseReady`, resolving to the UMD build's `window.supabase`), not a
+static tag or import, so the page script — swipe handlers included — runs before
 the library has downloaded; every client call awaits `supabaseReady`.
 Swipe handlers are attached before the anonymous session and the
 own-vote/score/visited queries resolve; `castVote`/`removeVote` take the
