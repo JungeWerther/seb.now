@@ -37,7 +37,9 @@ def test_notifications_dedupe_on_a_unique_index_not_a_constraint() -> None:
     # ambiguous.
     sql = MIGRATION.read_text()
 
-    assert "create unique index notifications_recipient_reply_key on public.notifications (recipient_id, reply_id);" in sql
+    assert (
+        "create unique index notifications_recipient_reply_key on public.notifications (recipient_id, reply_id);" in sql
+    )
     assert not re.search(r"unique\s*\(\s*recipient_id", sql)
     assert sql.count("on conflict (recipient_id, reply_id) do nothing") == 2
 
@@ -73,9 +75,13 @@ def test_inbox_renders_with_text_content_and_marks_only_what_it_showed_read() ->
     assert "focusLink(reply.link_id)" in render_fn
 
     load_fn = _function(script, "loadInbox")
-    assert 'rpc("mark_notifications_read", { ids: unreadIds })' in load_fn
+    assert 'const MARK_NOTIFICATIONS_READ = "mark_notifications_read";' in script
+    assert "rpc(MARK_NOTIFICATIONS_READ, { ids: unreadIds })" in load_fn
     assert "loadUnreadCount();" in load_fn
-    assert '.from("notifications").select("id", { count: "exact", head: true }).is("read_at", null)' in script
+    assert (
+        ".from(NOTIFICATIONS_TABLE).select(NOTIFICATION_ID, { count: EXACT_COUNT, head: true })"
+        ".is(NOTIFICATION_READ_AT, null)"
+    ) in script
     assert "setupInbox();" in script
 
 

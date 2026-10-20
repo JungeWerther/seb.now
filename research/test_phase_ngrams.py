@@ -33,9 +33,7 @@ from phase_ngrams import (
 )
 
 D = 256
-SD = 1 / math.sqrt(
-    2 * D
-)  # sd of Re⟨u, v⟩ / D for independent phasors, and of a bundle's error
+SD = 1 / math.sqrt(2 * D)  # sd of Re⟨u, v⟩ / D for independent phasors, and of a bundle's error
 SAMPLE = 300
 SEED = 0
 
@@ -62,10 +60,7 @@ def random_names(rng: random.Random, n: int) -> list[str]:
 def looks_like_noise(values: list[float], sd: float) -> bool:
     """Mean within 4 standard errors of 0 and sample sd within 25% of sd."""
     mean = statistics.fmean(values)
-    return (
-        abs(mean) < 4 * sd / math.sqrt(len(values))
-        and abs(statistics.pstdev(values) / sd - 1) < 0.25
-    )
+    return abs(mean) < 4 * sd / math.sqrt(len(values)) and abs(statistics.pstdev(values) / sd - 1) < 0.25
 
 
 def test_trigrams_are_pg_trgm_style() -> None:
@@ -74,18 +69,12 @@ def test_trigrams_are_pg_trgm_style() -> None:
 
 
 def test_folding_makes_spellings_identical() -> None:
-    assert math.isclose(
-        similarity(encode("Sean O'Kane", D), encode("Sean O\u2019Kane", D)), 1.0
-    )
-    assert math.isclose(
-        similarity(encode("Musée d'Orsay", D), encode("musee d orsay", D)), 1.0
-    )
+    assert math.isclose(similarity(encode("Sean O'Kane", D), encode("Sean O\u2019Kane", D)), 1.0)
+    assert math.isclose(similarity(encode("Musée d'Orsay", D), encode("musee d orsay", D)), 1.0)
 
 
 def test_names_ignore_word_order() -> None:
-    assert math.isclose(
-        similarity(encode("O'Kane, Sean", D), encode("Sean O'Kane", D)), 1.0
-    )
+    assert math.isclose(similarity(encode("O'Kane, Sean", D), encode("Sean O'Kane", D)), 1.0)
 
 
 def test_word_tokens_are_namespaced() -> None:
@@ -110,10 +99,7 @@ def test_similarity_is_symmetric_bounded_and_reflexive(a: str, b: str) -> None:
 
 def test_distinct_tokens_are_nearly_orthogonal() -> None:
     pool = random_tokens(random.Random(SEED), 2 * SAMPLE)
-    sims = [
-        similarity(phasor(s, D), phasor(t, D)) / D
-        for s, t in zip(pool[::2], pool[1::2], strict=True)
-    ]
+    sims = [similarity(phasor(s, D), phasor(t, D)) / D for s, t in zip(pool[::2], pool[1::2], strict=True)]
     assert looks_like_noise(sims, SD)
 
 
@@ -139,24 +125,18 @@ def test_bind_is_commutative_associative_and_invertible(a: str, b: str, c: str) 
 @given(name, name, token)
 def test_binding_with_one_key_keeps_similarity(a: str, b: str, key: str) -> None:
     u, v, k = encode(a, D), encode(b, D), phasor(key, D)
-    assert math.isclose(
-        similarity(bind(u, k), bind(v, k)), similarity(u, v), abs_tol=1e-9
-    )
+    assert math.isclose(similarity(bind(u, k), bind(v, k)), similarity(u, v), abs_tol=1e-9)
 
 
 def test_a_bound_pair_is_unlike_its_parts() -> None:
     pool = random_tokens(random.Random(SEED), 2 * SAMPLE)
     pairs = zip(pool[::2], pool[1::2], strict=True)
-    sims = [
-        similarity(bind(phasor(a, D), phasor(b, D)), phasor(a, D)) / D for a, b in pairs
-    ]
+    sims = [similarity(bind(phasor(a, D), phasor(b, D)), phasor(a, D)) / D for a, b in pairs]
     assert looks_like_noise(sims, SD)
 
 
 @given(token, token)
-def test_a_plain_product_commutes_but_ordered_bigram_is_bind_after_permute(
-    a: str, b: str
-) -> None:
+def test_a_plain_product_commutes_but_ordered_bigram_is_bind_after_permute(a: str, b: str) -> None:
     x, y = phasor(a, D), phasor(b, D)
     assert close(bind(x, y), bind(y, x))
     assert close(ordered_bigram(a, b, D), bind(x, permute(y)))
@@ -166,10 +146,7 @@ def test_a_plain_product_commutes_but_ordered_bigram_is_bind_after_permute(
 def test_ordered_bigram_tells_the_two_orders_apart() -> None:
     pool = random_tokens(random.Random(SEED), 2 * SAMPLE)
     pairs = zip(pool[::2], pool[1::2], strict=True)
-    sims = [
-        similarity(ordered_bigram(a, b, D), ordered_bigram(b, a, D)) / D
-        for a, b in pairs
-    ]
+    sims = [similarity(ordered_bigram(a, b, D), ordered_bigram(b, a, D)) / D for a, b in pairs]
     assert looks_like_noise(sims, SD)
 
 
@@ -183,9 +160,7 @@ def test_permute_is_a_cyclic_shift() -> None:
 @settings(max_examples=30, deadline=None)
 @given(st.lists(token, min_size=1, max_size=5), st.integers(min_value=0, max_value=50))
 def test_rope_shift_is_a_rotation(seq: list[str], m: int) -> None:
-    assert close(
-        encode_sequence(seq, D, offset=m), rotate(encode_sequence(seq, D), m), tol=1e-9
-    )
+    assert close(encode_sequence(seq, D, offset=m), rotate(encode_sequence(seq, D), m), tol=1e-9)
 
 
 @settings(max_examples=30, deadline=None)
@@ -193,9 +168,7 @@ def test_rope_shift_is_a_rotation(seq: list[str], m: int) -> None:
 def test_rotation_is_unitary(a: str, b: str, m: int) -> None:
     u, v = encode(a, D), encode(b, D)
     assert math.isclose(norm(rotate(u, m)), 1.0)
-    assert math.isclose(
-        similarity(rotate(u, m), rotate(v, m)), similarity(u, v), abs_tol=1e-9
-    )
+    assert math.isclose(similarity(rotate(u, m), rotate(v, m)), similarity(u, v), abs_tol=1e-9)
 
 
 def test_rope_swap_costs_what_the_frequencies_predict() -> None:

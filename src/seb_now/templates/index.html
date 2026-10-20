@@ -1217,14 +1217,19 @@
     // other UI work while supabase-js is still downloading.
     const SUPABASE_URL = __SUPABASE_URL__;
     const SUPABASE_ANON_KEY = __SUPABASE_ANON_KEY__;
+    const SCRIPT_TAG = "script";
+    const ANONYMOUS_CORS = "anonymous";
+    const LOAD_EVENT = "load";
+    const ERROR_EVENT = "error";
+    const SUPABASE_JS_FAILED = "supabase-js failed to load";
     // supabase-js's UMD build is a classic script that sets window.supabase.
     const supabaseReady = new Promise((resolve, reject) => {
-      const script = document.createElement("script");
+      const script = document.createElement(SCRIPT_TAG);
       script.src = __SUPABASE_JS_URL__;
       script.integrity = __SUPABASE_JS_INTEGRITY__;
-      script.crossOrigin = "anonymous";
-      script.addEventListener("load", () => resolve(window.supabase));
-      script.addEventListener("error", () => reject(new Error("supabase-js failed to load")));
+      script.crossOrigin = ANONYMOUS_CORS;
+      script.addEventListener(LOAD_EVENT, () => resolve(window.supabase));
+      script.addEventListener(ERROR_EVENT, () => reject(new Error(SUPABASE_JS_FAILED)));
       document.head.append(script);
     }).then(({ createClient }) => createClient(SUPABASE_URL, SUPABASE_ANON_KEY));
 
@@ -1350,6 +1355,12 @@
       seenFlushTimer ??= setTimeout(flushSeen, SEEN_FLUSH_MS);
     }
 
+    const SEEN_TABLE = "link_impressions";
+    const SEEN_CONFLICT_KEY = "viewer_id,link_id";
+    const SEEN_FLUSH_FAILED = "failed to record seen links";
+    const PAGE_HIDDEN = "hidden";
+    const PAGE_VISIBLE = "visible";
+
     async function flushSeen() {
       clearTimeout(seenFlushTimer);
       seenFlushTimer = null;
@@ -1358,15 +1369,15 @@
       seenQueue.clear();
       const session = await pendingSession;
       if (!session) return;
-      const { error } = await (await supabaseReady).from("link_impressions").upsert(
+      const { error } = await (await supabaseReady).from(SEEN_TABLE).upsert(
         linkIds.map((linkId) => ({ viewer_id: session.user.id, link_id: linkId })),
-        { onConflict: "viewer_id,link_id", ignoreDuplicates: true },
+        { onConflict: SEEN_CONFLICT_KEY, ignoreDuplicates: true },
       );
-      if (error) console.error("failed to record seen links", error);
+      if (error) console.error(SEEN_FLUSH_FAILED, error);
     }
 
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") flushSeen();
+      if (document.visibilityState === PAGE_HIDDEN) flushSeen();
     });
 
     // A clicked link's visit records how the reader came back. Article links
@@ -2223,9 +2234,12 @@
     // order reads the caller's own votes. Only links about every required
     // (tagged) entity are kept; links mentioning the other suggested entities
     // come first. All of them are highlighted.
+    // Orders that read the viewer's own rows (taste, links already seen).
+    const VIEWER_SORTS = new Set(["for_you", "latest"]);
+
     async function fetchQueried(intent, asOf, offset) {
       const client = await supabaseReady;
-      if (intent.sort === "for_you" || intent.sort === "latest") await pendingSession;
+      if (VIEWER_SORTS.has(intent.sort)) await pendingSession;
       const entities = intent.entities ?? [];
       const required = intent.required ?? [];
       const page = await Result.chain(client.rpc("feed_query", {
@@ -3618,43 +3632,84 @@
     const NOTIFICATION_BODY_PREVIEW = 160;
     const NOTIFICATION_SELECT = "id, kind, created_at, read_at, replies(link_id, body, profiles(handle), remote_actors(handle), links(title))";
     const NOTIFICATION_PHRASES = { reply_to_you: "replied to you", reply_on_thread: "also replied" };
+    const NOTIFICATIONS_TABLE = "notifications";
+    const NOTIFICATION_READ_AT = "read_at";
+    const NOTIFICATION_CREATED_AT = "created_at";
+    const NOTIFICATION_ID = "id";
+    const EXACT_COUNT = "exact";
+    const IS_OPERATOR = "is";
+    const MARK_NOTIFICATIONS_READ = "mark_notifications_read";
+    const NOTIFICATION_DEFAULT_PHRASE = "replied";
+    const NOTIFICATION_ANONYMOUS = "anonymous";
+    const NOTIFICATION_UNREAD_CLASS = "unread";
+    const NOTIFICATION_WHAT_CLASS = "inbox-what";
+    const NOTIFICATION_BODY_CLASS = "inbox-body";
+    const INBOX_OVERLAY_ID = "inbox-overlay";
+    const INBOX_LIST_ID = "inbox-list";
+    const INBOX_STATUS_ID = "inbox-status";
+    const INBOX_LOADING = "Loading…";
+    const INBOX_FAILED = "Couldn't load your inbox.";
+    const INBOX_EMPTY = "Nothing yet. Replies to you and on posts you replied to land here.";
+    const MENU_UNREAD_DOT_ID = "menu-unread-dot";
+    const INBOX_UNREAD_DOT = "#inbox-bubble .unread-dot";
+    const INBOX_COUNT_ID = "inbox-count";
+    const MENU_BUTTON_ID = "menu-btn";
+    const ARIA_LABEL = "aria-label";
+    const MENU_LABEL = "Menu";
+    const UNREAD_LOAD_FAILED = "failed to load unread notifications";
+    const MARK_READ_FAILED = "failed to mark notifications read";
+    const ELLIPSIS = "…";
+    const LIST_ITEM_TAG = "li";
+    const BUTTON_TAG = "button";
+    const PARAGRAPH_TAG = "p";
+    const CLICK_EVENT = "click";
+    const VISIBILITY_EVENT = "visibilitychange";
+    const UNREAD_LABEL_SEPARATOR = ", ";
+    const UNREAD_LABEL_SUFFIX = " unread";
+    const NOTIFICATION_WHERE_PREFIX = " on ";
+    const NOTIFICATION_WHEN_PREFIX = " · ";
+    const WORD_SEPARATOR = " ";
 
     function showUnreadCount(count) {
       const unread = count > 0;
-      document.getElementById("menu-unread-dot").hidden = !unread;
-      document.querySelector("#inbox-bubble .unread-dot").hidden = !unread;
-      document.getElementById("inbox-count").textContent = unread ? count.toLocaleString() : "";
-      document.getElementById("menu-btn").setAttribute("aria-label", unread ? `Menu, ${count} unread` : "Menu");
+      document.getElementById(MENU_UNREAD_DOT_ID).hidden = !unread;
+      document.querySelector(INBOX_UNREAD_DOT).hidden = !unread;
+      document.getElementById(INBOX_COUNT_ID).textContent = unread ? count.toLocaleString() : "";
+      document.getElementById(MENU_BUTTON_ID).setAttribute(
+        ARIA_LABEL,
+        unread ? MENU_LABEL + UNREAD_LABEL_SEPARATOR + count + UNREAD_LABEL_SUFFIX : MENU_LABEL,
+      );
     }
 
     async function loadUnreadCount() {
       if (!(await pendingSession)) return;
       const { count, error } = await (await supabaseReady)
-        .from("notifications").select("id", { count: "exact", head: true }).is("read_at", null);
-      if (error) console.error("failed to load unread notifications", error);
+        .from(NOTIFICATIONS_TABLE).select(NOTIFICATION_ID, { count: EXACT_COUNT, head: true }).is(NOTIFICATION_READ_AT, null);
+      if (error) console.error(UNREAD_LOAD_FAILED, error);
       else showUnreadCount(count ?? 0);
     }
 
     function renderNotification(notification) {
       const reply = notification.replies;
-      const item = document.createElement("li");
-      item.classList.toggle("unread", !notification.read_at);
-      const button = document.createElement("button");
-      button.type = "button";
-      const what = document.createElement("p");
-      what.className = "inbox-what";
-      const who = reply.profiles?.handle || reply.remote_actors?.handle || "anonymous";
-      const where = reply.links?.title ? ` on ${reply.links.title}` : "";
+      const item = document.createElement(LIST_ITEM_TAG);
+      item.classList.toggle(NOTIFICATION_UNREAD_CLASS, !notification.read_at);
+      const button = document.createElement(BUTTON_TAG);
+      button.type = BUTTON_TAG;
+      const what = document.createElement(PARAGRAPH_TAG);
+      what.className = NOTIFICATION_WHAT_CLASS;
+      const who = reply.profiles?.handle || reply.remote_actors?.handle || NOTIFICATION_ANONYMOUS;
+      const where = reply.links?.title ? NOTIFICATION_WHERE_PREFIX + reply.links.title : "";
       const when = postedLabel(notification.created_at);
-      what.textContent = `${who} ${NOTIFICATION_PHRASES[notification.kind] ?? "replied"}${where}${when ? ` · ${when}` : ""}`;
-      const body = document.createElement("p");
-      body.className = "inbox-body";
+      what.textContent = who + WORD_SEPARATOR + (NOTIFICATION_PHRASES[notification.kind] ?? NOTIFICATION_DEFAULT_PHRASE)
+        + where + (when ? NOTIFICATION_WHEN_PREFIX + when : "");
+      const body = document.createElement(PARAGRAPH_TAG);
+      body.className = NOTIFICATION_BODY_CLASS;
       body.textContent = reply.body.length > NOTIFICATION_BODY_PREVIEW
-        ? `${reply.body.slice(0, NOTIFICATION_BODY_PREVIEW)}…`
+        ? reply.body.slice(0, NOTIFICATION_BODY_PREVIEW) + ELLIPSIS
         : reply.body;
       button.append(what, body);
-      button.addEventListener("click", () => {
-        document.getElementById("inbox-overlay").close();
+      button.addEventListener(CLICK_EVENT, () => {
+        document.getElementById(INBOX_OVERLAY_ID).close();
         focusLink(reply.link_id);
       });
       item.appendChild(button);
@@ -3664,9 +3719,9 @@
     // Unread ones come first, so every unread notification the count includes
     // is shown on some open, however many there are.
     const notificationPage = (client, unread, limit) => {
-      const query = client.from("notifications").select(NOTIFICATION_SELECT);
-      return (unread ? query.is("read_at", null) : query.not("read_at", "is", null))
-        .order("created_at", { ascending: false }).limit(limit);
+      const query = client.from(NOTIFICATIONS_TABLE).select(NOTIFICATION_SELECT);
+      return (unread ? query.is(NOTIFICATION_READ_AT, null) : query.not(NOTIFICATION_READ_AT, IS_OPERATOR, null))
+        .order(NOTIFICATION_CREATED_AT, { ascending: false }).limit(limit);
     };
 
     async function fetchInbox(client) {
@@ -3681,12 +3736,12 @@
 
     async function loadInbox() {
       const load = ++inboxLoad;
-      const overlay = document.getElementById("inbox-overlay");
+      const overlay = document.getElementById(INBOX_OVERLAY_ID);
       const current = () => load === inboxLoad && overlay.open;
-      const list = document.getElementById("inbox-list");
-      const status = document.getElementById("inbox-status");
+      const list = document.getElementById(INBOX_LIST_ID);
+      const status = document.getElementById(INBOX_STATUS_ID);
       list.replaceChildren();
-      status.textContent = "Loading…";
+      status.textContent = INBOX_LOADING;
       const session = await pendingSession;
       if (!session) {
         status.textContent = "";
@@ -3696,23 +3751,23 @@
       const { data, error } = await fetchInbox(client);
       if (!current()) return;
       if (error) {
-        status.textContent = "Couldn't load your inbox.";
+        status.textContent = INBOX_FAILED;
         return;
       }
       const notifications = (data ?? []).filter((n) => n.replies);
-      status.textContent = notifications.length ? "" : "Nothing yet. Replies to you and on posts you replied to land here.";
+      status.textContent = notifications.length ? "" : INBOX_EMPTY;
       list.replaceChildren(...notifications.map(renderNotification));
       const unreadIds = notifications.filter((n) => !n.read_at).map((n) => n.id);
       if (!unreadIds.length) return;
-      const { error: markError } = await client.rpc("mark_notifications_read", { ids: unreadIds });
-      if (markError) console.error("failed to mark notifications read", markError);
+      const { error: markError } = await client.rpc(MARK_NOTIFICATIONS_READ, { ids: unreadIds });
+      if (markError) console.error(MARK_READ_FAILED, markError);
       loadUnreadCount();
     }
 
     function setupInbox() {
       loadUnreadCount();
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") loadUnreadCount();
+      document.addEventListener(VISIBILITY_EVENT, () => {
+        if (document.visibilityState === PAGE_VISIBLE) loadUnreadCount();
       });
     }
 
@@ -4063,8 +4118,10 @@
     // (match_entities). Every sense of the same words is one term (a kind
     // called "event" and an entity called "Event" are both read), and longer
     // names are placed first.
+    const COMPATIBILITY_DECOMPOSITION = "NFKD";
+
     function typedFilter(text, entities) {
-      const folded = text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter(Boolean);
+      const folded = text.toLowerCase().normalize(COMPATIBILITY_DECOMPOSITION).replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter(Boolean);
       const sorts = querySorts(folded);
       const words = folded.filter((w, i) => !QUERY_FILLER_WORDS.has(w) && sorts[i] !== "latest");
       if (!words.length) return null;
