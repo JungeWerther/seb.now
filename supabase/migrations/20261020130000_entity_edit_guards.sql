@@ -407,6 +407,8 @@ begin
 end;
 $$;
 
+revoke execute on function public.must(boolean, text) from public, anon, authenticated;
+revoke execute on function public.refuse(boolean, text) from public, anon, authenticated;
 revoke execute on function public.drop_mention(public.entity_edits) from public, anon, authenticated;
 revoke execute on function public.merge_entity(public.entity_edits) from public, anon, authenticated;
 revoke execute on function public.set_place_parent(uuid, uuid, text) from public, anon, authenticated;
