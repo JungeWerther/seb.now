@@ -37,7 +37,9 @@ def test_notifications_dedupe_on_a_unique_index_not_a_constraint() -> None:
     # ambiguous.
     sql = MIGRATION.read_text()
 
-    assert "create unique index notifications_recipient_reply_key on public.notifications (recipient_id, reply_id);" in sql
+    assert (
+        "create unique index notifications_recipient_reply_key on public.notifications (recipient_id, reply_id);" in sql
+    )
     assert not re.search(r"unique\s*\(\s*recipient_id", sql)
     assert sql.count("on conflict (recipient_id, reply_id) do nothing") == 2
 

@@ -112,9 +112,10 @@ def test_seeded_layout_is_a_compiled_type_with_its_style(db: "psycopg.Connection
     assert schema["required"] == ["column_width", "dock_width"]
     assert schema["additionalProperties"] is False
     assert set(schema["$defs"]) == {"color", "length", "duration", "number", "font"}
-    assert db.execute(
-        "select kind, style from entities where kind_path = 'entity.style.layout'"
-    ).fetchone() == ("style", {"column_width": "720px", "dock_width": "480px"})
+    assert db.execute("select kind, style from entities where kind_path = 'entity.style.layout'").fetchone() == (
+        "style",
+        {"column_width": "720px", "dock_width": "480px"},
+    )
 
 
 def test_a_reader_adds_a_type_and_a_style_of_it(db: "psycopg.Connection", users: tuple[uuid.UUID, uuid.UUID]) -> None:
@@ -130,14 +131,52 @@ def test_a_reader_adds_a_type_and_a_style_of_it(db: "psycopg.Connection", users:
 @pytest.mark.parametrize(
     ("path", "label", "schema", "reason"),
     [
-        pytest.param("entity.style.bad", "Bad", {"properties": {"x": {"type": "string", "pattern": "(a+)+$"}}}, META_REFUSAL, id="own-pattern"),
-        pytest.param("entity.style.bad", "Bad", {"properties": {"x": {"$ref": "https://evil.example/s.json"}}}, META_REFUSAL, id="remote-ref"),
-        pytest.param("entity.style.bad", "Bad", {"properties": {"x": {"$ref": "#/$defs/color", "pattern": "(a+)+$"}}}, META_REFUSAL, id="ref-with-pattern"),
-        pytest.param("entity.style.bad", "Bad", {"properties": {"x": {"$ref": "#/$defs/nope"}}}, META_REFUSAL, id="unknown-primitive"),
-        pytest.param("entity.style.bad", "Bad", {"properties": {"x": {"type": "object", "properties": {}}}}, META_REFUSAL, id="nesting"),
+        pytest.param(
+            "entity.style.bad",
+            "Bad",
+            {"properties": {"x": {"type": "string", "pattern": "(a+)+$"}}},
+            META_REFUSAL,
+            id="own-pattern",
+        ),
+        pytest.param(
+            "entity.style.bad",
+            "Bad",
+            {"properties": {"x": {"$ref": "https://evil.example/s.json"}}},
+            META_REFUSAL,
+            id="remote-ref",
+        ),
+        pytest.param(
+            "entity.style.bad",
+            "Bad",
+            {"properties": {"x": {"$ref": "#/$defs/color", "pattern": "(a+)+$"}}},
+            META_REFUSAL,
+            id="ref-with-pattern",
+        ),
+        pytest.param(
+            "entity.style.bad",
+            "Bad",
+            {"properties": {"x": {"$ref": "#/$defs/nope"}}},
+            META_REFUSAL,
+            id="unknown-primitive",
+        ),
+        pytest.param(
+            "entity.style.bad",
+            "Bad",
+            {"properties": {"x": {"type": "object", "properties": {}}}},
+            META_REFUSAL,
+            id="nesting",
+        ),
         pytest.param("entity.style.bad", "Bad", {"properties": {}}, META_REFUSAL, id="no-tokens"),
-        pytest.param("entity.style.bad", "Bad", {"properties": {"Bad-Name": {"$ref": "#/$defs/color"}}}, META_REFUSAL, id="token-name"),
-        pytest.param("entity.style.bad", "Bad", {"properties": {"x": {"enum": ["a;b"]}}}, META_REFUSAL, id="enum-value"),
+        pytest.param(
+            "entity.style.bad",
+            "Bad",
+            {"properties": {"Bad-Name": {"$ref": "#/$defs/color"}}},
+            META_REFUSAL,
+            id="token-name",
+        ),
+        pytest.param(
+            "entity.style.bad", "Bad", {"properties": {"x": {"enum": ["a;b"]}}}, META_REFUSAL, id="enum-value"
+        ),
         pytest.param("entity.style.bad", "Bad", {**THEME, "$defs": {"color": {}}}, META_REFUSAL, id="own-defs"),
         pytest.param("entity.style.bad", "<b>", THEME, "style type labels", id="label"),
         pytest.param("entity.style.a.b", "Deep", THEME, policy_refusal("kinds"), id="too-deep"),
@@ -177,9 +216,12 @@ def test_readers_change_only_their_own_styles(db: "psycopg.Connection", users: t
     with acting_as(db, "authenticated", owner):
         add_type(db, "entity.style.theme", THEME)
         style = add_style(db, "My dark", "entity.style.theme", DARK)
-        assert db.execute(
-            "update entities set style = %s where id = %s", (json.dumps({**DARK, "density": "roomy"}), style)
-        ).rowcount == 1
+        assert (
+            db.execute(
+                "update entities set style = %s where id = %s", (json.dumps({**DARK, "density": "roomy"}), style)
+            ).rowcount
+            == 1
+        )
         assert grant_refusal("entities") in refusal(
             db, lambda: db.execute("update entities set name = 'Renamed' where id = %s", (style,))
         )
@@ -197,11 +239,31 @@ def test_readers_change_only_their_own_styles(db: "psycopg.Connection", users: t
 @pytest.mark.parametrize(
     ("role", "statement", "reason"),
     [
-        pytest.param("authenticated", "insert into entities (name, kind, kind_path) values ('Fake Co', 'company', 'entity.agent.org.company')", policy_refusal("entities"), id="extracted-entity"),
-        pytest.param("authenticated", "update entities set name = 'Renamed' where kind = 'company'", grant_refusal("entities"), id="rename-entity"),
+        pytest.param(
+            "authenticated",
+            "insert into entities (name, kind, kind_path) values ('Fake Co', 'company', 'entity.agent.org.company')",
+            policy_refusal("entities"),
+            id="extracted-entity",
+        ),
+        pytest.param(
+            "authenticated",
+            "update entities set name = 'Renamed' where kind = 'company'",
+            grant_refusal("entities"),
+            id="rename-entity",
+        ),
         pytest.param("authenticated", "truncate kinds cascade", grant_refusal("kinds"), id="truncate-kinds"),
-        pytest.param("anon", "insert into kinds (path, label, schema) values ('entity.style.anon', 'Anon', '{\"properties\": {\"a\": {\"$ref\": \"#/$defs/color\"}}}')", grant_refusal("kinds"), id="anon-type"),
-        pytest.param("anon", "insert into entities (name, kind_path, style) values ('Anon', 'entity.style.layout', '{\"column_width\": \"1px\", \"dock_width\": \"1px\"}')", grant_refusal("entities"), id="anon-style"),
+        pytest.param(
+            "anon",
+            'insert into kinds (path, label, schema) values (\'entity.style.anon\', \'Anon\', \'{"properties": {"a": {"$ref": "#/$defs/color"}}}\')',
+            grant_refusal("kinds"),
+            id="anon-type",
+        ),
+        pytest.param(
+            "anon",
+            'insert into entities (name, kind_path, style) values (\'Anon\', \'entity.style.layout\', \'{"column_width": "1px", "dock_width": "1px"}\')',
+            grant_refusal("entities"),
+            id="anon-style",
+        ),
     ],
 )
 def test_writes_outside_styles_stay_closed(
@@ -221,7 +283,9 @@ def test_styles_are_not_names_for_anything(db: "psycopg.Connection", users: tupl
     assert [row[1] for row in db.execute("select * from match_entities(array['dark', 'matter', 'labs'])")] == [
         "Dark Matter Labs"
     ]
-    assert [row[2] for row in db.execute("select * from match_entities(array['dark', 'matter', 'labs'])")] == ["company"]
+    assert [row[2] for row in db.execute("select * from match_entities(array['dark', 'matter', 'labs'])")] == [
+        "company"
+    ]
     assert [row[2] for row in db.execute("select * from entity_candidates('Dark Matter Labs')")] == ["company"]
     assert db.execute("select known_names(array['dark'])").fetchone()[0] == ["Dark Matter Labs"]
     with acting_as(db, "authenticated", owner):

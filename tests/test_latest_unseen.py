@@ -65,7 +65,4 @@ def test_page_records_seen_rows_and_queries_latest_as_the_reader() -> None:
     page = _page()
     assert '.from("link_impressions").upsert(' in page
     assert "observeSeen(visible);" in page
-    assert (
-        'if (intent.sort === "for_you" || intent.sort === "latest") await pendingSession;'
-        in page
-    )
+    assert 'if (intent.sort === "for_you" || intent.sort === "latest") await pendingSession;' in page
