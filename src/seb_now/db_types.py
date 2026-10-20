@@ -29,6 +29,7 @@ class Table(StrEnum):
     EVAL_SCRATCH = "eval_scratch"
     FOLLOWS = "follows"
     IDENTITY_WITNESSES = "identity_witnesses"
+    INDEX_CHANGES = "index_changes"
     INDEX_STATE = "index_state"
     INDEXICALS = "indexicals"
     JEV_CALLS = "jev_calls"
@@ -37,17 +38,20 @@ class Table(StrEnum):
     LINK_ENRICHMENT = "link_enrichment"
     LINK_ENTITIES = "link_entities"
     LINK_EVENTS = "link_events"
+    LINK_IMPRESSIONS = "link_impressions"
     LINK_TOPIC_SUGGESTIONS = "link_topic_suggestions"
     LINK_TOPICS = "link_topics"
     LINK_VISITS = "link_visits"
     LINKS = "links"
     NACE_ACTIVITIES = "nace_activities"
+    NOTIFICATIONS = "notifications"
     PROFILES = "profiles"
     QUERY_CREDITS = "query_credits"
     QUERY_READINGS = "query_readings"
     REMOTE_ACTORS = "remote_actors"
     REPLIES = "replies"
     SOURCES = "sources"
+    STYLE_PRIMITIVES = "style_primitives"
     TOPIC_OVERRIDES = "topic_overrides"
     TOPIC_PROPOSAL_ENDORSEMENTS = "topic_proposal_endorsements"
     TOPIC_PROPOSAL_EXAMPLES = "topic_proposal_examples"
@@ -106,6 +110,8 @@ class EntitiesRow(TypedDict):
     place_labeled_by: str | None
     wikidata_checked_at: str | None
     wikidata_p: float | None
+    style: Json | None
+    owner_id: str | None
 
 
 class EntityEditsRow(TypedDict):
@@ -215,6 +221,13 @@ class IdentityWitnessesRow(TypedDict):
     created_at: str
 
 
+class IndexChangesRow(TypedDict):
+    seq: int
+    at: str
+    link_seq: int | None
+    entity_seq: int | None
+
+
 class IndexStateRow(TypedDict):
     id: bool
     gen: int
@@ -224,6 +237,8 @@ class IndexStateRow(TypedDict):
     snapshot_entity_seq: int | None
     snapshot_pair_seq: int | None
     snapshot_at: str | None
+    reset_gen: int
+    changes_pruned_seq: int
 
 
 class IndexicalsRow(TypedDict):
@@ -259,6 +274,8 @@ class KindsRow(TypedDict):
     label: str
     description: str | None
     parent: str | None
+    schema: Json | None
+    owner_id: str | None
 
 
 class LinkContentRow(TypedDict):
@@ -305,6 +322,12 @@ class LinkEventsRow(TypedDict):
     p: float
     labeled_by: str
     created_at: str
+
+
+class LinkImpressionsRow(TypedDict):
+    viewer_id: str
+    link_id: str
+    seen_at: str
 
 
 class LinkTopicSuggestionsRow(TypedDict):
@@ -362,6 +385,15 @@ class NaceActivitiesRow(TypedDict):
     path: str
 
 
+class NotificationsRow(TypedDict):
+    id: str
+    recipient_id: str
+    kind: str
+    reply_id: str
+    created_at: str
+    read_at: str | None
+
+
 class ProfilesRow(TypedDict):
     id: str
     handle: str | None
@@ -398,6 +430,7 @@ class RepliesRow(TypedDict):
     remote_actor_id: str | None
     ap_object_id: str | None
     ap_state: str | None
+    in_reply_to_id: str | None
 
 
 class SourcesRow(TypedDict):
@@ -409,6 +442,12 @@ class SourcesRow(TypedDict):
     created_at: str
     entity_id: str | None
     handle: str | None
+
+
+class StylePrimitivesRow(TypedDict):
+    name: str
+    schema: Json
+    description: str
 
 
 class TopicOverridesRow(TypedDict):

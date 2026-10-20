@@ -14,7 +14,8 @@ function grab(name) {
   const cst = html.search(new RegExp(`\\n    (const|let) ${name}\\b`));
   const start = fn >= 0 ? fn : cst;
   if (start < 0) throw new Error(`missing ${name}`);
-  let i = html.indexOf(fn >= 0 ? "{" : "=", start);
+  // A function's body opens at its first ") {" line end, past any destructured parameters.
+  let i = fn >= 0 ? html.indexOf(") {\n", start) + 2 : html.indexOf("=", start);
   if (fn < 0) {
     // const: up to the first ";\n" at depth 0
     let depth = 0;
@@ -33,13 +34,13 @@ function grab(name) {
   throw new Error(`unterminated ${name}`);
 }
 
-const names = ["QUERY_PREFIX_MIN_LENGTH", "QUERY_STOPWORDS", "QUERY_SORT_WORDS", "QUERY_FILLER_WORDS",
-  "queryWords", "wordMatches", "kindName", "entityKindLabel", "localNow", "indexicalSense", "typedIndexical", "typedFilter",
+const names = ["QUERY_PREFIX_MIN_LENGTH", "QUERY_STOPWORDS", "QUERY_SORT_WORDS", "QUERY_NAME_OPENING_SORT_WORDS",
+  "querySorts", "QUERY_FILLER_WORDS", "queryWords", "isTopicWord", "localRead", "wordMatches", "kindName", "entityKindLabel", "localNow", "indexicalSense", "typedIndexical", "typedFilter",
   "localFilterResults", "filterLocalLinks"];
 const src = filterJs + "\n" + names.map(grab).join("\n") + `
-let kindIndex = [], indexicalIndex = [], entityIndex = null;
+let kindIndex = [], indexicalIndex = [], entityIndex = null, topicIndex = [];
 const queryContext = { focus: null };
-return { typedFilter, typedIndexical, filterLocalLinks, set(k, i, f) { kindIndex = k; indexicalIndex = i; queryContext.focus = f; },
+return { localRead, typedFilter, typedIndexical, filterLocalLinks, set(k, i, f) { kindIndex = k; indexicalIndex = i; queryContext.focus = f; },
   index(x) { entityIndex = x; } };`;
 const page = new Function(src)();
 
@@ -118,6 +119,19 @@ check("local: (Event kind ∨ work 'Event') ∧ Paris, newest first",
 check("local: a lone kind still works", page.filterLocalLinks([{ kind: "entity.event" }]).map((r) => r.linkSeq), [11]);
 check("an indexical sense keeps the filter off the local index",
   page.typedFilter("tonight paris", [paris]).local, null);
+
+// "new" is newest first unless another word follows it (New York).
+check("new → latest", page.localRead("new").intent, { sort: "latest", topic: null, search: "" });
+check("what's new → latest", page.localRead("what's new").intent.sort, "latest");
+check("new posts → latest", page.localRead("new posts").intent, { sort: "latest", topic: null, search: "" });
+check("new york → a search, not a sort", page.localRead("new york").intent, { sort: "for_you", topic: null, search: "new york" });
+check("latest new york → latest, new kept", page.localRead("latest new york").intent, { sort: "latest", topic: null, search: "new york" });
+const newYork = { id: "ny", seq: 8, name: "New York", kind: "place", kind_path: "entity.place" };
+check("events in new york → New York stays a name",
+  norm(page.typedFilter("events in new york", [newYork])).terms, [{ kind: "entity.event" }, { entities: ["ny"] }]);
+check("events in paris, new → new is newest first",
+  norm(page.typedFilter("events in paris, new", [paris])).terms, [{ kind: "entity.event" }, { entities: ["p1"] }]);
+check("new in paris → latest, then paris", page.localRead("new in paris").intent, { sort: "latest", topic: null, search: "paris" });
 
 console.log(failures ? `\n${failures} FAILED` : "\nall passed");
 process.exit(failures ? 1 : 0);

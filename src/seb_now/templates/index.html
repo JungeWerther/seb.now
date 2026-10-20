@@ -499,6 +499,39 @@
     #handle-save:disabled { opacity: 0.5; cursor: default; }
     #profile-hint { font-size: 0.8rem; color: gray; margin: 0.5rem 0 0; }
     #profile-status { font-size: 0.8rem; color: gray; min-height: 1.2em; margin: 0.4rem 0 0; }
+    /* Unread notifications: a red dot on the menu icon and on the Inbox bubble. */
+    #menu-btn { position: relative; }
+    .unread-dot {
+      width: 0.55rem;
+      height: 0.55rem;
+      border-radius: 50%;
+      background: var(--negative);
+      box-shadow: 0 0 0 2px var(--bg);
+    }
+    .unread-dot[hidden] { display: none; }
+    #menu-unread-dot { position: absolute; top: 0.1rem; right: 0.1rem; }
+    #inbox-bubble .bubble-icon { position: relative; }
+    #inbox-bubble .unread-dot { position: absolute; top: -0.1rem; right: -0.1rem; }
+    #inbox-count { font-variant-numeric: tabular-nums; color: gray; }
+    #inbox-count:empty { display: none; }
+    #inbox-status { font-size: 0.85rem; color: gray; margin: 0; }
+    #inbox-status:empty { display: none; }
+    #inbox-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+    #inbox-list button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      font: inherit;
+      color: inherit;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid rgba(128, 128, 128, 0.2);
+      border-radius: 12px;
+      background: var(--post-bg);
+      cursor: pointer;
+    }
+    #inbox-list .unread button { border-color: var(--negative); }
+    #inbox-list .inbox-what { margin: 0; font-size: 0.8rem; color: gray; }
+    #inbox-list .inbox-body { margin: 0.25rem 0 0; font-size: 0.9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
     #taste-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
     .taste-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.3rem 0.75rem; font-size: 0.85rem; }
     .taste-custom { margin-left: 0.4rem; font-size: 0.7rem; color: gray; }
@@ -1026,12 +1059,18 @@
             <circle cx="12" cy="10" r="4"/>
             <circle cx="12" cy="12" r="10"/>
           </svg>
+          <span class="unread-dot" id="menu-unread-dot" hidden></span>
         </button>
         <ul id="menu-bubbles">
           <li><div class="bubble balance" id="query-balance" title="Credits left for reading your searches">
             <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg></span>
             <span><span id="query-balance-count">1,000</span> credits</span>
           </div></li>
+          <li><button class="bubble" id="inbox-bubble" data-overlay="inbox-overlay" tabindex="-1">
+            <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg><span class="unread-dot" hidden></span></span>
+            <span>Inbox</span>
+            <span id="inbox-count"></span>
+          </button></li>
           <li><button class="bubble" data-overlay="taste-overlay" tabindex="-1">
             <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></span>
             <span>My Algorithm</span>
@@ -1066,6 +1105,14 @@
     <ol id="taste-list"></ol>
     <button id="taste-reset">Reset all to default</button>
     <template id="taste-clear-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></template>
+  </dialog>
+  <dialog id="inbox-overlay" class="overlay" aria-labelledby="inbox-title">
+    <div class="overlay-head">
+      <p class="overlay-title" id="inbox-title">Inbox</p>
+      <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
+    <p id="inbox-status"></p>
+    <ol id="inbox-list"></ol>
   </dialog>
   <dialog id="profile-overlay" class="overlay" aria-labelledby="profile-title">
     <div class="overlay-head">
@@ -1170,14 +1217,19 @@
     // other UI work while supabase-js is still downloading.
     const SUPABASE_URL = __SUPABASE_URL__;
     const SUPABASE_ANON_KEY = __SUPABASE_ANON_KEY__;
+    const SCRIPT_TAG = "script";
+    const ANONYMOUS_CORS = "anonymous";
+    const LOAD_EVENT = "load";
+    const ERROR_EVENT = "error";
+    const SUPABASE_JS_FAILED = "supabase-js failed to load";
     // supabase-js's UMD build is a classic script that sets window.supabase.
     const supabaseReady = new Promise((resolve, reject) => {
-      const script = document.createElement("script");
+      const script = document.createElement(SCRIPT_TAG);
       script.src = __SUPABASE_JS_URL__;
       script.integrity = __SUPABASE_JS_INTEGRITY__;
-      script.crossOrigin = "anonymous";
-      script.addEventListener("load", () => resolve(window.supabase));
-      script.addEventListener("error", () => reject(new Error("supabase-js failed to load")));
+      script.crossOrigin = ANONYMOUS_CORS;
+      script.addEventListener(LOAD_EVENT, () => resolve(window.supabase));
+      script.addEventListener(ERROR_EVENT, () => reject(new Error(SUPABASE_JS_FAILED)));
       document.head.append(script);
     }).then(({ createClient }) => createClient(SUPABASE_URL, SUPABASE_ANON_KEY));
 
@@ -1266,6 +1318,67 @@
       }
       return new Set(data.map((row) => row.link_id));
     }
+
+    // A row counts as seen once SEEN_VISIBLE_RATIO of it has stayed on screen
+    // for SEEN_DWELL_MS, so a fling past it doesn't. Seen links are recorded in
+    // link_impressions, and the latest order puts them below unseen ones
+    // (feed_query), so "new" means new to this reader.
+    const SEEN_VISIBLE_RATIO = 0.5;
+    const SEEN_DWELL_MS = 1000;
+    const SEEN_FLUSH_MS = 3000;
+    const seenTimers = new Map();
+    const seenQueue = new Set();
+    let seenFlushTimer = null;
+    const seenObserver = "IntersectionObserver" in window
+      ? new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          const li = entry.target;
+          if (entry.intersectionRatio >= SEEN_VISIBLE_RATIO) {
+            if (!seenTimers.has(li)) seenTimers.set(li, setTimeout(() => markSeen(li), SEEN_DWELL_MS));
+          } else {
+            clearTimeout(seenTimers.get(li));
+            seenTimers.delete(li);
+          }
+        }
+      }, { threshold: SEEN_VISIBLE_RATIO })
+      : null;
+
+    function observeSeen(items) {
+      if (seenObserver) for (const li of items) seenObserver.observe(li);
+    }
+
+    function markSeen(li) {
+      seenTimers.delete(li);
+      seenObserver.unobserve(li);
+      if (!li.isConnected || !li.dataset.linkId) return;
+      seenQueue.add(li.dataset.linkId);
+      seenFlushTimer ??= setTimeout(flushSeen, SEEN_FLUSH_MS);
+    }
+
+    const SEEN_TABLE = "link_impressions";
+    const SEEN_CONFLICT_KEY = "viewer_id,link_id";
+    const SEEN_FLUSH_FAILED = "failed to record seen links";
+    const PAGE_HIDDEN = "hidden";
+    const PAGE_VISIBLE = "visible";
+
+    async function flushSeen() {
+      clearTimeout(seenFlushTimer);
+      seenFlushTimer = null;
+      if (seenQueue.size === 0) return;
+      const linkIds = [...seenQueue];
+      seenQueue.clear();
+      const session = await pendingSession;
+      if (!session) return;
+      const { error } = await (await supabaseReady).from(SEEN_TABLE).upsert(
+        linkIds.map((linkId) => ({ viewer_id: session.user.id, link_id: linkId })),
+        { onConflict: SEEN_CONFLICT_KEY, ignoreDuplicates: true },
+      );
+      if (error) console.error(SEEN_FLUSH_FAILED, error);
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === PAGE_HIDDEN) flushSeen();
+    });
 
     // A clicked link's visit records how the reader came back. Article links
     // open in a new tab (or another app), which keeps this page: the return is
@@ -1804,6 +1917,7 @@
         }
       }
       if (visible.length > 0) decorateArticles(visible, session);
+      observeSeen(visible);
     }
 
     async function decorateArticles(items, session) {
@@ -2120,9 +2234,12 @@
     // order reads the caller's own votes. Only links about every required
     // (tagged) entity are kept; links mentioning the other suggested entities
     // come first. All of them are highlighted.
+    // Orders that read the viewer's own rows (taste, links already seen).
+    const VIEWER_SORTS = new Set(["for_you", "latest"]);
+
     async function fetchQueried(intent, asOf, offset) {
       const client = await supabaseReady;
-      if (intent.sort === "for_you") await pendingSession;
+      if (VIEWER_SORTS.has(intent.sort)) await pendingSession;
       const entities = intent.entities ?? [];
       const required = intent.required ?? [];
       const page = await Result.chain(client.rpc("feed_query", {
@@ -3142,7 +3259,10 @@
         event.stopPropagation();
         const open = !bubbles.classList.contains("open");
         setOpen(open);
-        if (open) loadQueryBalance();
+        if (open) {
+          loadQueryBalance();
+          loadUnreadCount();
+        }
       });
       document.addEventListener("click", (event) => {
         if (!bubbles.contains(event.target)) setOpen(false);
@@ -3505,7 +3625,153 @@
       });
     }
 
-    const OVERLAY_LOADERS = { "taste-overlay": loadTaste, "profile-overlay": loadProfile };
+    // Notifications (public.notifications) are filled by a replies trigger;
+    // RLS shows each reader only their own. Their text is other readers' and
+    // other sites' replies, so it only reaches the DOM through textContent.
+    const NOTIFICATIONS_SHOWN = 50;
+    const NOTIFICATION_BODY_PREVIEW = 160;
+    const NOTIFICATION_SELECT = "id, kind, created_at, read_at, replies(link_id, body, profiles(handle), remote_actors(handle), links(title))";
+    const NOTIFICATION_PHRASES = { reply_to_you: "replied to you", reply_on_thread: "also replied" };
+    const NOTIFICATIONS_TABLE = "notifications";
+    const NOTIFICATION_READ_AT = "read_at";
+    const NOTIFICATION_CREATED_AT = "created_at";
+    const NOTIFICATION_ID = "id";
+    const EXACT_COUNT = "exact";
+    const IS_OPERATOR = "is";
+    const MARK_NOTIFICATIONS_READ = "mark_notifications_read";
+    const NOTIFICATION_DEFAULT_PHRASE = "replied";
+    const NOTIFICATION_ANONYMOUS = "anonymous";
+    const NOTIFICATION_UNREAD_CLASS = "unread";
+    const NOTIFICATION_WHAT_CLASS = "inbox-what";
+    const NOTIFICATION_BODY_CLASS = "inbox-body";
+    const INBOX_OVERLAY_ID = "inbox-overlay";
+    const INBOX_LIST_ID = "inbox-list";
+    const INBOX_STATUS_ID = "inbox-status";
+    const INBOX_LOADING = "Loading…";
+    const INBOX_FAILED = "Couldn't load your inbox.";
+    const INBOX_EMPTY = "Nothing yet. Replies to you and on posts you replied to land here.";
+    const MENU_UNREAD_DOT_ID = "menu-unread-dot";
+    const INBOX_UNREAD_DOT = "#inbox-bubble .unread-dot";
+    const INBOX_COUNT_ID = "inbox-count";
+    const MENU_BUTTON_ID = "menu-btn";
+    const ARIA_LABEL = "aria-label";
+    const MENU_LABEL = "Menu";
+    const UNREAD_LOAD_FAILED = "failed to load unread notifications";
+    const MARK_READ_FAILED = "failed to mark notifications read";
+    const ELLIPSIS = "…";
+    const LIST_ITEM_TAG = "li";
+    const BUTTON_TAG = "button";
+    const PARAGRAPH_TAG = "p";
+    const CLICK_EVENT = "click";
+    const VISIBILITY_EVENT = "visibilitychange";
+    const UNREAD_LABEL_SEPARATOR = ", ";
+    const UNREAD_LABEL_SUFFIX = " unread";
+    const NOTIFICATION_WHERE_PREFIX = " on ";
+    const NOTIFICATION_WHEN_PREFIX = " · ";
+    const WORD_SEPARATOR = " ";
+
+    function showUnreadCount(count) {
+      const unread = count > 0;
+      document.getElementById(MENU_UNREAD_DOT_ID).hidden = !unread;
+      document.querySelector(INBOX_UNREAD_DOT).hidden = !unread;
+      document.getElementById(INBOX_COUNT_ID).textContent = unread ? count.toLocaleString() : "";
+      document.getElementById(MENU_BUTTON_ID).setAttribute(
+        ARIA_LABEL,
+        unread ? MENU_LABEL + UNREAD_LABEL_SEPARATOR + count + UNREAD_LABEL_SUFFIX : MENU_LABEL,
+      );
+    }
+
+    async function loadUnreadCount() {
+      if (!(await pendingSession)) return;
+      const { count, error } = await (await supabaseReady)
+        .from(NOTIFICATIONS_TABLE).select(NOTIFICATION_ID, { count: EXACT_COUNT, head: true }).is(NOTIFICATION_READ_AT, null);
+      if (error) console.error(UNREAD_LOAD_FAILED, error);
+      else showUnreadCount(count ?? 0);
+    }
+
+    function renderNotification(notification) {
+      const reply = notification.replies;
+      const item = document.createElement(LIST_ITEM_TAG);
+      item.classList.toggle(NOTIFICATION_UNREAD_CLASS, !notification.read_at);
+      const button = document.createElement(BUTTON_TAG);
+      button.type = BUTTON_TAG;
+      const what = document.createElement(PARAGRAPH_TAG);
+      what.className = NOTIFICATION_WHAT_CLASS;
+      const who = reply.profiles?.handle || reply.remote_actors?.handle || NOTIFICATION_ANONYMOUS;
+      const where = reply.links?.title ? NOTIFICATION_WHERE_PREFIX + reply.links.title : "";
+      const when = postedLabel(notification.created_at);
+      what.textContent = who + WORD_SEPARATOR + (NOTIFICATION_PHRASES[notification.kind] ?? NOTIFICATION_DEFAULT_PHRASE)
+        + where + (when ? NOTIFICATION_WHEN_PREFIX + when : "");
+      const body = document.createElement(PARAGRAPH_TAG);
+      body.className = NOTIFICATION_BODY_CLASS;
+      body.textContent = reply.body.length > NOTIFICATION_BODY_PREVIEW
+        ? reply.body.slice(0, NOTIFICATION_BODY_PREVIEW) + ELLIPSIS
+        : reply.body;
+      button.append(what, body);
+      button.addEventListener(CLICK_EVENT, () => {
+        document.getElementById(INBOX_OVERLAY_ID).close();
+        focusLink(reply.link_id);
+      });
+      item.appendChild(button);
+      return item;
+    }
+
+    // Unread ones come first, so every unread notification the count includes
+    // is shown on some open, however many there are.
+    const notificationPage = (client, unread, limit) => {
+      const query = client.from(NOTIFICATIONS_TABLE).select(NOTIFICATION_SELECT);
+      return (unread ? query.is(NOTIFICATION_READ_AT, null) : query.not(NOTIFICATION_READ_AT, IS_OPERATOR, null))
+        .order(NOTIFICATION_CREATED_AT, { ascending: false }).limit(limit);
+    };
+
+    async function fetchInbox(client) {
+      const unread = await notificationPage(client, true, NOTIFICATIONS_SHOWN);
+      const room = NOTIFICATIONS_SHOWN - (unread.data?.length ?? 0);
+      if (unread.error || room <= 0) return unread;
+      const read = await notificationPage(client, false, room);
+      return read.error ? read : { data: [...unread.data, ...read.data], error: null };
+    }
+
+    let inboxLoad = 0;
+
+    async function loadInbox() {
+      const load = ++inboxLoad;
+      const overlay = document.getElementById(INBOX_OVERLAY_ID);
+      const current = () => load === inboxLoad && overlay.open;
+      const list = document.getElementById(INBOX_LIST_ID);
+      const status = document.getElementById(INBOX_STATUS_ID);
+      list.replaceChildren();
+      status.textContent = INBOX_LOADING;
+      const session = await pendingSession;
+      if (!session) {
+        status.textContent = "";
+        return;
+      }
+      const client = await supabaseReady;
+      const { data, error } = await fetchInbox(client);
+      if (!current()) return;
+      if (error) {
+        status.textContent = INBOX_FAILED;
+        return;
+      }
+      const notifications = (data ?? []).filter((n) => n.replies);
+      status.textContent = notifications.length ? "" : INBOX_EMPTY;
+      list.replaceChildren(...notifications.map(renderNotification));
+      const unreadIds = notifications.filter((n) => !n.read_at).map((n) => n.id);
+      if (!unreadIds.length) return;
+      const { error: markError } = await client.rpc(MARK_NOTIFICATIONS_READ, { ids: unreadIds });
+      if (markError) console.error(MARK_READ_FAILED, markError);
+      loadUnreadCount();
+    }
+
+    function setupInbox() {
+      loadUnreadCount();
+      document.addEventListener(VISIBILITY_EVENT, () => {
+        if (document.visibilityState === PAGE_VISIBLE) loadUnreadCount();
+      });
+    }
+
+    const OVERLAY_LOADERS = { "taste-overlay": loadTaste, "profile-overlay": loadProfile, "inbox-overlay": loadInbox };
 
     // Must match the replies_body_length check in the replies migration.
     const REPLY_MAX_LENGTH = 500;
@@ -3681,7 +3947,7 @@
     const SORT_LABELS = { latest: "Latest", top: "Top", discussed: "Most discussed" };
     // What a sort order's page (/o/…) says it lists.
     const ORDER_DESCRIPTIONS = {
-      latest: "Every post, newest first.",
+      latest: "Every post, newest first; the ones you've seen go last.",
       top: "Every post, highest net votes first.",
       discussed: "Every post, most replied to first.",
     };
@@ -3689,10 +3955,23 @@
     const TERM_DESCRIPTION = "These words name every one of these at once; the posts below are about any of them.";
     // Words the page reads as a sort order on its own, without asking Jev.
     const QUERY_SORT_WORDS = {
-      latest: "latest", newest: "latest", recent: "latest", fresh: "latest", today: "latest",
+      latest: "latest", newest: "latest", new: "latest", recent: "latest", fresh: "latest", today: "latest",
       top: "top", best: "top", popular: "top", upvoted: "top",
       discussed: "discussed", debated: "discussed", controversial: "discussed", commented: "discussed",
     };
+    // Sort words that also open names ("new" in New York): a sort only at the
+    // end or before filler or another sort word ("new", "what's new", "new in
+    // paris"), not before a word that may finish the name ("new york").
+    const QUERY_NAME_OPENING_SORT_WORDS = new Set(["new"]);
+    // The sort each of `words` (folded, stopwords kept) asks for, or undefined.
+    function querySorts(words) {
+      return words.map((word, i) => {
+        const sort = QUERY_SORT_WORDS[word];
+        if (!sort || !QUERY_NAME_OPENING_SORT_WORDS.has(word)) return sort;
+        const next = words[i + 1];
+        return next === undefined || QUERY_FILLER_WORDS.has(next) || QUERY_SORT_WORDS[next] ? sort : undefined;
+      });
+    }
     // Words that ask for nothing by themselves ("show me the most …").
     const QUERY_FILLER_WORDS = new Set([...QUERY_STOPWORDS, "most", "articles", "posts", "stories", "links", "what", "whats", "is", "are", "happening", "now", "please", "s"]);
 
@@ -3839,8 +4118,12 @@
     // (match_entities). Every sense of the same words is one term (a kind
     // called "event" and an entity called "Event" are both read), and longer
     // names are placed first.
+    const COMPATIBILITY_DECOMPOSITION = "NFKD";
+
     function typedFilter(text, entities) {
-      const words = queryWords(text).filter((w) => !QUERY_FILLER_WORDS.has(w) && QUERY_SORT_WORDS[w] !== "latest");
+      const folded = text.toLowerCase().normalize(COMPATIBILITY_DECOMPOSITION).replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter(Boolean);
+      const sorts = querySorts(folded);
+      const words = folded.filter((w, i) => !QUERY_FILLER_WORDS.has(w) && sorts[i] !== "latest");
       if (!words.length) return null;
       const senses = [
         ...kindIndex.flatMap((kind) => kind.names.map((name) => ({
@@ -3958,11 +4241,12 @@
       const words = text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
         .split(/[^a-z0-9]+/).filter(Boolean);
       const lastAt = partial ? words.length - 1 : -1;
+      const sorts = querySorts(words);
       let sort = null;
       let sure = true;
       const rest = [];
       words.forEach((word, i) => {
-        const wordSort = i === lastAt ? null : QUERY_SORT_WORDS[word];
+        const wordSort = i === lastAt ? null : sorts[i];
         if (wordSort) {
           if (sort && sort !== wordSort) sure = false;
           sort ??= wordSort;
@@ -3999,11 +4283,14 @@
     // time. A snapshot from the public `index` bucket (made by index-snapshot,
     // under a new name each time, so the CDN keeps it) is kept in IndexedDB;
     // `index_diff` brings it up to date when the page opens and every
-    // INDEX_REFRESH_MS while it's visible. Diffs only add: when `gen` moved on
-    // (something was deleted, renamed or folded) the snapshot is loaded again,
-    // and until one of the current gen exists the page asks the database, as
-    // it does before the index has loaded or where IndexedDB, gzip streams or
-    // the bucket aren't there.
+    // INDEX_REFRESH_MS while it's visible. A copy with a change watermark
+    // (`wm.c`, 20261018000300_index_changes.sql) also takes what was deleted,
+    // renamed or folded from the diff, as each touched key's present state;
+    // only a copy from before `reset_gen` (a change the log can't carry) or too
+    // far behind loads the snapshot again. A copy without one (kept by an
+    // older page) goes on as before until `gen` moves. Until a usable snapshot
+    // exists the page asks the database, as it does before the index has
+    // loaded or where IndexedDB, gzip streams or the bucket aren't there.
     const INDEX_FORMAT = 1;
     const INDEX_DB_NAME = "seb-now-index";
     const INDEX_DB_STORE = "index";
@@ -4169,19 +4456,56 @@
 
     async function fetchIndexDiff(wm) {
       const below = (n) => Math.max(0, n - INDEX_DIFF_OVERLAP);
-      const { data, error } = await (await supabaseReady).rpc("index_diff", wm
-        ? { link_seq: below(wm.l), entity_seq: below(wm.e), pair_seq: below(wm.p) }
-        : {});
+      const args = wm ? { link_seq: below(wm.l), entity_seq: below(wm.e), pair_seq: below(wm.p) } : {};
+      if (wm && Number.isInteger(wm.c)) args.change_seq = below(wm.c);
+      const { data, error } = await (await supabaseReady).rpc("index_diff", args);
       if (error) throw error;
       return data;
     }
 
-    // Adds a diff's rows; true when it added anything.
+    // Whether the copy can take this diff rather than be reloaded.
+    function indexCopyCurrent(diff) {
+      return Number.isInteger(entityIndex.wm?.c) && diff.reset_gen != null
+        ? entityIndex.gen >= diff.reset_gen
+        : diff.gen === entityIndex.gen;
+    }
+
+    function unindexMention(linkSeq, entitySeq) {
+      const link = entityIndex.links.get(linkSeq);
+      if (!link?.entities.delete(entitySeq)) return false;
+      if (!link.entities.size) entityIndex.links.delete(linkSeq);
+      const links = entityIndex.entityLinks.get(entitySeq);
+      links?.delete(linkSeq);
+      if (links && !links.size) entityIndex.entityLinks.delete(entitySeq);
+      return true;
+    }
+
+    // Applies a diff: removals first, then the present state of what was added
+    // or touched (the two never name the same key, so a diff asked again from
+    // below the watermark changes nothing). An entity left with no mentions
+    // goes, as in a snapshot. True when anything changed.
     function applyIndexDiff(diff) {
       let changed = false;
+      const orphans = new Set();
+      for (const linkSeq of diff.gone_links ?? []) {
+        for (const entitySeq of [...(entityIndex.links.get(linkSeq)?.entities ?? [])]) {
+          unindexMention(linkSeq, entitySeq);
+          orphans.add(entitySeq);
+          changed = true;
+        }
+      }
+      for (const entitySeq of diff.gone_entities ?? []) {
+        for (const linkSeq of [...(entityIndex.entityLinks.get(entitySeq) ?? [])]) unindexMention(linkSeq, entitySeq);
+        if (entityIndex.entities.delete(entitySeq)) changed = true;
+      }
+      for (const [linkSeq, entitySeq] of diff.unpairs ?? []) {
+        if (!unindexMention(linkSeq, entitySeq)) continue;
+        orphans.add(entitySeq);
+        changed = true;
+      }
       for (const [seq, name, kindPath, kind] of diff.entities) {
         const known = entityIndex.entities.get(seq);
-        if (known && known.name === name && known.kind_path === kindPath) continue;
+        if (known && known.name === name && known.kind_path === kindPath && known.kind === kind) continue;
         indexEntity(seq, name, kindPath, kind);
         changed = true;
       }
@@ -4194,6 +4518,10 @@
         const link = entityIndex.links.get(linkSeq);
         if (link) link.minute = minute;
       }
+      for (const entitySeq of orphans) {
+        if (!entityIndex.entityLinks.has(entitySeq)) entityIndex.entities.delete(entitySeq);
+      }
+      entityIndex.gen = diff.gen;
       entityIndex.wm = diff.wm;
       if (changed) entityIndex.version++;
       return changed;
@@ -4210,14 +4538,14 @@
           if (stored?.v === INDEX_FORMAT) loadIndexState(stored);
         }
         let diff = await fetchIndexDiff(entityIndex.gen ? entityIndex.wm : null);
-        if (diff.reload || diff.gen !== entityIndex.gen) {
-          if (!diff.snapshot || diff.snapshot.gen !== diff.gen) {
+        if (diff.reload || !indexCopyCurrent(diff)) {
+          if (!diff.snapshot || diff.snapshot.gen < (diff.reset_gen ?? diff.gen)) {
             entityIndex.ready = false;
             return;
           }
           loadIndexState(await fetchIndexSnapshot(diff.snapshot.path));
           diff = await fetchIndexDiff(entityIndex.wm);
-          if (diff.reload || diff.gen !== entityIndex.gen) {
+          if (diff.reload || !indexCopyCurrent(diff)) {
             entityIndex.ready = false;
             return;
           }
@@ -4594,8 +4922,9 @@
 
       if (!value.trim()) return tokens;
       if (intent?.sort && SORT_LABELS[intent.sort]) {
-        for (const t of tokens) {
-          if (t.open && !t.partial && QUERY_SORT_WORDS[t.word] === intent.sort) {
+        const sorts = querySorts(tokens.map((t) => t.word));
+        for (const [i, t] of tokens.entries()) {
+          if (t.open && !t.partial && sorts[i] === intent.sort) {
             t.tag = { kind: "order", page: markPage(SORT_LABELS[intent.sort], setOrderHref, intent.sort) };
             t.open = false;
           }
@@ -4993,6 +5322,7 @@
     setupFeed(savedSearchQuery().trim());
     setupVisitReturns();
     setupMenu();
+    setupInbox();
     setupTaste();
     setupProfile();
     setupSearch();

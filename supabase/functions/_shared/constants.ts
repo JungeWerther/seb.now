@@ -50,12 +50,6 @@ export const HN = Object.freeze({
   API: "https://hacker-news.firebaseio.com/v0",
 });
 
-// techcrunch-ingest.
-export const TECHCRUNCH = Object.freeze({
-  FEED_URL: "https://techcrunch.com/feed/",
-  ITEMS_LIMIT: 20,
-});
-
 // youtube-ingest.
 export const YOUTUBE = Object.freeze({
   FEED_URL: "https://www.youtube.com/feeds/videos.xml?channel_id=",

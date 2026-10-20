@@ -764,6 +764,16 @@ async function ourPostId(object: unknown, { viaReply = false } = {}): Promise<st
   return data ? linkId : null;
 }
 
+// The id of one of our sent replies, given its note id, or null.
+async function ourReplyId(object: unknown): Promise<string | null> {
+  const id = typeof object === "string" ? object : (object as { id?: unknown } | undefined)?.id;
+  if (typeof id !== "string" || !id.startsWith(`${NOTES_URL}?reply=`)) return null;
+  const replyId = new URL(id).searchParams.get("reply") ?? "";
+  if (!UUID_PATTERN.test(replyId)) return null;
+  const { data } = await supabase.from("replies").select("id").eq("id", replyId).eq("ap_state", "sent").maybeSingle();
+  return data?.id ?? null;
+}
+
 async function upsertRemoteActor(actorDoc: Record<string, unknown>): Promise<string | null> {
   const actorUrl = actorDoc.id as string;
   const username = typeof actorDoc.preferredUsername === "string" ? actorDoc.preferredUsername : "";
@@ -832,7 +842,10 @@ async function handleReply(activity: Record<string, unknown>, actorDoc: Record<s
   if (!actorId) return;
   const { error } = await supabase
     .from("replies")
-    .upsert({ link_id: linkId, remote_actor_id: actorId, body, ap_object_id: note.id }, { onConflict: "ap_object_id" });
+    .upsert(
+      { link_id: linkId, remote_actor_id: actorId, body, ap_object_id: note.id, in_reply_to_id: await ourReplyId(note.inReplyTo) },
+      { onConflict: "ap_object_id" },
+    );
   if (error) console.error(`storing reply ${note.id} failed:`, error.message);
 }
 

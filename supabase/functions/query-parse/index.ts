@@ -85,11 +85,12 @@ function callerId(req: Request): string | null {
   }
 }
 
-async function refundCredit(req: Request) {
+async function refundCredit(req: Request): Promise<number | null> {
   const id = callerId(req);
-  if (!id) return;
-  const { data } = await admin.from("query_credits").select("used").eq("user_id", id).maybeSingle();
-  if (data?.used) await admin.from("query_credits").update({ used: data.used - 1 }).eq("user_id", id);
+  if (!id) return null;
+  const { data, error } = await admin.rpc("refund_query_credit", { target: id });
+  if (error) console.error("refund_query_credit failed", error);
+  return (data as number | null) ?? null;
 }
 
 function asCaller(req: Request) {
@@ -205,7 +206,7 @@ Deno.serve(async (req: Request) => {
     return json({ ...parsed, credits_left: left });
   } catch (e) {
     console.error("query-parse failed", e);
-    await refundCredit(req);
-    return json({ error: "could not read the query", credits_left: left + 1 }, 502);
+    const refunded = await refundCredit(req);
+    return json({ error: "could not read the query", credits_left: refunded ?? left }, 502);
   }
 });

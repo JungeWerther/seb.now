@@ -55,8 +55,10 @@ no redeploy. A check constraint validates `identifier` per kind (a
 `UC…` channel id; `handle@instance` for Mastodon; an `https://` URL for
 `web_feed`/`ical_feed`), because the ingest
 functions build fetch URLs from it and a Mastodon instance becomes the request
-host. TechCrunch and Hacker News aren't rows: each is a single fixed API, and
-the function *is* the source.
+host. Hacker News isn't a row: it is a single fixed API, and the function *is*
+the source. TechCrunch is an ordinary `web_feed` row
+(`20261018000100_techcrunch_web_feed.sql`), which retired its own
+`techcrunch-ingest` function.
 
 - `fediverse-ingest` (`0 */6 * * *`) — pulls recent public posts from the
   enabled `mastodon_account` rows in `sources` (currently
@@ -71,10 +73,12 @@ the function *is* the source.
   `POSTS_PER_ACCOUNT = 10`.
 - `hn-ingest` (`15 */6 * * *`) — Hacker News's public Firebase API
   (`topstories.json` + `item/{id}.json`, no auth), top 25 stories.
-- `techcrunch-ingest` (`30 */6 * * *`) — TechCrunch's public RSS feed
-  (`techcrunch.com/feed/`), top 20 items, extracted with a small regex
-  (not a full XML parser — the feed's `<item>`/`<title>`/`<link>` shape
-  is stable and simple enough that a parser dependency isn't worth it).
+- `web-feed-ingest` (`0 3-23/6 * * *`) — any site's own RSS 2.0 or Atom feed
+  for the enabled `web_feed` rows in `sources` (TechCrunch's among them),
+  latest `ITEMS_PER_FEED` items each, extracted with a small regex (not a
+  full XML parser — the flat `<item>`/`<entry>` shape is stable and simple
+  enough that a parser dependency isn't worth it), with each item's summary
+  as `links.description`.
 - `youtube-ingest` (`45 */6 * * *`) — each channel's public Atom feed
   (`youtube.com/feeds/videos.xml?channel_id=…`, no auth, latest 15 uploads)
   for the enabled `youtube_channel` rows in `sources` (currently Channel 5
@@ -140,11 +144,10 @@ safe to ignore, or delete by hand from the Supabase dashboard.
 `fediverse-ingest` also populates `links.image_url`: Mastodon's own
 `status.card.image` when a card exists, else `fediverse-ingest` peeks at
 the target page itself (5s timeout) for `og:image`, falling back to the
-page's first `<img>`. `techcrunch-ingest` fetches each article page (5s
-timeout) for its `og:image`, since the RSS feed carries no images; a failed
-fetch leaves `image_url` out of the upsert so an earlier cover is kept.
-`hn-ingest` does the same for each story's linked page (not Ask HN threads),
-but since those are arbitrary sites it only takes a declared preview —
+page's first `<img>`. `web-feed-ingest` and `hn-ingest` fetch each item's
+linked page (5s timeout; not Ask HN threads) for its cover, since feeds
+carry no images; a failed fetch leaves `image_url` out of the upsert so an
+earlier cover is kept. Since those are arbitrary sites they only take a declared preview —
 `og:image`, else `twitter:image` — never a first-`<img>` guess, so pages
 without one stay imageless. YouTube doesn't serve `og:image` to those
 data-centre fetches, so a `links` trigger (`links_fill_youtube_thumbnail`,
@@ -164,8 +167,8 @@ After it comes the post's date, `links.created_at` (`posted_label` in
 `site.py`, `postedLabel` in the page script: "Sep 27", plus the year when it
 isn't this year's, in UTC), in a `<time class="posted">` that stays in the
 flex row even when empty, since it's what pushes the topic chips right.
-`created_at` is the original publication date for YouTube, `web_feed` and
-TechCrunch links (its RSS `pubDate`); for the other ingests it's when the link
+`created_at` is the original publication date for YouTube and `web_feed`
+links (the feed's `pubDate`/`published`); for the other ingests it's when the link
 was first ingested.
 
 Both upsert into `links` as `origin: 'feed'`, `onConflict: 'url'` (falling
@@ -182,7 +185,7 @@ The four schedules are staggered 15 minutes apart (`:00`/`:15`/`:30`/`:45`)
 so they don't all hit the DB/edge runtime at once.
 
 `origin` has three values: `local` (a user's own submission — none yet;
-no UI for it exists), `fediverse`, and `feed` (HN/TechCrunch). The
+no UI for it exists), `fediverse`, and `feed` (every other ingest). The
 original TechCrunch/HN seed rows were hand-picked once via web search
 before `hn-ingest`/`techcrunch-ingest` existed and were tagged `local`
 for lack of a better bucket at the time; they've since been reclassified
@@ -389,7 +392,11 @@ snapshots never go stale. A merge's undo also refuses when a change outside
 would restore whose places moved since (`place_path_consistent`: each place a
 path names must still have that path's prefix as its own), or a kept entity
 enriched since (its metadata and Wikidata lookup state differ from the
-snapshot's `into_after`, checked under a row lock). Nothing applies an edit automatically; the
+snapshot's `into_after`, checked under a row lock). Preconditions are guard
+expressions, `public.must(ok, message)` (raises unless `ok` is true) and
+`public.refuse(bad, message)` (raises when `bad` is true), not `if … raise … end if`,
+and undo dispatches on `op` to `restore_mention` / `unmerge_entity` as apply does
+(`20261020130000_entity_edit_guards.sql`). Nothing applies an edit automatically; the
 `/entity-sense` and `/entity-resolution` skills stage batches for review. Where a
 place is lives in `entities.place_path`, an ltree of entity labels (`e` + `seq`,
 since uuids aren't labels) from the outermost place in, so Palais de Tokyo is
@@ -427,12 +434,32 @@ the CDN can cache it for a year, then records it in `public.index_state` and
 keeps the newest 3. `public.index_diff(link_seq, entity_seq, pair_seq)` (public)
 returns what was added past a watermark (mentions, their links' minutes, new or
 mentioned entities), plus the current `gen`, watermark, kinds and latest
-snapshot. Diffs only carry additions: deleting a mention or an entity, moving a
-mention to another entity (folding duplicates) or renaming or re-kinding an
-entity bumps `index_state.gen` (triggers; an upsert that only rewrites a
-mention's `p` doesn't), and a page whose copy is of an older gen reloads the
-snapshot, asking the database directly until a snapshot of the current gen
-exists. Over 2,000 new mentions also means reload.
+snapshot. **Removals and changes ride the diff too**
+(`20261018000300_index_changes.sql`, QA: `tests/qa`, `npm run index`): deleting a
+mention, an entity or a link, moving a mention to another entity (folding
+duplicates) or renaming or re-kinding an entity writes the keys it touched to
+`public.index_changes` (statement triggers with transition tables; an upsert
+that only rewrites a mention's `p` doesn't count), and
+`index_diff(link_seq, entity_seq, pair_seq, change_seq)` answers each key past
+the page's change watermark (`wm.c`, also in the snapshot) with its present
+state: `pairs`/`entities` for what exists, `unpairs`/`gone_entities`/`gone_links`
+for what doesn't. Answering with the present, not the history, makes a diff
+idempotent, so it is asked from `INDEX_DIFF_OVERLAP` below the watermark like
+additions; entities nothing mentions are left out, as in a snapshot. Each
+logging trigger bumps gen (taking `index_state`'s row lock) *before* allocating
+a change seq, so loggers allocate one transaction at a time and no watermark can
+pass a change that commits later; keep that order in any new logging trigger.
+Those triggers still bump `index_state.gen`, for pages from before the log (which
+reload on it) and for `index-snapshot`'s rebuild rule; a page with `wm.c` goes by
+`index_state.reset_gen` instead, the gen of the last bump the log can't carry —
+any gen update made outside those triggers (`index_state_reset` tells them apart
+by a transaction-local `seb.index_change` setting), such as `undo_entity_edit`
+restoring rows under their old seqs. A copy below `reset_gen`, over 2,000 new
+mentions or 2,000 changes behind, or with `wm.c` below
+`index_state.changes_pruned_seq` reloads the snapshot (one of at least
+`reset_gen`), asking the database directly until one exists. The log keeps its
+newest 10,000 changes, pruned by `index_snapshot_published`. Without
+`change_seq` the diff is the old additions-only one.
 
 A user's preference is derived, not stored: the
 `public.user_topic_preferences` view (`security_invoker`, so RLS on
@@ -560,7 +587,8 @@ has had read is free for everyone after (plus a per-isolate and per-page copy). 
 input tokens and ~1.2s per read. Jev's reading replaces the chips (filled: the
 sort, `topic …`, `search "…"`), and the feed becomes
 `public.feed_query(sort, topic, search, as_of, page_offset, page_size, entities, required)`
-(security invoker; `for_you` is `ranked_feed`'s rank, `latest` newest, `top`
+(security invoker; `for_you` is `ranked_feed`'s rank, `latest` newest with the
+links the caller has seen last (see "Seen links"), `top`
 net votes, `discussed` reply count; `topic` filters to it and its children;
 with search words only `link_search_hits(search)`'s links match — see above;
 `public.fold_text` is `lower(unaccent(…))`, so "cinema" finds "Cinéma" — and
@@ -689,8 +717,10 @@ on the page's own copy of the entity index once it has loaded (`entityIndex`,
 `INDEX_REFRESH_MS` while visible): the snapshot from the `index` bucket
 (decompressed with `DecompressionStream`, decoded by `decodeIndexSnapshot`) is
 kept in IndexedDB (`seb-now-index`) and brought up to date with `index_diff`,
-asked from `INDEX_DIFF_OVERLAP` below its watermark; a newer `gen` reloads the
-snapshot. `matchLocalEntities` is `match_entities` ported (same word rules, little
+asked from `INDEX_DIFF_OVERLAP` below its watermark and applied by
+`applyIndexDiff` (removals, then the present state); `indexCopyCurrent` decides
+between that and reloading the snapshot (`reset_gen` for a copy with `wm.c`, else
+gen equality, after which the copy takes the diff's `wm.c` on). `matchLocalEntities` is `match_entities` ported (same word rules, little
 words and ranking, seq instead of id on ties), with ids fetched by seq only for
 the matched entities (`withEntityIds`); `filterLocalLinks` is `filter_links`
 (`Filter.local` holds the terms with entity seqs, a term with several senses as
@@ -731,7 +761,9 @@ Postgres) next to #81's `db` and `page`. Order names live in `SORTS` (the functi
 (user_id, used)` counts them (readers see only their own row; no client
 writes). `query-parse` calls `spend_query_credit()` as the caller (security
 definer, takes one only while `used` is under the limit, returns what's left or
-null) before each Jev request, and gives the credit back if Jev fails; a stored
+null) before each Jev request, and gives the credit back if Jev fails
+(`refund_query_credit(user)`, one atomic decrement floored at 0, service_role
+only, since a reader who could call it would refund themselves); a stored
 answer costs nothing and reports `query_credits_left()`. No session → 401, none left → 429. Every
 reply carries `credits_left`, which the page shows as "N credits" in
 `#query-balance`, the first (non-tappable) bubble of the header menu, so it
@@ -813,6 +845,29 @@ replies and the reader's fediverse username (`@handle@seb.now`, previewed live
 under the field); the page lowercases it and checks the same pattern as the
 DB before saving.
 
+**Inbox — notifications** (`20261017234700_notifications.sql`, QA: `tests/qa`,
+`npm run notifications`). `public.notifications` (`recipient_id` → `profiles`,
+`kind`, `reply_id` → `replies`, `created_at`, `read_at`) holds one row per
+reply someone else posted that concerns a reader, written only by the
+`replies_notify` insert trigger (`notify_reply`, security definer, since replies
+are inserted through RLS) and cascaded away with its reply. Two kinds:
+`reply_to_you` (a reply whose `replies.in_reply_to_id` is yours: today only a
+fediverse note whose `inReplyTo` is your comment's note, set by `activitypub`,
+since the page has no threaded replies) and `reply_on_thread` (a reply, local or
+remote, on a link you replied on); a reply that is both is `reply_to_you` once
+(unique index on `(recipient_id, reply_id)` — an index, not a constraint, which
+PostgREST would read as a profiles↔replies many-to-many and make
+`replies`'s `profiles(handle)` embed ambiguous). RLS: readers select only their
+own and may update only `read_at`; no client inserts or deletes.
+`mark_notifications_read(ids)` (security invoker) marks the given ones of the
+caller's read. The page shows a red dot (`#menu-unread-dot`) on the menu icon
+while any are unread (counted on start, on each menu open and when the page
+becomes visible again), and an **Inbox** bubble (`#inbox-bubble`, its count and
+dot) opening `#inbox-overlay`: up to `NOTIFICATIONS_SHOWN`, unread first (so every unread one is reachable) then read, newest first in each, unread ones
+outlined, text only via `textContent`; tapping one opens its link's page. Opening
+it marks exactly the ones it showed read. Deploy `activitypub` only after this
+migration has applied, since it now writes `in_reply_to_id`.
+
 **Wordmark.** The header's SVG wordmark has its `viewBox` trimmed to the
 glyphs; its ink (`--brand-ink-height`, lifted by `--brand-ink-offset`) is
 centred in the header with `--header-brand-gap` above and below it, and the
@@ -850,6 +905,22 @@ after returning is `next_action` (`visit`, `open`, `upvote`, `downvote`, `reply`
 or `left` when the page is hidden first) with `next_link_id`. These are raw
 facts: the thresholds that make a visit a bounce or a read aren't in the page,
 they're meant to be fitted against votes.
+
+**Seen links — "new" means new to the reader** (`20261017231500_latest_unseen_first.sql`).
+A link is seen once its row has been on screen (`SEEN_VISIBLE_RATIO` of it for
+`SEEN_DWELL_MS`, an `IntersectionObserver` set up in `hydrateArticles`, so a fling
+past it doesn't count) or it was clicked (`link_visits`). On-screen rows go to
+`public.link_impressions (viewer_id, link_id, seen_at)`, one row per reader and
+link (private to the viewer by RLS, insert-only, batched every `SEEN_FLUSH_MS`
+and when the page is hidden, a repeat ignored). `feed_query`'s `latest` order puts
+seen links after unseen ones, each part newest first; they're moved down, not
+left out, so `/o/latest` still lists every post. Only what was seen at or before
+`as_of` counts, so rows seen while scrolling don't reorder the pages still to
+come; back-to-top restarts with a fresh `as_of`. "new" is a sort word
+(`QUERY_SORT_WORDS`), but since it also opens names (New York) `querySorts` only
+reads it as one at the end or before filler or another sort word (`QUERY_NAME_OPENING_SORT_WORDS`:
+"new", "what's new", "new in paris", not "new york"). QA: `tests/qa`, `npm run
+latest` (and `npm run page` for the reading).
 
 **A link's own page.** Every link has a page at `seb.now/p/<id>` (the same
 address a federated post links to, served by the catch-all document). Tapping a
