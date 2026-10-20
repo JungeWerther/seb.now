@@ -124,6 +124,9 @@ begin
   if new.label !~ '^[A-Za-z0-9 ]{2,40}$' or char_length(coalesce(new.description, '')) > 500 then
     raise exception 'style type labels are 2-40 letters, digits or spaces' using errcode = 'check_violation';
   end if;
+  if new.owner_id is not null then
+    perform pg_advisory_xact_lock(hashtext('style_types'), hashtext(new.owner_id::text));
+  end if;
   if new.owner_id is not null
      and (select count(*) from kinds where owner_id = new.owner_id) >= style_types_per_user() then
     raise exception 'at most % style types per user', style_types_per_user() using errcode = 'check_violation';
@@ -160,7 +163,8 @@ alter table public.entities
   add column owner_id uuid references auth.users (id) on delete cascade;
 alter table public.entities alter column owner_id set default auth.uid();
 
--- Named to sort before entities_sync_kind_path, so `kind` is set before that
+-- Counts run under a per-owner lock, so concurrent inserts can't both pass a
+-- quota. Named to sort before entities_sync_kind_path, so `kind` is set before that
 -- trigger would derive a kind_path from it.
 create function public.entities_check_style()
 returns trigger
@@ -181,6 +185,9 @@ begin
     raise exception 'style doesn''t match the schema of %', new.kind_path using errcode = 'check_violation';
   end if;
   new.kind := 'style';
+  if tg_op = 'INSERT' and new.owner_id is not null then
+    perform pg_advisory_xact_lock(hashtext('styles'), hashtext(new.owner_id::text));
+  end if;
   if tg_op = 'INSERT' and new.owner_id is not null
      and (select count(*) from entities where owner_id = new.owner_id) >= styles_per_user() then
     raise exception 'at most % styles per user', styles_per_user() using errcode = 'check_violation';
@@ -211,9 +218,17 @@ create policy "Users remove their own styles" on public.entities
 
 -- Styles are no one's name for anything: kept out of identity witnesses, the
 -- entity index's change log and name resolution, like sources are.
-drop trigger entities_add_kind_witness on public.entities;
-create trigger entities_add_kind_witness after insert on public.entities
-  for each row when (new.kind <> 'style') execute function public.entities_add_kind_witness();
+-- entities_add_kind_witness predates the migration history, so it's only
+-- narrowed where it exists.
+do $$
+begin
+  if to_regprocedure('public.entities_add_kind_witness()') is not null then
+    drop trigger if exists entities_add_kind_witness on public.entities;
+    create trigger entities_add_kind_witness after insert on public.entities
+      for each row when (new.kind <> 'style') execute function public.entities_add_kind_witness();
+  end if;
+end
+$$;
 
 create or replace function public.index_log_entity_deleted()
 returns trigger
