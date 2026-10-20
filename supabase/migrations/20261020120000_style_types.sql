@@ -244,6 +244,9 @@ begin
 end
 $$;
 
+-- A function may only SET pg_trgm.similarity_threshold once pg_trgm is loaded.
+select extensions.show_limit();
+
 create or replace function public.entity_candidates(phrase text, max_results integer default 8)
 returns table(id uuid, name text, kind text, description text, example_title text, similarity real)
 language sql
