@@ -1,6 +1,7 @@
 """The style-types migration on Supabase's own Postgres image (pg_jsonschema and
-the anon/authenticated roles), in a fresh database shaped like production's. Runs where TEST_DATABASE_URL names a superuser connection to
-such a server (CI's `db` job); skipped elsewhere.
+the anon/authenticated roles), in a fresh database shaped like production's.
+Runs where TEST_DATABASE_URL names a postgres connection to such a server
+(CI's `db` job); skipped elsewhere.
 """
 
 import json
@@ -36,6 +37,9 @@ def url() -> Iterator[str]:
     try:
         with psycopg.connect(url, autocommit=True) as conn:
             conn.execute(PRODUCTION_SHAPE.read_text())
+        # A session of its own, as CI's migrate job has: nothing it needs is
+        # loaded yet.
+        with psycopg.connect(url) as conn:
             conn.execute(MIGRATION.read_text())
         yield url
     finally:
