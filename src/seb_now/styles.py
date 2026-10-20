@@ -18,7 +18,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, create_model
 
-DEFS_PREFIX = "#/$defs/"
+from seb_now.constants import DEFS_PREFIX, JsonType, SchemaKeyword
 
 
 class UnsupportedSchema(ValueError):
@@ -36,25 +36,30 @@ class Style(BaseModel):
 
 def _primitive(schema: object) -> object:
     match schema:
-        case {"type": "string", "pattern": str(pattern), **rest} if not rest:
+        case {SchemaKeyword.TYPE: JsonType.STRING, SchemaKeyword.PATTERN: str(pattern), **rest} if not rest:
             return Annotated[str, Field(pattern=pattern)]
-        case {"type": "number", "minimum": int() | float() as low, "maximum": int() | float() as high, **rest} if (
-            not rest
-        ):
+        case {
+            SchemaKeyword.TYPE: JsonType.NUMBER,
+            SchemaKeyword.MINIMUM: int() | float() as low,
+            SchemaKeyword.MAXIMUM: int() | float() as high,
+            **rest,
+        } if not rest:
             return Annotated[float, Field(ge=low, le=high)]
     raise UnsupportedSchema(f"a primitive is a string with a pattern or a bounded number, not {schema!r}")
 
 
 def _token(token: object, defs: Mapping[str, object]) -> object:
     match token:
-        case {"$ref": str(ref), **rest} if ref.startswith(DEFS_PREFIX) and set(rest) <= {"description"}:
+        case {SchemaKeyword.REF: str(ref), **rest} if ref.startswith(DEFS_PREFIX) and set(rest) <= {
+            SchemaKeyword.DESCRIPTION
+        }:
             name = ref.removeprefix(DEFS_PREFIX)
             if name not in defs:
                 raise UnsupportedSchema(f"{ref} names no primitive in $defs")
             return _primitive(defs[name])
-        case {"enum": [str(), *_] as values, **rest} if all(isinstance(value, str) for value in values) and set(
-            rest
-        ) <= {"description"}:
+        case {SchemaKeyword.ENUM: [str(), *_] as values, **rest} if all(
+            isinstance(value, str) for value in values
+        ) and set(rest) <= {SchemaKeyword.DESCRIPTION}:
             return Literal[tuple(values)]
     raise UnsupportedSchema(f"a token is a $ref to a primitive or an enum of keywords, not {token!r}")
 
@@ -63,11 +68,11 @@ def _token(token: object, defs: Mapping[str, object]) -> object:
 def _model(name: str, canonical_schema: str) -> type[Style]:
     match json.loads(canonical_schema):
         case {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": dict(properties),
-            "required": list(required),
-            "$defs": dict(defs),
+            SchemaKeyword.TYPE: JsonType.OBJECT,
+            SchemaKeyword.ADDITIONAL_PROPERTIES: False,
+            SchemaKeyword.PROPERTIES: dict(properties),
+            SchemaKeyword.REQUIRED: list(required),
+            SchemaKeyword.DEFS: dict(defs),
             **rest,
         } if not rest and sorted(required) == sorted(properties):
             fields: dict[str, Any] = {
