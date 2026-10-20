@@ -16,9 +16,10 @@ broke, plus the composite `full_law_holds` for the identity itself.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Callable, Generic, NamedTuple, Sequence, TypeVar
+from typing import Generic, NamedTuple, TypeVar
 
 V = TypeVar("V")
 
@@ -57,9 +58,7 @@ class LawReport:
         return self.total > 0 and all(event.passed for event in self.events)
 
     def failures(self, kind: LawCheckKind | None = None) -> list[LawCheckEvent]:
-        return [
-            event for event in self.events if not event.passed and (kind is None or event.kind is kind)
-        ]
+        return [event for event in self.events if not event.passed and (kind is None or event.kind is kind)]
 
 
 @dataclass(frozen=True)
@@ -94,14 +93,10 @@ class Combinable(Generic[V]):
         events: list[LawCheckEvent] = []
         for x, y, z in samples:
             sample = SampleTriple(x, y, z)
-            events.append(
-                LawCheckEvent(LawCheckKind.SOURCE_ASSOCIATIVITY, sample, self.is_source_associative(x, y, z))
-            )
+            events.append(LawCheckEvent(LawCheckKind.SOURCE_ASSOCIATIVITY, sample, self.is_source_associative(x, y, z)))
             events.append(LawCheckEvent(LawCheckKind.HOMOMORPHISM, sample, self.is_homomorphism(x, y)))
             events.append(
-                LawCheckEvent(
-                    LawCheckKind.COMBINATOR_ASSOCIATIVITY, sample, self.is_combinator_associative(x, y, z)
-                )
+                LawCheckEvent(LawCheckKind.COMBINATOR_ASSOCIATIVITY, sample, self.is_combinator_associative(x, y, z))
             )
             events.append(LawCheckEvent(LawCheckKind.FULL_LAW, sample, self.full_law_holds(x, y, z)))
         return LawReport(total=len(samples), events=events)

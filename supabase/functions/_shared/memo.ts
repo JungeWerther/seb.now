@@ -2,6 +2,12 @@
 // load, and drops a load that fails (a rejection, or null for `memoize`) so the
 // next call tries again.
 
+// `make`'s value, made on first use.
+export function lazy<T>(make: () => T): () => T {
+  let made: { value: T } | null = null;
+  return () => (made ??= { value: make() }).value;
+}
+
 // `load`, run at most once successfully.
 export function once<T>(load: () => Promise<T>): () => Promise<T> {
   let value: Promise<T> | null = null;

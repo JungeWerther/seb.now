@@ -4,10 +4,11 @@
 // error sink. `serveJev(config, run)` wraps a function's run with all of it and
 // answers with `{ model, dry_run, ...summary, errors }`.
 
-import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { serviceClient, vaultSecret } from "./clients.ts";
 import { json, type Report, type Row } from "./helpers.ts";
 import { JevClient } from "./jev.ts";
-import { ENV, JEV } from "./constants.ts";
+import { JEV } from "./constants.ts";
 
 
 
@@ -46,10 +47,9 @@ export function serveJev(
     const ids = linkIds(body, config.maxLinkIds);
     if (ids === undefined) return json({ error: `link_ids must be at most ${config.maxLinkIds} ids` }, 400);
 
-    const db = createClient(ENV.SUPABASE_URL, ENV.SUPABASE_SERVICE_ROLE_KEY);
-
-    const { data: apiKey, error: keyError } = await db.rpc("get_vault_secret", { secret_name: JEV.TYPESAFE_KEY_SECRET });
-    if (keyError || !apiKey) return json({ error: `no ${JEV.TYPESAFE_KEY_SECRET} in Vault` }, 500);
+    const db = serviceClient();
+    const apiKey = await vaultSecret(JEV.TYPESAFE_KEY_SECRET).catch(() => null);
+    if (!apiKey) return json({ error: `no ${JEV.TYPESAFE_KEY_SECRET} in Vault` }, 500);
     const jev = new JevClient(apiKey, config.model, {
       db,
       fn: config.fn,

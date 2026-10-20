@@ -25,29 +25,25 @@ COLLECTION_NODES = (ast.List, ast.Tuple, ast.Set, ast.Dict, ast.ListComp, ast.Se
 COLLECTION_CONSTRUCTORS = {"list", "tuple", "set", "frozenset", "dict"}
 
 ALLOWED = {
-    ("src/seb_now/constants.py", "SAFE_URL_SCHEMES"):
-        "security policy for rendered hrefs (http/https only), not data that grows",
-    ("src/seb_now/sanitize.py", "_SCRIPT_JSON_ESCAPES"):
-        "the escape table is part of the escaping algorithm",
-    ("src/seb_now/posts.py", "MARKDOWN_EXTENSIONS"):
-        "renderer configuration, changed only together with the code that relies on it",
-    ("research/train_compositional_embedding.py", "VOCAB"):
-        "the research script's own toy corpus",
-    ("research/train_compositional_embedding.py", "WORD_TO_INDEX"):
-        "derived from the research script's toy corpus",
-    ("research/train_compositional_embedding.py", "TEXTS"):
-        "the research script's own toy corpus",
+    (
+        "src/seb_now/constants.py",
+        "SAFE_URL_SCHEMES",
+    ): "security policy for rendered hrefs (http/https only), not data that grows",
+    ("src/seb_now/sanitize.py", "_SCRIPT_JSON_ESCAPES"): "the escape table is part of the escaping algorithm",
+    (
+        "src/seb_now/posts.py",
+        "MARKDOWN_EXTENSIONS",
+    ): "renderer configuration, changed only together with the code that relies on it",
+    ("research/train_compositional_embedding.py", "VOCAB"): "the research script's own toy corpus",
+    ("research/train_compositional_embedding.py", "WORD_TO_INDEX"): "derived from the research script's toy corpus",
+    ("research/train_compositional_embedding.py", "TEXTS"): "the research script's own toy corpus",
 }
 
 
 def _is_collection(value: ast.expr) -> bool:
     if isinstance(value, COLLECTION_NODES):
         return True
-    return (
-        isinstance(value, ast.Call)
-        and isinstance(value.func, ast.Name)
-        and value.func.id in COLLECTION_CONSTRUCTORS
-    )
+    return isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and value.func.id in COLLECTION_CONSTRUCTORS
 
 
 def module_level_collections(source: str) -> list[tuple[str, int]]:

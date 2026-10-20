@@ -6,19 +6,31 @@ means inserting a links row directly, not committing a file.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from html import escape
 from pathlib import Path
-from typing import Sequence
+from typing import TypedDict
 
 from seb_now.auth import get_unauthenticated_client
-from seb_now.domain.models import Link
+from seb_now.db_types import Table
+from seb_now.rows import select, validated
 from seb_now.sanitize import content_security_policy, is_safe_slug, render_markdown, safe_http_url
 
 SITE_URL = "https://seb.now"
 MARKDOWN_EXTENSIONS = ["extra", "sane_lists"]
 # Post pages run no script at all.
 POST_CSP = content_security_policy(script_src=[], connect_src=[])
+
+
+class PostRow(TypedDict):
+    slug: str | None
+    title: str
+    description: str | None
+    image_url: str | None
+    body_markdown: str | None
+    created_at: str
 
 
 @dataclass(frozen=True)
@@ -35,32 +47,33 @@ class Post:
         return f"{SITE_URL}/posts/{self.slug}/"
 
 
-def post_from_link(link: Link) -> Post:
-    assert link.slug is not None
-    assert link.body_markdown is not None
+def post_from_link(link: PostRow) -> Post | None:
+    """The link's post, or None unless it has a body and a slug that's a plain path segment."""
+    slug, body = link["slug"], link["body_markdown"]
+    if slug is None or body is None or not is_safe_slug(slug):
+        return None
     return Post(
-        slug=link.slug,
-        title=link.title,
-        date=link.created_at.date().isoformat(),
-        description=link.description or "",
-        image=safe_http_url(link.image_url),
-        body_html=render_markdown(link.body_markdown, MARKDOWN_EXTENSIONS),
+        slug=slug,
+        title=link["title"],
+        date=datetime.fromisoformat(link["created_at"]).date().isoformat(),
+        description=link["description"] or "",
+        image=safe_http_url(link["image_url"]),
+        body_html=render_markdown(body, MARKDOWN_EXTENSIONS),
     )
 
 
 def load_posts() -> list[Post]:
-    client = get_unauthenticated_client()
     response = (
-        client.table(Link.__tablename__)
-        .select("*")
+        get_unauthenticated_client()
+        .table(Table.LINKS)
+        .select(select(PostRow))
         .eq("origin", "local")
         .not_.is_("slug", "null")
         .not_.is_("body_markdown", "null")
         .order("created_at", desc=True)
         .execute()
     )
-    links = [Link.model_validate(row) for row in response.data]
-    return [post_from_link(link) for link in links if link.slug is not None and is_safe_slug(link.slug)]
+    return [post for link in validated(PostRow, response.data) if (post := post_from_link(link))]
 
 
 def render_post(post: Post) -> str:

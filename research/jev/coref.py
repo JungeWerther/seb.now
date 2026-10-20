@@ -10,9 +10,8 @@ import math
 from dataclasses import dataclass
 from itertools import combinations
 
-from pydantic import BaseModel, Field
-
 from jev_fill import DescribedStrEnum, JevForm
+from pydantic import BaseModel, Field
 
 CONTEXT_WORDS = 4
 PRICE_USD_PER_MTOK = 0.042
@@ -27,8 +26,7 @@ class Relation(DescribedStrEnum):
     )
     SAME_REFERENCE_DIFFERENT_SENSE = (
         "same_reference_different_sense",
-        "Both pick out the very same individual or thing, but through different "
-        "descriptions or modes of presentation.",
+        "Both pick out the very same individual or thing, but through different descriptions or modes of presentation.",
     )
     DIFFERENT_REFERENCE = (
         "different_reference",
@@ -128,9 +126,7 @@ def pairwise_cost(n: int, state_tokens: int, tokens_per_pair: int) -> CostEstima
     return CostEstimate(n, questions, requests, requests * state_tokens + questions * tokens_per_pair)
 
 
-def antecedent_cost(
-    n: int, state_tokens: int, tokens_per_question: int, tokens_per_option: int
-) -> CostEstimate:
+def antecedent_cost(n: int, state_tokens: int, tokens_per_question: int, tokens_per_option: int) -> CostEstimate:
     """One Choice per mention over the earlier mentions plus "new entity":
     n questions whose option lists grow, instead of n(n-1)/2 questions."""
     question_tokens = [tokens_per_question + (i + 1) * tokens_per_option for i in range(n)]

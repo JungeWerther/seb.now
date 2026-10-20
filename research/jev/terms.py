@@ -18,9 +18,8 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from pydantic import BaseModel, Field
-
 from jev_fill import DescribedIntEnum, DescribedStrEnum, Filled, JevForm
+from pydantic import BaseModel, Field
 
 MEMBER_MIN_STRENGTH = 0.05
 
@@ -28,8 +27,7 @@ MEMBER_MIN_STRENGTH = 0.05
 class Extension(DescribedStrEnum):
     SAME_REFERENCE = (
         "same_reference",
-        "A and B pick out exactly the same thing or things: the same individual, or two names "
-        "for the same class.",
+        "A and B pick out exactly the same thing or things: the same individual, or two names for the same class.",
     )
     A_MEMBER_OF_B = (
         "a_member_of_b",
@@ -84,8 +82,7 @@ class ExtensionPair(BaseModel):
     """Context keys `a` and `b`: bare terms, or objects locating phrases in the state's text."""
 
     extension: Extension = Field(
-        description="What is the relation between the things `a` (A) picks out and the "
-        "things `b` (B) picks out?"
+        description="What is the relation between the things `a` (A) picks out and the things `b` (B) picks out?"
     )
     a_in_b: Share = Field(description="Of the things `a` picks out, how many are also picked out by `b`?")
     b_in_a: Share = Field(description="Of the things `b` picks out, how many are also picked out by `a`?")
@@ -103,8 +100,7 @@ class Kind(DescribedStrEnum):
     )
     GROUP = (
         "group",
-        "A particular, limited collection of individuals, such as 'these three houses' or "
-        "'the team'.",
+        "A particular, limited collection of individuals, such as 'these three houses' or 'the team'.",
     )
 
 
@@ -151,9 +147,7 @@ def p_individual(filled: Filled[KindOf]) -> float:
     return filled.answers["kind"].probabilities.get(Kind.INDIVIDUAL.value, 0.0)
 
 
-def reconcile_kinds(
-    p: dict[Extension, float], individual_a: float, individual_b: float
-) -> dict[Extension, float]:
+def reconcile_kinds(p: dict[Extension, float], individual_a: float, individual_b: float) -> dict[Extension, float]:
     """Only an individual can be a member, and an individual is not a kind of anything.
     Membership mass on a side that is probably not an individual moves to inheritance, and
     inheritance mass on a side that probably is one moves to membership."""
@@ -242,9 +236,7 @@ def extension_links(
     return [link for link in links if link.type != "MemberLink" or link.strength > MEMBER_MIN_STRENGTH]
 
 
-def intension_links(
-    a: str, b: str, props_a: Mapping[str, float], props_b: Mapping[str, float]
-) -> list[PlnLink]:
+def intension_links(a: str, b: str, props_a: Mapping[str, float], props_b: Mapping[str, float]) -> list[PlnLink]:
     """Fuzzy-set overlaps of two property sets (membership = Jev's Noul), over the
     properties both were asked about. IntensionalInheritance A B = A has B's properties.
     Confidence grows with the number of properties judged (PLN's n / (n + k), k = 10)."""
@@ -316,8 +308,7 @@ def to_metta(
         lines.append(f"(: {metta_symbol(m.name)} Mention)")
         lines.append(f'(MentionText {metta_symbol(m.name)} "{m.text}")')
         lines.append(
-            f"(≞ (MentionOf {metta_symbol(m.name)} {metta_symbol(m.entity)}) "
-            f"(STV {m.strength:.3f} {m.confidence:.3f}))"
+            f"(≞ (MentionOf {metta_symbol(m.name)} {metta_symbol(m.entity)}) (STV {m.strength:.3f} {m.confidence:.3f}))"
         )
     for link in links:
         statement = f"({METTA_LINK[link.type]} {metta_symbol(link.a)} {metta_symbol(link.b)})"
@@ -325,7 +316,6 @@ def to_metta(
     for term, props in (properties or {}).items():
         for prop, mu in props.items():
             lines.append(
-                f"(≞ (HasProperty {metta_symbol(term)} {metta_symbol(prop)}) "
-                f"(STV {mu:.3f} {NOUL_CONFIDENCE:.3f}))"
+                f"(≞ (HasProperty {metta_symbol(term)} {metta_symbol(prop)}) (STV {mu:.3f} {NOUL_CONFIDENCE:.3f}))"
             )
     return "\n".join(lines)

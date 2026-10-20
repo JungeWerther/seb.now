@@ -6,8 +6,16 @@ TEXT = (
     "that the bright star of the morning was a different god."
 )
 PHRASES = [
-    "the Babylonian astronomer", "the morning star", "his apprentice", "the evening star",
-    "Neither man", "the star they had watched", "Venus", "The apprentice",
-    "the astronomer's successor", "the successor", "the bright star of the morning",
+    "the Babylonian astronomer",
+    "the morning star",
+    "his apprentice",
+    "the evening star",
+    "Neither man",
+    "the star they had watched",
+    "Venus",
+    "The apprentice",
+    "the astronomer's successor",
+    "the successor",
+    "the bright star of the morning",
     "a different god",
 ]

@@ -33,6 +33,11 @@ export const JEV = Object.freeze({
   TYPESAFE_KEY_SECRET: "typesafe-ai-token",
 });
 
+// _shared/clients.ts.
+export const VAULT = Object.freeze({
+  CACHED_SECRETS: 8,
+});
+
 // _shared/ingest.ts: what every ingest function shares.
 export const INGEST = Object.freeze({
   IMAGE_FETCH_TIMEOUT_MS: 5000,
@@ -87,6 +92,8 @@ export const ICAL = Object.freeze({
 // fediverse-ingest.
 export const FEDIVERSE = Object.freeze({
   POSTS_PER_ACCOUNT: 10,
+  // A post's own text as its title: 140 characters and an ellipsis.
+  TITLE_MAX_CHARS: 141,
 });
 
 // _shared/page.ts: fetching and reading a link's page.
@@ -147,6 +154,11 @@ export const ENTITY_EXTRACT = Object.freeze({
   RUN_BUDGET_MS: 100_000,
   MAX_LINK_IDS: 50,
   SAME_PASS_OPTIONS: 4,
+  // How sure Jev must be that a longer name runs several things together
+  // before its parts are read instead of it.
+  SPAN_PARTS_MIN_P: 0.5,
+  // An `entity_edits.batch` label (same check as the table's).
+  BATCH_PATTERN: /^[a-z0-9][a-z0-9-]{2,63}$/,
 });
 
 // entity-extract/candidates.ts: phrases proposed from a title.
@@ -220,6 +232,12 @@ export const INDEX_SNAPSHOT = Object.freeze({
   KEEP_SNAPSHOTS: 3,
   // Snapshot names never change content, so they can be cached for a year.
   CACHE_SECONDS: "31536000",
+  // Pages catch up from the latest snapshot with index_diff, so one of the
+  // current gen is only replaced once it is this old and something was added,
+  MAX_AGE_MS: 60 * 60 * 1000,
+  // or once this many mentions were added past it: index_diff carries none past
+  // 2,000 (INDEX_DIFF_MAX_PAIRS), asked from INDEX_DIFF_OVERLAP (500) below.
+  MAX_NEW_PAIRS: 1000,
 });
 
 // _shared/wikidata.ts: Wikidata's public API and the properties that place an item.

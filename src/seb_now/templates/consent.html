@@ -50,6 +50,10 @@
     .actions button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--positive-soft); }
     .actions button:disabled { opacity: 0.5; cursor: default; }
     #status:empty { display: none; }
+    /* Hidden until the page script has checked it isn't framed: a <meta> CSP
+       can't set frame-ancestors and the static host can't send headers, so
+       this is the clickjacking defence. */
+    html:not(.unframed) body { display: none !important; }
   </style>
 </head>
 <body>
@@ -69,9 +73,19 @@
     </div>
   </div>
   <script type="module">
-    const supabaseReady = import(__SUPABASE_JS_MODULE_URL__).then(({ createClient }) =>
-      createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__),
-    );
+    if (window.top !== window.self) throw new Error("seb.now doesn't run inside a frame");
+    document.documentElement.classList.add("unframed");
+    // supabase-js's UMD build, a classic script that sets window.supabase,
+    // added from here so the rest of this script runs while it downloads.
+    const supabaseReady = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = __SUPABASE_JS_URL__;
+      script.integrity = __SUPABASE_JS_INTEGRITY__;
+      script.crossOrigin = "anonymous";
+      script.addEventListener("load", () => resolve(window.supabase));
+      script.addEventListener("error", () => reject(new Error("supabase-js failed to load")));
+      document.head.append(script);
+    }).then(({ createClient }) => createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__));
     const authorizationId = new URLSearchParams(location.search).get("authorization_id");
     const status = document.getElementById("status");
     const request = document.getElementById("request");

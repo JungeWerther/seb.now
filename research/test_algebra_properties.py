@@ -16,10 +16,9 @@ that would be caught rather than silently passing.
 from __future__ import annotations
 
 import pytest
+from algebra import Combinable, bag_of_words_embed, hashed_embed, vec_add, vec_isclose
 from hypothesis import example, given
 from hypothesis import strategies as st
-
-from algebra import Combinable, bag_of_words_embed, hashed_embed, vec_add, vec_isclose
 
 WORDS = ["macro", "prices", "rose", "fell", "today", "team", "scored", "goal", "win"]
 

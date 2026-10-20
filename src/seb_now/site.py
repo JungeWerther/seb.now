@@ -19,42 +19,48 @@ longer groups or headers by it - each article shows its own domain instead.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from functools import reduce
 from html import escape
 from pathlib import Path
-from typing import Mapping, NamedTuple, NotRequired, Sequence, TypedDict
+from typing import NamedTuple, TypedDict
 
+from seb_now.auth import get_unauthenticated_client
+from seb_now.consent import write_consent
 from seb_now.constants import (
     ARTICLE_ENTITY_CHIPS,
     ARTICLE_TOPIC_CHIPS,
     FAVICON_URL_TEMPLATE,
+    FEED_PAGE_SIZE,
+    FEED_SKELETON_ROWS,
     FIND_ENTITY_SOURCES_PROMPT,
     FIND_SOURCES_PROMPT,
     FIND_SOURCES_URL_TEMPLATE,
-    FEED_PAGE_SIZE,
-    FEED_SKELETON_ROWS,
     REPLY_ICON_SIZE,
     SCORE_ICON_SIZE,
     SOURCE_FOUND_IN,
-    SUPABASE_JS_MODULE_URL,
+    SUPABASE_JS_INTEGRITY,
+    SUPABASE_JS_URL,
     SWIPE_ICON_SIZE,
     TEMPLATE_ARTICLE_BLANK,
     SourceType,
 )
-from seb_now.auth import get_unauthenticated_client
-from seb_now.consent import write_consent
-from seb_now.domain.models import DomainSourceType, Entity, Link, LinkEntity, LinkTopic, Topic
+from seb_now.db_types import Table
 from seb_now.posts import load_posts, write_posts
+from seb_now.rows import select, validated
 from seb_now.sanitize import page_csp, safe_http_url, script_json
 from seb_now.source_type import classify_source, display_domain, favicon_host
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 TEMPLATE_PATH = TEMPLATES_DIR / "index.html"
-# Compiled from frontend/src/filter.ts by `npm run build` in frontend/; CI
-# fails if it's out of date with its source.
+# Compiled from frontend/src/*.ts by `npm run build` in frontend/; CI fails
+# if they're out of date with their sources.
+PRELUDE_JS_PATH = TEMPLATES_DIR / "prelude.js"
 FILTER_JS_PATH = TEMPLATES_DIR / "filter.js"
+# Compiled from frontend/src/senses.ts the same way.
+SENSES_JS_PATH = TEMPLATES_DIR / "senses.js"
 OUTPUT_PATH = Path(__file__).parent.parent.parent / "dist" / "index.html"
 
 ARTICLES_PLACEHOLDER = "<!--ARTICLES-->"
@@ -67,12 +73,12 @@ FAVICON_URL_TEMPLATE_PLACEHOLDER = "__FAVICON_URL_TEMPLATE__"
 FIND_SOURCES_URL_TEMPLATE_PLACEHOLDER = "__FIND_SOURCES_URL_TEMPLATE__"
 FIND_SOURCES_PROMPT_PLACEHOLDER = "__FIND_SOURCES_PROMPT__"
 FIND_ENTITY_SOURCES_PROMPT_PLACEHOLDER = "__FIND_ENTITY_SOURCES_PROMPT__"
-SUPABASE_JS_MODULE_URL_PLACEHOLDER = "__SUPABASE_JS_MODULE_URL__"
+SUPABASE_JS_URL_PLACEHOLDER = "__SUPABASE_JS_URL__"
+SUPABASE_JS_INTEGRITY_PLACEHOLDER = "__SUPABASE_JS_INTEGRITY__"
 CSP_PLACEHOLDER = "__CONTENT_SECURITY_POLICY__"
+PRELUDE_JS_PLACEHOLDER = "__PRELUDE_JS__"
 FILTER_JS_PLACEHOLDER = "__FILTER_JS__"
-
-FEED_COLUMNS = "id, title, url, image_url, author, created_at"
-
+SENSES_JS_PLACEHOLDER = "__SENSES_JS__"
 
 # Lucide icon bodies (24x24 viewBox), drawn by _lucide at each use's size.
 TRASH_ICON = (
@@ -95,9 +101,47 @@ def _lucide(body: str, size: int) -> str:
     )
 
 
+class Named(TypedDict):
+    id: str
+    name: str
+
+
+class LinkTopicLabel(TypedDict):
+    p: float
+    topics: Named | None
+
+
+class LinkEntityLabel(TypedDict):
+    p: float
+    found_in: str
+    entities: Named | None
+
+
+class FeedRow(TypedDict):
+    id: str
+    title: str
+    url: str
+    image_url: str | None
+    author: str | None
+    # Kept as PostgREST's own string so the page's pagination cursor
+    # round-trips it exactly (microseconds included).
+    created_at: str
+    link_topics: list[LinkTopicLabel]
+    link_entities: list[LinkEntityLabel]
+
+
+class DomainSourceTypeRow(TypedDict):
+    domain: str
+    source_type: str
+
+
 class Chip(NamedTuple):
     id: str
     name: str
+
+    @classmethod
+    def of(cls, row: Named) -> Chip:
+        return cls(row["id"], row["name"])
 
 
 @dataclass(frozen=True)
@@ -116,18 +160,6 @@ class Article:
     source: Chip | None = None
 
 
-class FeedItem(TypedDict):
-    id: str
-    title: str
-    url: str
-    image_url: NotRequired[str]
-    author: NotRequired[str]
-    topics: NotRequired[list[Chip]]
-    entities: NotRequired[list[Chip]]
-    source: NotRequired[Chip | None]
-    created_at: NotRequired[str]
-
-
 # The page script clones this and fills it in per fetched link, so it carries
 # one topic chip, one entity chip and a cover for the script to fill or drop.
 TEMPLATE_ARTICLE = Article(
@@ -143,79 +175,51 @@ TEMPLATE_ARTICLE = Article(
 )
 
 
-def _top_labels(labels: Sequence[dict], key: str, count: int) -> list[dict]:
-    ranked = sorted((label for label in labels if label[key]), key=lambda label: (-label["p"], label[key]["name"]))
-    return [label[key] for label in ranked[:count]]
+def _top_chips(labels: Iterable[tuple[float, Named | None]], count: int) -> tuple[Chip, ...]:
+    ranked = sorted(((p, Chip.of(named)) for p, named in labels if named), key=lambda label: (-label[0], label[1].name))
+    return tuple(chip for _, chip in ranked[:count])
 
 
-def _top_topics(link_topics: Sequence[dict]) -> list[Chip]:
-    return [
-        Chip(topic["id"], topic["name"]) for topic in _top_labels(link_topics, Topic.__tablename__, ARTICLE_TOPIC_CHIPS)
-    ]
+def _top_topics(link_topics: Iterable[LinkTopicLabel]) -> tuple[Chip, ...]:
+    return _top_chips(((label["p"], label["topics"]) for label in link_topics), ARTICLE_TOPIC_CHIPS)
 
 
-def _top_entities(link_entities: Sequence[dict]) -> list[Chip]:
+def _top_entities(link_entities: Iterable[LinkEntityLabel]) -> tuple[Chip, ...]:
     """The highest-p entities the link mentions; its source isn't a mention."""
-    mentions = [label for label in link_entities if label.get("found_in") != SOURCE_FOUND_IN]
-    return [
-        Chip(entity["id"], entity["name"])
-        for entity in _top_labels(mentions, Entity.__tablename__, ARTICLE_ENTITY_CHIPS)
-    ]
+    mentions = (label for label in link_entities if label["found_in"] != SOURCE_FOUND_IN)
+    return _top_chips(((label["p"], label["entities"]) for label in mentions), ARTICLE_ENTITY_CHIPS)
 
 
-def _source(link_entities: Sequence[dict]) -> Chip | None:
+def _source(link_entities: Iterable[LinkEntityLabel]) -> Chip | None:
     """The source entity the link is tagged with (found_in 'source'), if any."""
     return next(
         (
-            Chip(entity["id"], entity["name"])
+            Chip.of(entity)
             for label in link_entities
-            if label.get("found_in") == SOURCE_FOUND_IN and (entity := label.get(Entity.__tablename__))
+            if label["found_in"] == SOURCE_FOUND_IN and (entity := label["entities"])
         ),
         None,
     )
 
 
-def _feed_item(row: dict) -> FeedItem | None:
-    """A links row as a feed item, or None when its url isn't http(s)."""
-    url = safe_http_url(row["url"])
-    if url is None:
-        return None
-    entities = row.get(LinkEntity.__tablename__) or []
-    return {
-        "id": row["id"],
-        "title": row["title"],
-        "url": url,
-        "image_url": safe_http_url(row["image_url"]) or "",
-        "author": row.get("author") or "",
-        "topics": _top_topics(row[LinkTopic.__tablename__]),
-        "entities": _top_entities(entities),
-        "source": _source(entities),
-        # Kept as PostgREST's own string so the page's pagination
-        # cursor round-trips it exactly (microseconds included).
-        "created_at": row["created_at"],
-    }
-
-
-def load_feed() -> list[FeedItem]:
-    client = get_unauthenticated_client()
+def load_feed() -> list[FeedRow]:
     response = (
-        client.table(Link.__tablename__)
-        .select(
-            f"{FEED_COLUMNS}, {LinkTopic.__tablename__}(p, {Topic.__tablename__}(id, name)), "
-            f"{LinkEntity.__tablename__}(p, found_in, {Entity.__tablename__}(id, name))"
-        )
+        get_unauthenticated_client()
+        .table(Table.LINKS)
+        .select(select(FeedRow))
         .order("created_at", desc=True)
         .order("id", desc=True)
         .limit(FEED_PAGE_SIZE)
         .execute()
     )
-    return [item for row in response.data if (item := _feed_item(row)) is not None]
+    return validated(FeedRow, response.data)
 
 
 def load_domain_source_types() -> dict[str, SourceType]:
-    client = get_unauthenticated_client()
-    response = client.table(DomainSourceType.__tablename__).select("domain, source_type").execute()
-    return {row["domain"]: SourceType(row["source_type"]) for row in response.data}
+    response = (
+        get_unauthenticated_client().table(Table.DOMAIN_SOURCE_TYPES).select(select(DomainSourceTypeRow)).execute()
+    )
+    return {row["domain"]: SourceType(row["source_type"]) for row in validated(DomainSourceTypeRow, response.data)}
 
 
 def posted_label(created_at: str, today: date) -> str:
@@ -238,24 +242,27 @@ def domain_with_author(domain: str, author: str) -> str:
     return author if author.startswith("@") else f"{domain} · {author}"
 
 
-def build_articles(
-    feed: Sequence[FeedItem], domain_source_types: Mapping[str, SourceType]
-) -> list[Article]:
-    return [
-        Article(
-            id=item["id"],
-            title=item["title"],
-            url=item["url"],
-            domain=domain_with_author(display_domain(item["url"]), item.get("author", "")),
-            source_type=classify_source(item["url"], domain_source_types),
-            topics=tuple(item.get("topics", ())),
-            entities=tuple(item.get("entities", ())),
-            image_url=item.get("image_url") or None,
-            source=item.get("source"),
-            created_at=item.get("created_at", ""),
-        )
-        for item in feed
-    ]
+def _article(row: FeedRow, domain_source_types: Mapping[str, SourceType]) -> Article | None:
+    """A feed row as an article, or None when its url isn't http(s)."""
+    url = safe_http_url(row["url"])
+    if url is None:
+        return None
+    return Article(
+        id=row["id"],
+        title=row["title"],
+        url=url,
+        domain=domain_with_author(display_domain(url), row["author"] or ""),
+        source_type=classify_source(url, domain_source_types),
+        topics=_top_topics(row["link_topics"]),
+        entities=_top_entities(row["link_entities"]),
+        image_url=safe_http_url(row["image_url"]),
+        created_at=row["created_at"],
+        source=_source(row["link_entities"]),
+    )
+
+
+def build_articles(feed: Iterable[FeedRow], domain_source_types: Mapping[str, SourceType]) -> list[Article]:
+    return [article for row in feed if (article := _article(row, domain_source_types))]
 
 
 def _render_article(article: Article) -> str:
@@ -377,7 +384,9 @@ def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon
     )
     substitutions = {
         ARTICLES_PLACEHOLDER: list_html,
+        PRELUDE_JS_PLACEHOLDER: compiled_script(PRELUDE_JS_PATH),
         FILTER_JS_PLACEHOLDER: compiled_script(FILTER_JS_PATH),
+        SENSES_JS_PLACEHOLDER: compiled_script(SENSES_JS_PATH),
         SUPABASE_URL_PLACEHOLDER: script_json(supabase_url),
         SUPABASE_ANON_KEY_PLACEHOLDER: script_json(supabase_anon_key),
         FEED_PAGE_SIZE_PLACEHOLDER: script_json(FEED_PAGE_SIZE),
@@ -387,7 +396,8 @@ def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon
         FIND_SOURCES_URL_TEMPLATE_PLACEHOLDER: script_json(FIND_SOURCES_URL_TEMPLATE),
         FIND_SOURCES_PROMPT_PLACEHOLDER: script_json(FIND_SOURCES_PROMPT),
         FIND_ENTITY_SOURCES_PROMPT_PLACEHOLDER: script_json(FIND_ENTITY_SOURCES_PROMPT),
-        SUPABASE_JS_MODULE_URL_PLACEHOLDER: script_json(SUPABASE_JS_MODULE_URL),
+        SUPABASE_JS_URL_PLACEHOLDER: script_json(SUPABASE_JS_URL),
+        SUPABASE_JS_INTEGRITY_PLACEHOLDER: script_json(SUPABASE_JS_INTEGRITY),
     }
     # The CSP hashes the finished script, so it's filled in last.
     html = reduce(lambda page, sub: page.replace(*sub), substitutions.items(), TEMPLATE_PATH.read_text())

@@ -1,7 +1,8 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import "jsr:@supabase/functions-js@2/edge-runtime.d.ts";
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient } from "../_shared/jev.ts";
-import { isPresent, reporting } from "../_shared/helpers.ts";
+import { isPresent, reporting, sumBy } from "../_shared/helpers.ts";
+import { linksToEnrich, markEnriched } from "../_shared/enrich.ts";
 import { serveJev } from "../_shared/jev_function.ts";
 import { pool } from "../_shared/pool.ts";
 import { nameHints } from "../_shared/hints.ts";
@@ -265,7 +266,7 @@ async function processLink(db: SupabaseClient, jev: JevClient, link: Link, dryRu
       );
       if (error) throw new Error(error.message);
     }
-    const { error } = await db.from("link_enrichment").upsert({ link_id: link.id, events_at: new Date().toISOString() });
+    const { error } = await markEnriched(db, "events", [link.id]);
     if (error) throw new Error(error.message);
   }
   return report;
@@ -425,26 +426,23 @@ function venueOptions(places: Place[], section: Section, hints: Partial<NameHint
   return { named, phrases };
 }
 
-async function unprocessedLinkIds(db: SupabaseClient): Promise<string[]> {
-  const { data, error } = await db.rpc("links_to_enrich", { step: "events", max_results: EVENT_EXTRACT.LINKS_PER_RUN });
+async function linksToRead(db: SupabaseClient, ids: string[] | null): Promise<Link[]> {
+  const columns = "id, title, url, description, created_at";
+  if (!ids) return linksToEnrich<Link>(db, "events", EVENT_EXTRACT.LINKS_PER_RUN, columns);
+  const { data, error } = await db.from("links").select(columns).in("id", ids);
   if (error) throw new Error(error.message);
-  return (data as { link_id: string }[]).map((r) => r.link_id);
+  return data as Link[];
 }
 
 Deno.serve(serveJev({ fn: "event-extract", model: JEV.MODEL, maxLinkIds: EVENT_EXTRACT.MAX_LINK_IDS }, async ({ db, jev, ids, dryRun, report }) => {
-  const { data: links, error } = await db
-    .from("links")
-    .select("id, title, url, description, created_at")
-    .in("id", ids ?? await unprocessedLinkIds(db));
-  if (error) throw new Error(error.message);
-
+  const links = await linksToRead(db, ids);
   const process = reporting(report, (link: Link) => ({ link_id: link.id }), (link) => processLink(db, jev, link, dryRun));
-  const results = (await pool(links as Link[], EVENT_EXTRACT.CONCURRENCY, process)).filter(isPresent);
+  const results = (await pool(links, EVENT_EXTRACT.CONCURRENCY, process)).filter(isPresent);
   return {
     links: results.length,
     jev_calls: results.filter((r) => r.page !== null).length,
     events: results.flatMap((r) => r.events).length,
-    input_tokens: results.reduce((s, r) => s + r.inputTokens, 0),
+    input_tokens: sumBy(results, "inputTokens"),
     results,
   };
 }));

@@ -17,10 +17,7 @@ def join_with_space(x: str, y: str) -> str:
     return f"{x} {y}"
 
 
-SAMPLES = [
-    SampleTriple(x, y, z)
-    for x, y, z in product(["macro prices", "rose today"], ["fell today"], ["macro rose"])
-]
+SAMPLES = [SampleTriple(x, y, z) for x, y, z in product(["macro prices", "rose today"], ["fell today"], ["macro rose"])]
 
 
 def test_bag_of_words_is_a_homomorphism_and_satisfies_the_full_law() -> None:

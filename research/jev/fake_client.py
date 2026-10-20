@@ -15,13 +15,21 @@ class FakeClient:
         for key, q in questions.items():
             if q.type == "choice":
                 first = next(iter(q.criteria))
-                answers[key] = {"type": "choice", "choice": first, "confidence": 1.0,
-                                "probabilities": {o: float(o == first) for o in q.criteria}}
+                answers[key] = {
+                    "type": "choice",
+                    "choice": first,
+                    "confidence": 1.0,
+                    "probabilities": {o: float(o == first) for o in q.criteria},
+                }
             elif q.type == "score":
                 top = len(q.criteria) - 1
-                answers[key] = {"type": "score", "score": float(top), "confidence": 1.0,
-                                "legend": {i: c for i, c in enumerate(q.criteria)},
-                                "probabilities": {i: float(i == top) for i in range(len(q.criteria))}}
+                answers[key] = {
+                    "type": "score",
+                    "score": float(top),
+                    "confidence": 1.0,
+                    "legend": {i: c for i, c in enumerate(q.criteria)},
+                    "probabilities": {i: float(i == top) for i in range(len(q.criteria))},
+                }
             else:
                 answers[key] = {"type": "noul", "noul": 0.8}
         return SystemOneResponse.model_validate({"model": "fake", "usage": {"input_tokens": 0}, "answers": answers})

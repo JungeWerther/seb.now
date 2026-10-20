@@ -13,6 +13,8 @@ jobs:
         with:
           enable-cache: true
       - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
       - run: uv run pytest -q
         # Repository variables (the anon key isn't secret); a secret of the same
         # name is used when no variable is set.
@@ -27,7 +29,10 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - run: deno check supabase/functions/entity-extract/index.ts supabase/functions/event-extract/index.ts supabase/functions/index-snapshot/index.ts supabase/functions/ical-ingest/index.ts supabase/functions/place-resolve/index.ts
+      - run: deno check supabase/functions/*/index.ts
+      - run: deno lint supabase/functions --ignore="$LINT_EXCLUDED"
+        env:
+          LINT_EXCLUDED: supabase/functions/activitypub,supabase/functions/mcp,supabase/functions/techcrunch-ingest
       - run: deno test supabase/functions/_shared
 
   frontend:
@@ -46,10 +51,10 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
-      # The compiled script is committed (the DO build has no Node), so it has
-      # to match its source.
-      - name: Compiled script is up to date
-        run: git diff --exit-code -- ../src/seb_now/templates/filter.js
+      # The compiled scripts are committed (the DO build has no Node), so they
+      # have to match their sources.
+      - name: Compiled scripts are up to date
+        run: git diff --exit-code -- '../src/seb_now/templates/*.js' && test -z "$(git status --porcelain -- ../src/seb_now/templates)"
       - run: npm test
 
   # Migrations tested on Supabase's own Postgres image (pg_jsonschema, the
@@ -89,3 +94,24 @@ jobs:
       - run: uv run --no-project --with "psycopg[binary]" python scripts/migrate.py
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_CONNECTION_STRING }}
+
+  # src/seb_now/db_types.py is generated from the database's schema, so it has
+  # to match it. On `migrations` it runs once the migrate job has applied the
+  # branch's files; anywhere the database is behind the repo it checks nothing.
+  db-types:
+    needs: [migrate]
+    if: ${{ !cancelled() && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_CONNECTION_STRING }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - name: Skip without the database secret
+        if: env.SUPABASE_DB_URL == ''
+        run: echo "::notice title=db-types::SUPABASE_CONNECTION_STRING isn't available, so the types aren't checked"
+      - if: env.SUPABASE_DB_URL != ''
+        run: uv run --no-project --with "psycopg[binary]" python scripts/gen_db_types.py
+      - name: Generated types match the database
+        if: env.SUPABASE_DB_URL != ''
+        run: git diff --exit-code -- src/seb_now/db_types.py

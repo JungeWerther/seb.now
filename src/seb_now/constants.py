@@ -75,9 +75,12 @@ POST_SLUG_PATTERN = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 # the Authorization Path set in Supabase (Authentication → OAuth Server).
 OAUTH_CONSENT_PATH = "oauth/consent"
 
-# site.py — supabase-js, pinned to an exact version since the page's CSP
-# trusts whatever script this origin serves.
-SUPABASE_JS_MODULE_URL = "https://esm.sh/@supabase/supabase-js@2.117.2"
+# site.py / consent.py — supabase-js's self-contained UMD build (no imports of
+# its own), so the CSP can allow this one URL rather than a whole CDN origin.
+# The integrity is the file's SHA-384 (it comes verbatim from the npm package):
+# change both together.
+SUPABASE_JS_URL = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"
+SUPABASE_JS_INTEGRITY = "sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok"
 # site.py / posts.py — Content-Security-Policy origins for the Google Fonts
 # stylesheet and the font files it references.
 GOOGLE_FONTS_STYLESHEET_ORIGIN = "https://fonts.googleapis.com"

@@ -3,8 +3,9 @@
 // and the run itself (`serveIngest`), which collects errors and answers with
 // the function's summary as JSON.
 
-import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { ENV, INGEST } from "./constants.ts";
+import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { serviceClient } from "./clients.ts";
+import { INGEST } from "./constants.ts";
 import { json, type Report, type Row } from "./helpers.ts";
 
 
@@ -16,7 +17,7 @@ export function serveIngest(
   ingest: (db: SupabaseClient, report: Report) => Promise<Row>,
 ): (req: Request) => Promise<Response> {
   return async () => {
-    const db = createClient(ENV.SUPABASE_URL, ENV.SUPABASE_SERVICE_ROLE_KEY);
+    const db = serviceClient();
     const errors: Row[] = [];
     const summary = await ingest(db, (error) => errors.push(error));
     return json({ ...summary, errors });

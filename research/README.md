@@ -17,6 +17,13 @@ from here.
 - `kind_predicates.py` — one independent yes/no probe per kind ("is it an
   org?"), so a name can be several kinds at once; reports AUC per predicate
   against a control, and which predicates fire together.
+- `phase_ngrams.py` — hashed phase vectors over folded character trigrams
+  (SEB-9): each token is d hash-seeded phases on the torus, a name is their
+  IDF-weighted sum, similarity is Re⟨u, v⟩, binding is elementwise
+  multiplication, with RoPE-style order and SimHash bits.
+  `phase_ngrams_eval.py` scores it for name matching against
+  `entity_candidates`, from the snapshot `phase_ngrams_eval.sql` reads;
+  results in `phase_ngrams_results.md`.
 - `test_*.py` — collected by the normal `pytest` run.
 - `jev/` — prototype: noun-phrase relations judged by TypeSafe's Jev, emitted
   as PLN links in MeTTa. See its own README.
