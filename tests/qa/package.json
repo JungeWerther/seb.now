@@ -7,7 +7,7 @@
     "keyset": "node keyset_db.mjs ../../supabase/migrations/20261016235000_senses_and_indexicals.sql ../../supabase/migrations/20261017130000_filter_links_keyset.sql",
     "sources": "node sources_db.mjs ../../supabase/migrations/20261017140000_source_entities.sql",
     "latest": "node latest_unseen_db.mjs ../../supabase/migrations/20261017231500_latest_unseen_first.sql",
-    "sense": "node entity_sense_db.mjs ../../supabase/migrations/20261017180000_entity_sense.sql ../../supabase/migrations/20261017220000_entity_undo_guards.sql",
+    "sense": "node entity_sense_db.mjs ../../supabase/migrations/20261017180000_entity_sense.sql ../../supabase/migrations/20261017220000_entity_undo_guards.sql ../../supabase/migrations/20261020130000_entity_edit_guards.sql",
     "notifications": "node notifications_db.mjs ../../supabase/migrations/20261017234700_notifications.sql",
     "credits": "node query_credits_db.mjs ../../supabase/migrations/20261014130000_query_credits.sql ../../supabase/migrations/20261018000200_refund_query_credit.sql",
     "index": "node index_changes_db.mjs ../../src/seb_now/templates/index.html ../../supabase/migrations/20261016210000_entity_index.sql ../../supabase/migrations/20261016230000_index_state_where.sql ../../supabase/migrations/20261018000300_index_changes.sql"

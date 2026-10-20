@@ -377,7 +377,11 @@ snapshots never go stale. A merge's undo also refuses when a change outside
 would restore whose places moved since (`place_path_consistent`: each place a
 path names must still have that path's prefix as its own), or a kept entity
 enriched since (its metadata and Wikidata lookup state differ from the
-snapshot's `into_after`, checked under a row lock). Nothing applies an edit automatically; the
+snapshot's `into_after`, checked under a row lock). Preconditions are guard
+expressions, `public.must(ok, message)` (raises unless `ok` is true) and
+`public.refuse(bad, message)` (raises when `bad` is true), not `if … raise … end if`,
+and undo dispatches on `op` to `restore_mention` / `unmerge_entity` as apply does
+(`20261020130000_entity_edit_guards.sql`). Nothing applies an edit automatically; the
 `/entity-sense` and `/entity-resolution` skills stage batches for review. Where a
 place is lives in `entities.place_path`, an ltree of entity labels (`e` + `seq`,
 since uuids aren't labels) from the outermost place in, so Palais de Tokyo is
