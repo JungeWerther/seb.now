@@ -329,3 +329,32 @@ def test_concurrent_inserts_cannot_pass_the_style_quota(url: str, users: tuple[u
         with psycopg.connect(url, autocommit=True) as cleanup:
             cleanup.execute("delete from entities where kind_path = 'entity.style.quota'")
             cleanup.execute("delete from kinds where path = 'entity.style.quota'")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param("#1a2b3c", id="colour"),
+        pytest.param("#1a2b3c80", id="colour-with-alpha"),
+        pytest.param("#1A2B3C", id="uppercase-colour"),
+        pytest.param("red", id="named-colour"),
+        pytest.param("url(https://x)", id="url"),
+        pytest.param("#101010;}", id="breakout"),
+        pytest.param("", id="empty"),
+        pytest.param(7, id="number"),
+    ],
+)
+def test_python_reads_a_type_as_the_database_does(db: "psycopg.Connection", value: object) -> None:
+    from seb_now.styles import style_model
+
+    schema = db.execute("select style_type_schema(%s)", (json.dumps(THEME),)).fetchone()[0]
+    style = {**DARK, "bg": value}
+    in_database = db.execute(
+        "select extensions.jsonb_matches_schema(%s::json, %s)", (json.dumps(schema), json.dumps(style))
+    ).fetchone()[0]
+    try:
+        style_model("theme", schema).model_validate(style)
+        in_python = True
+    except ValueError:
+        in_python = False
+    assert in_python == in_database
