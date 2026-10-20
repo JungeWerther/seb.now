@@ -24,6 +24,7 @@ dev = [
     "pytest>=8.0.0",
     "ruff>=0.6.0",
     "hypothesis>=6.100.0",
+    "psycopg[binary]>=3.2",
 ]
 research = [
     "scikit-learn>=1.5.0",

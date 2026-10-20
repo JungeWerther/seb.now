@@ -52,12 +52,35 @@ jobs:
         run: git diff --exit-code -- ../src/seb_now/templates/filter.js
       - run: npm test
 
+  # Migrations tested on Supabase's own Postgres image (pg_jsonschema, the
+  # anon/authenticated roles), each in a fresh database shaped like production.
+  db:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: supabase/postgres:17.6.1.168
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -h localhost"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv run pytest -q tests/db
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+
   # The database deploys from the `migrations` branch, the frontend from main
   # (DigitalOcean deploys main on push). Land a schema change on `migrations`
   # first, then merge it into main, so a page never ships ahead of its schema.
   migrate:
     if: github.event_name == 'push' && github.ref == 'refs/heads/migrations'
-    needs: [test, edge-functions, frontend]
+    needs: [test, edge-functions, frontend, db]
     runs-on: ubuntu-latest
     concurrency: database
     steps:
