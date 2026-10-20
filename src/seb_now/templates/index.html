@@ -1335,10 +1335,14 @@
     const SEEN_DWELL_MS = 1000;
     const SEEN_FLUSH_MS = 3000;
     const seenTimers = new Map();
+    const seenWatched = new Set();
     const seenQueue = new Set();
     let seenFlushTimer = null;
+    let seenWriting = Promise.resolve();
+    // A hidden page's rows are on screen only geometrically, so they wait.
     const seenObserver = "IntersectionObserver" in window
       ? new IntersectionObserver((entries) => {
+        if (document.visibilityState === VISIBILITY.hidden) return;
         for (const entry of entries) {
           const li = entry.target;
           if (entry.intersectionRatio >= SEEN_VISIBLE_RATIO) {
@@ -1352,11 +1356,16 @@
       : null;
 
     function observeSeen(items) {
-      if (seenObserver) for (const li of items) seenObserver.observe(li);
+      if (!seenObserver) return;
+      for (const li of items) {
+        seenWatched.add(li);
+        seenObserver.observe(li);
+      }
     }
 
     function markSeen(li) {
       seenTimers.delete(li);
+      seenWatched.delete(li);
       seenObserver.unobserve(li);
       if (!li.isConnected || !li.dataset.linkId) return;
       seenQueue.add(li.dataset.linkId);
@@ -1367,12 +1376,20 @@
     const SEEN_KEY = "viewer_id,link_id";
     const SEEN_FAILED = "failed to record seen links";
 
-    async function flushSeen() {
+    // Settles once every seen link queued so far, and every write already
+    // sent, is stored.
+    function flushSeen() {
       clearTimeout(seenFlushTimer);
       seenFlushTimer = null;
-      if (seenQueue.size === 0) return;
-      const linkIds = [...seenQueue];
-      seenQueue.clear();
+      if (seenQueue.size) {
+        const linkIds = [...seenQueue];
+        seenQueue.clear();
+        seenWriting = Promise.all([seenWriting, writeSeen(linkIds)]);
+      }
+      return seenWriting;
+    }
+
+    async function writeSeen(linkIds) {
       const session = await pendingSession;
       if (!session) return;
       const { error } = await (await supabaseReady).from(SEEN_TABLE).upsert(
@@ -1382,9 +1399,31 @@
       if (error) console.error(SEEN_FAILED, error);
     }
 
-    document.addEventListener(DOM_EVENT.visibilityChange, () => {
-      if (document.visibilityState === VISIBILITY.hidden) flushSeen();
-    });
+    // Leaving drops every unfinished dwell; coming back starts a full one for
+    // each row on screen (observing again reports where it is now).
+    const seenOnVisibility = {
+      [VISIBILITY.hidden]: () => {
+        for (const timer of seenTimers.values()) clearTimeout(timer);
+        seenTimers.clear();
+        flushSeen();
+      },
+      [VISIBILITY.visible]: () => {
+        for (const li of seenWatched) {
+          seenObserver.unobserve(li);
+          if (li.isConnected) seenObserver.observe(li);
+          else seenWatched.delete(li);
+        }
+      },
+    };
+
+    document.addEventListener(DOM_EVENT.visibilityChange, () => seenOnVisibility[document.visibilityState]?.());
+
+    // A feed's cutoff is taken once what was seen before it is stored, so
+    // those links count as seen on every page of it.
+    async function seenCutoff() {
+      await flushSeen();
+      return new Date().toISOString();
+    }
 
     // A clicked link's visit records how the reader came back. Article links
     // open in a new tab (or another app), which keeps this page: the return is
@@ -2461,6 +2500,11 @@
       feed.replacing = replace;
       updateSkeletons();
       const generation = feed.generation;
+      if (!feed.asOf) {
+        const asOf = await seenCutoff();
+        if (generation !== feed.generation) return;
+        feed.asOf = asOf;
+      }
       const { data: page, error } = await fetchPage();
       if (generation !== feed.generation) return;
       feed.loading = false;
@@ -2499,8 +2543,9 @@
       feed.term = null;
       feed.order = null;
       feed.chronological = false;
-      // Ranks are computed as of this moment for every page of this feed.
-      feed.asOf = new Date().toISOString();
+      // Ranks are computed as of one moment for every page of this feed, set
+      // when its first page loads (seenCutoff).
+      feed.asOf = null;
       feed.offset = 0;
       feed.cursor = null;
       feed.seen = new Set();
