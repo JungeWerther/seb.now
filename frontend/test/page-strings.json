@@ -39,7 +39,6 @@
  "fetchLocalFiltered \"links\"",
  "fetchLocalFiltered \"seq\"",
  "fetchQueried \"feed_query\"",
- "fetchQueried \"for_you\"",
  "fetchRanked \"ranked_feed\"",
  "fetchRelated \"related_feed\"",
  "fetchServerFiltered \"filter_links\"",

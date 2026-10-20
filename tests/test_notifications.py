@@ -75,9 +75,14 @@ def test_inbox_renders_with_text_content_and_marks_only_what_it_showed_read() ->
     assert "focusLink(reply.link_id)" in render_fn
 
     load_fn = _function(script, "loadInbox")
-    assert 'rpc("mark_notifications_read", { ids: unreadIds })' in load_fn
+    assert 'markRead: "mark_notifications_read"' in script
+    assert "rpc(NOTIFICATIONS.markRead, { ids: unreadIds })" in load_fn
     assert "loadUnreadCount();" in load_fn
-    assert '.from("notifications").select("id", { count: "exact", head: true }).is("read_at", null)' in script
+    assert 'table: "notifications", id: "id", readAt: "read_at"' in script
+    assert (
+        ".select(NOTIFICATIONS.id, { count: NOTIFICATIONS.exactCount, head: true }).is(NOTIFICATIONS.readAt, null)"
+        in script
+    )
     assert "setupInbox();" in script
 
 
