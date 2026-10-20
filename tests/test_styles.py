@@ -1,3 +1,5 @@
+from enum import StrEnum
+
 import pytest
 from pydantic import ValidationError
 
@@ -77,6 +79,18 @@ def test_a_style_outside_the_type_is_refused(style: dict[str, object]) -> None:
 def test_a_schema_outside_the_vocabulary_is_refused(schema: dict[str, object]) -> None:
     with pytest.raises(UnsupportedSchema):
         style_model("odd", schema)
+
+
+def test_an_enum_token_reads_as_a_str_enum() -> None:
+    style = style_model("theme", THEME).model_validate(DARK)
+    density = style.model_dump()["density"]
+    assert isinstance(density, StrEnum) and density == "compact"
+    assert [member.value for member in type(density)] == ["compact", "roomy"]
+
+
+def test_keywords_named_like_enum_attributes() -> None:
+    model = style_model("odd", compiled({"x": {"enum": ["name", "value", "mro"]}}))
+    assert model.model_validate({"x": "value"}).model_dump() == {"x": "value"}
 
 
 def test_an_integer_is_a_number() -> None:

@@ -13,12 +13,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from enum import StrEnum
 from functools import cache
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, create_model
 
-from seb_now.constants import DEFS_PREFIX, JsonType, SchemaKeyword
+from seb_now.constants import DEFS_PREFIX, ENUM_TOKEN_STRICT, JsonType, SchemaKeyword
 
 
 class UnsupportedSchema(ValueError):
@@ -48,7 +49,15 @@ def _primitive(schema: object) -> object:
     raise UnsupportedSchema(f"a primitive is a string with a pattern or a bounded number, not {schema!r}")
 
 
-def _token(token: object, defs: Mapping[str, object]) -> object:
+def _keywords(name: str, values: list[str]) -> object:
+    """An enum token as a StrEnum of its keywords. Members are named by position,
+    so a keyword like `name` or `value` can't shadow Enum's own attributes; the
+    field is lax so a keyword's plain string reads as its member."""
+    keywords = StrEnum(name, [(f"v{i}", value) for i, value in enumerate(values)])  # type: ignore[misc]
+    return Annotated[keywords, Field(strict=ENUM_TOKEN_STRICT)]
+
+
+def _token(key: str, token: object, defs: Mapping[str, object]) -> object:
     match token:
         case {SchemaKeyword.REF: str(ref), **rest} if ref.startswith(DEFS_PREFIX) and set(rest) <= {
             SchemaKeyword.DESCRIPTION
@@ -60,7 +69,7 @@ def _token(token: object, defs: Mapping[str, object]) -> object:
         case {SchemaKeyword.ENUM: [str(), *_] as values, **rest} if all(
             isinstance(value, str) for value in values
         ) and set(rest) <= {SchemaKeyword.DESCRIPTION}:
-            return Literal[tuple(values)]
+            return _keywords(f"Token_{key}", values)
     raise UnsupportedSchema(f"a token is a $ref to a primitive or an enum of keywords, not {token!r}")
 
 
@@ -76,7 +85,7 @@ def _model(name: str, canonical_schema: str) -> type[Style]:
             **rest,
         } if not rest and sorted(required) == sorted(properties):
             fields: dict[str, Any] = {
-                f"token_{i}": (_token(token, defs), Field(alias=key))
+                f"token_{i}": (_token(key, token, defs), Field(alias=key))
                 for i, (key, token) in enumerate(properties.items())
             }
             return create_model(f"Style_{name}", __base__=Style, **fields)

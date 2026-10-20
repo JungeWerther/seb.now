@@ -42,6 +42,9 @@ class JsonType(StrEnum):
 
 # styles.py — where a token's $ref points: one of the schema's own $defs
 DEFS_PREFIX = "#/$defs/"
+# styles.py — an enum token's field is lax inside the strict model, so a
+# keyword's plain string reads as its StrEnum member (strict wants a member)
+ENUM_TOKEN_STRICT = False
 
 # site.py — topic chips shown per article, highest-p first
 ARTICLE_TOPIC_CHIPS = 2
