@@ -1,15 +1,12 @@
 import json
 import sys
-
-from pydantic import BaseModel, Field
 from collections.abc import Mapping
-
-from typesafe_sdk import JSONContent, Question, SystemOneResponse
 
 from coref import PAIR_FORM, find_mentions, marked_text, pair_contexts
 from jev_fill import DescribedIntEnum, DescribedStrEnum, JevForm
-
+from pydantic import BaseModel, Field
 from sample import PHRASES, TEXT
+from typesafe_sdk import JSONContent, Question, SystemOneResponse
 
 mentions = find_mentions(TEXT, PHRASES)
 state = marked_text(TEXT, mentions)
@@ -61,8 +58,13 @@ class FakeClient:
                 answers[key] = {"type": "choice", "choice": first, "probabilities": probabilities, "confidence": 1.0}
             elif q.type == "score":
                 levels = {i: float(i == 2) for i in range(len(q.criteria))}
-                answers[key] = {"type": "score", "score": 2.0, "legend": {i: c for i, c in enumerate(q.criteria)},
-                                "probabilities": levels, "confidence": 1.0}
+                answers[key] = {
+                    "type": "score",
+                    "score": 2.0,
+                    "legend": {i: c for i, c in enumerate(q.criteria)},
+                    "probabilities": levels,
+                    "confidence": 1.0,
+                }
             else:
                 answers[key] = {"type": "noul", "noul": 0.8}
         return SystemOneResponse.model_validate({"model": "fake", "usage": {"input_tokens": 0}, "answers": answers})
@@ -77,4 +79,12 @@ client = FakeClient()
 pairs = PAIR_FORM.fill_many(client, state, contexts, max_questions_per_request=50)
 print(len(pairs), "pairs in", len(client.calls), "requests; first:", pairs["m1-m2"].value)
 print("state:", state)
-print("one pair question:", json.dumps(PAIR_FORM.questions(contexts["m2-m11"], "m2-m11"), default=lambda q: q.model_dump(mode="json"), ensure_ascii=False, indent=1))
+print(
+    "one pair question:",
+    json.dumps(
+        PAIR_FORM.questions(contexts["m2-m11"], "m2-m11"),
+        default=lambda q: q.model_dump(mode="json"),
+        ensure_ascii=False,
+        indent=1,
+    ),
+)

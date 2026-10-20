@@ -50,7 +50,7 @@ def where(url: str) -> str:
 
     try:
         info = conninfo_to_dict(url)
-    except Exception:  # noqa: BLE001 - only used to describe a bad string
+    except Exception:  # only used to describe a bad string
         return "an unparseable connection string"
     return f"{info.get('host')}:{info.get('port', 5432)} as {info.get('user')}"
 
@@ -62,13 +62,15 @@ def main() -> None:
     files = migration_files()
     url = os.environ.get("SUPABASE_DB_URL", "").strip()
     if not url:
-        fail("SUPABASE_DB_URL is empty: the SUPABASE_CONNECTION_STRING secret is missing, misnamed, "
-             "or scoped to a GitHub Environment the job doesn't use (it needs to be a repository secret)")
+        fail(
+            "SUPABASE_DB_URL is empty: the SUPABASE_CONNECTION_STRING secret is missing, misnamed, "
+            "or scoped to a GitHub Environment the job doesn't use (it needs to be a repository secret)"
+        )
     if "[YOUR-PASSWORD]" in url:
         fail("the connection string still has the [YOUR-PASSWORD] placeholder in it")
     try:
         conn = psycopg.connect(url, autocommit=True, connect_timeout=15)
-    except Exception as error:  # noqa: BLE001 - reported, then the run fails
+    except Exception as error:  # reported, then the run fails
         hint = ""
         if ".supabase.co" in where(url) and "pooler" not in where(url):
             hint = " (the direct db.*.supabase.co host is IPv6-only and GitHub runners can't reach it: use the Session pooler string)"
@@ -93,7 +95,9 @@ def main() -> None:
                         (version, name),
                     )
             except psycopg.Error as error:
-                fail(f"{path.name} failed and was rolled back: {type(error).__name__}: {str(error).strip().splitlines()[0]}")
+                fail(
+                    f"{path.name} failed and was rolled back: {type(error).__name__}: {str(error).strip().splitlines()[0]}"
+                )
         print(f"{'Would apply' if dry_run else 'Applied'} {len(todo)} migration(s).")
 
 

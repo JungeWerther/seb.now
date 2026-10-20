@@ -5,7 +5,7 @@ from html import unescape
 from pathlib import Path
 
 from seb_now.consent import render_consent, write_consent
-from seb_now.constants import OAUTH_CONSENT_PATH
+from seb_now.constants import OAUTH_CONSENT_PATH, SUPABASE_JS_URL
 
 
 def _page_script(html: str) -> str:
@@ -18,7 +18,7 @@ def test_consent_csp_only_allows_its_own_script_by_hash() -> None:
     digest = base64.b64encode(hashlib.sha256(_page_script(html).encode()).digest()).decode()
     csp = unescape(re.search(r'<meta http-equiv="Content-Security-Policy" content="([^"]*)">', html).group(1))
     directives = dict(d.strip().split(" ", 1) for d in csp.split(";"))
-    assert directives["script-src"].split() == [f"'sha256-{digest}'", "https://esm.sh"]
+    assert directives["script-src"].split() == [f"'sha256-{digest}'", SUPABASE_JS_URL]
     assert directives["connect-src"] == "https://example.supabase.co"
 
 

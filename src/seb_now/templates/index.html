@@ -905,8 +905,8 @@
       overflow-wrap: anywhere;
     }
     #focus-entity-meta, #focus-topic-meta, #focus-kind-meta { margin: 0; font-size: 0.8rem; color: gray; }
-    #focus-entity-meta a, #focus-kind-meta a { color: inherit; }
-    #focus-entity-meta a:hover, #focus-kind-meta a:hover { color: var(--fg); }
+    #focus-entity-meta a, #focus-topic-meta a, #focus-kind-meta a { color: inherit; }
+    #focus-entity-meta a:hover, #focus-topic-meta a:hover, #focus-kind-meta a:hover { color: var(--fg); }
     #focus-topic-description, #focus-kind-description { margin: 0.5rem 0 0; font-size: 0.85rem; color: #b8b8b8; max-width: 40rem; }
     #focus-topic-description:empty, #focus-kind-description:empty { display: none; }
     /* On a topic's or an entity's page, top right opposite ← Feed and
@@ -1043,6 +1043,10 @@
       from { transform: translateY(0); opacity: 1; }
       to { transform: translateY(120%); opacity: 0; }
     }
+    /* Hidden until the page script has checked it isn't framed: a <meta> CSP
+       can't set frame-ancestors and the static host can't send headers, so
+       this is the clickjacking defence. */
+    html:not(.unframed) body { display: none !important; }
   </style>
 </head>
 <body>
@@ -1198,18 +1202,31 @@
     </div>
   </div>
   <script type="module">
+    if (window.top !== window.self) throw new Error("seb.now doesn't run inside a frame");
+    document.documentElement.classList.add("unframed");
 
     // Compiled from frontend/src/*.ts (tsc, see frontend/README.md); site.py
-    // inlines it here. Filter, filterKey, nextFilterCursor, memoize...
+    // inlines it here. Result, Mapping and match (prelude.ts); Filter,
+    // filterKey, nextFilterCursor, memoize...; then lexicon, claimNames,
+    // senseLabel (what typed words name, senses.ts).
+    __PRELUDE_JS__
     __FILTER_JS__
+    __SENSES_JS__
 
     // Loaded without blocking the rest of this script, so swiping and the
     // other UI work while supabase-js is still downloading.
     const SUPABASE_URL = __SUPABASE_URL__;
     const SUPABASE_ANON_KEY = __SUPABASE_ANON_KEY__;
-    const supabaseReady = import(__SUPABASE_JS_MODULE_URL__).then(({ createClient }) =>
-      createClient(SUPABASE_URL, SUPABASE_ANON_KEY),
-    );
+    // supabase-js's UMD build is a classic script that sets window.supabase.
+    const supabaseReady = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = __SUPABASE_JS_URL__;
+      script.integrity = __SUPABASE_JS_INTEGRITY__;
+      script.crossOrigin = "anonymous";
+      script.addEventListener("load", () => resolve(window.supabase));
+      script.addEventListener("error", () => reject(new Error("supabase-js failed to load")));
+      document.head.append(script);
+    }).then(({ createClient }) => createClient(SUPABASE_URL, SUPABASE_ANON_KEY));
 
     // Covers point at arbitrary third-party sites, so drop one that fails to
     // load rather than leave an empty frame; a favicon that fails leaves its
@@ -1947,6 +1964,8 @@
       topic: null,
       filter: null,
       indexical: null,
+      // The term whose page (/s/…) is open; its feed is `filter`.
+      term: null,
       // The sort order whose page (/o/…) is open; its feed is `intent`.
       order: null,
       chronological: false,
@@ -2030,6 +2049,17 @@
     function setIndexicalHref(anchor, term) {
       const id = term.replace(/ /g, "-");
       if (new RegExp(`^${INDEXICAL_ID_PATTERN}$`).test(id)) anchor.href = `/i/${id}`;
+      else anchor.removeAttribute("href");
+    }
+
+    // A term's address is its folded words joined by "-" (/s/night-owl): the
+    // page of a name the search box reads several ways, listing every sense.
+    const TERM_ID_PATTERN = "[a-z0-9]+(?:-[a-z0-9]+)*";
+    const TERM_PATH_PATTERN = new RegExp(`^/s/(${TERM_ID_PATTERN})/?$`);
+
+    function setTermHref(anchor, term) {
+      const id = term.replace(/ /g, "-");
+      if (new RegExp(`^${TERM_ID_PATTERN}$`).test(id)) anchor.href = `/s/${id}`;
       else anchor.removeAttribute("href");
     }
 
@@ -2148,37 +2178,45 @@
       return text.replace(/[\\%_]/g, (c) => `\\${c}`);
     }
 
+    // A page of the feed is a Result (frontend/src/prelude.ts) of {rows,
+    // count, cursor?}: `count` is how many the source listed, which decides
+    // whether there's more, and `cursor` where its next page starts.
+    const emptyPage = () => Result.ok({ rows: [], count: 0 });
+    const FEED_LOAD_FAILED = "failed to load the feed";
+
     async function fetchLinks({ query = "", before = null }) {
       let request = (await supabaseReady).from("links").select(FEED_SELECT);
       if (query) request = request.ilike("search_text", `%${escapeLike(query.toLowerCase())}%`);
       if (before) request = request.or(keyset("lt", before));
-      const { data, error } = await request
+      const rows = await request
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .limit(FEED_PAGE_SIZE);
-      if (error) {
-        console.error("failed to load feed", error);
-        return null;
-      }
-      return data;
+      return Result.map(rows, (page) => ({ rows: page, count: page.length, cursor: page.length ? cursorOfRow(page.at(-1)) : null }));
     }
 
-    // One page of ranked_feed, then those links by id in rank order. `count`
-    // is how many ranks came back, which decides whether there's more.
+    function cursorOfRow(row) {
+      return { createdAt: row.created_at, id: row.id };
+    }
+
+    // The links with these ids, in that order.
+    async function linksInIdOrder(client, order) {
+      if (!order.length) return Result.ok([]);
+      const position = new Map(order.map((id, i) => [id, i]));
+      return Result.map(await client.from("links").select(FEED_SELECT).in("id", order),
+        (rows) => rows.sort((a, b) => position.get(a.id) - position.get(b.id)));
+    }
+
+    // One page of ranked_feed, then those links by id in rank order.
     async function fetchRanked(asOf, offset) {
       const client = await supabaseReady;
       // ranked_feed reads the caller's own votes, so wait for the session.
       await pendingSession;
-      const { data: ranks, error } = await client.rpc("ranked_feed", {
+      return Result.chain(client.rpc("ranked_feed", {
         as_of: asOf,
         page_offset: offset,
         page_size: FEED_PAGE_SIZE,
-      });
-      if (error) {
-        console.error("failed to rank feed", error);
-        return null;
-      }
-      return linksInOrder(client, ranks);
+      }), (ranks) => linksInOrder(client, ranks));
     }
 
     // One page of feed_query for a typed query's intent; only its for_you
@@ -2190,7 +2228,7 @@
       if (intent.sort === "for_you" || intent.sort === "latest") await pendingSession;
       const entities = intent.entities ?? [];
       const required = intent.required ?? [];
-      const { data: ranks, error } = await client.rpc("feed_query", {
+      const page = await Result.chain(client.rpc("feed_query", {
         sort: intent.sort,
         topic: intent.topic?.id ?? null,
         search: intent.search || null,
@@ -2199,28 +2237,14 @@
         page_size: FEED_PAGE_SIZE,
         entities: entities.length ? entities.map((e) => e.id) : null,
         required: required.length ? required.map(({ ids, words }) => ({ ids, words })) : null,
-      });
-      if (error) {
-        console.error("failed to query feed", error);
-        return null;
-      }
-      const page = await linksInOrder(client, ranks);
-      if (!page || !(entities.length || required.length)) return page;
+      }), (ranks) => linksInOrder(client, ranks));
+      if (!(entities.length || required.length)) return page;
       const shared = { entities: new Set([...required, ...entities].map((e) => e.name)), topics: new Set() };
-      return { rows: page.rows.map((row) => ({ row, shared })), count: page.count };
+      return Result.map(page, ({ rows, count }) => ({ rows: rows.map((row) => ({ row, shared })), count }));
     }
 
     async function linksInOrder(client, ranks) {
-      if (ranks.length === 0) return { rows: [], count: 0 };
-      const ids = ranks.map((r) => r.link_id);
-      const { data: rows, error: linksError } = await client.from("links").select(FEED_SELECT).in("id", ids);
-      if (linksError) {
-        console.error("failed to load feed", linksError);
-        return null;
-      }
-      const position = new Map(ids.map((id, i) => [id, i]));
-      rows.sort((a, b) => position.get(a.id) - position.get(b.id));
-      return { rows, count: ranks.length };
+      return Result.map(await linksInIdOrder(client, ranks.map((r) => r.link_id)), (rows) => ({ rows, count: ranks.length }));
     }
 
     // One page of related_feed: related_links with each link's row in the
@@ -2228,22 +2252,18 @@
     // focused post.
     async function fetchRelated(id, offset) {
       const client = await supabaseReady;
-      const { data: related, error } = await client.rpc("related_feed", {
+      const related = await client.rpc("related_feed", {
         link: id,
         max_results: FEED_PAGE_SIZE,
         page_offset: offset,
       });
-      if (error) {
-        console.error("failed to load related links", error);
-        return null;
-      }
-      return {
-        rows: related.map((r) => ({
+      return Result.map(related, (rows) => ({
+        rows: rows.map((r) => ({
           row: r.link_row,
           shared: { entities: new Set(r.shared_entities), topics: new Set(r.shared_topics) },
         })),
-        count: related.length,
-      };
+        count: rows.length,
+      }));
     }
 
     // One page of entity_links, then those links by id in its order, each
@@ -2251,61 +2271,34 @@
     // promise: a direct visit only learns the name with the page's header.
     async function fetchEntityLinks(entity, offset) {
       const client = await supabaseReady;
-      const { data: ids, error } = await client.rpc("entity_links", {
+      return Result.chain(client.rpc("entity_links", {
         entity: entity.id,
         max_results: FEED_PAGE_SIZE,
         page_offset: offset,
+      }), async (ids) => {
+        if (ids.length === 0) return emptyPage();
+        const [rows, name] = await Promise.all([linksInIdOrder(client, ids.map((r) => r.link_id)), entity.name]);
+        const shared = { entities: new Set(name ? [name] : []), topics: new Set() };
+        return Result.map(rows, (found) => ({ rows: found.map((row) => ({ row, shared })), count: ids.length }));
       });
-      if (error) {
-        console.error("failed to load the entity's links", error);
-        return null;
-      }
-      if (ids.length === 0) return { rows: [], count: 0 };
-      const order = ids.map((r) => r.link_id);
-      const [{ data: rows, error: linksError }, name] = await Promise.all([
-        client.from("links").select(FEED_SELECT).in("id", order),
-        entity.name,
-      ]);
-      if (linksError) {
-        console.error("failed to load the entity's links", linksError);
-        return null;
-      }
-      const position = new Map(order.map((id, i) => [id, i]));
-      rows.sort((a, b) => position.get(a.id) - position.get(b.id));
-      const shared = { entities: new Set(name ? [name] : []), topics: new Set() };
-      return { rows: rows.map((row) => ({ row, shared })), count: ids.length };
     }
 
     // One page of topic_links (the topic and its children), then those links
     // by id in its order, each with its chips under the topic highlighted.
     async function fetchTopicLinks(path, offset) {
       const client = await supabaseReady;
-      const { data: ids, error } = await client.rpc("topic_links", {
+      const inTopic = (id) => id === path || id.startsWith(`${path}.`);
+      return Result.chain(client.rpc("topic_links", {
         topic: path,
         max_results: FEED_PAGE_SIZE,
         page_offset: offset,
-      });
-      if (error) {
-        console.error("failed to load the topic's links", error);
-        return null;
-      }
-      if (ids.length === 0) return { rows: [], count: 0 };
-      const order = ids.map((r) => r.link_id);
-      const { data: rows, error: linksError } = await client.from("links").select(FEED_SELECT).in("id", order);
-      if (linksError) {
-        console.error("failed to load the topic's links", linksError);
-        return null;
-      }
-      const position = new Map(order.map((id, i) => [id, i]));
-      rows.sort((a, b) => position.get(a.id) - position.get(b.id));
-      const inTopic = (id) => id === path || id.startsWith(`${path}.`);
-      return {
+      }), async (ids) => Result.map(await linksInIdOrder(client, ids.map((r) => r.link_id)), (rows) => ({
         rows: rows.map((row) => {
           const topics = (row.link_topics || []).filter((lt) => lt.topics && inTopic(lt.topics.id));
           return { row, shared: { entities: new Set(), topics: new Set(topics.map((lt) => lt.topics.name)) } };
         }),
         count: ids.length,
-      };
+      })));
     }
 
     // One page of kind_links (entities of the kind or its subkinds), then those
@@ -2313,16 +2306,11 @@
     // highlighted.
     async function fetchKindLinks(path, offset) {
       const client = await supabaseReady;
-      const { data: ids, error } = await client.rpc("kind_links", {
+      return Result.chain(client.rpc("kind_links", {
         kind: path,
         max_results: FEED_PAGE_SIZE,
         page_offset: offset,
-      });
-      if (error) {
-        console.error("failed to load the kind's links", error);
-        return null;
-      }
-      return linksWithMatches(client, ids);
+      }), (ids) => linksWithMatches(client, ids));
     }
 
     // One page of a typed query's filters (see Filter): the links passing
@@ -2342,18 +2330,12 @@
     // without asking the server.
     const fetchServerFiltered = memoize(filterPageKey, async (filter, cursor) => {
       const client = await supabaseReady;
-      const { data: ids, error } = await client.rpc("filter_links", {
+      return Result.chain(client.rpc("filter_links", {
         filters: filter.terms,
         max_results: FEED_PAGE_SIZE,
         before_created_at: cursor?.createdAt ?? null,
         before_id: cursor?.id ?? null,
-      });
-      if (error) {
-        console.error("failed to load the filtered links", error);
-        return null;
-      }
-      const page = await linksWithMatches(client, ids);
-      return page && { ...page, cursor: nextFilterCursor(ids) };
+      }), async (ids) => Result.map(await linksWithMatches(client, ids), (page) => ({ ...page, cursor: nextFilterCursor(ids) })));
     });
 
     // Link rows by seq, fetched once per visit: a filter's pages come from the
@@ -2366,89 +2348,61 @@
     async function fetchLocalFiltered(client, local, offset) {
       const page = filterLocalLinks(local).slice(offset, offset + FEED_PAGE_SIZE);
       const missing = page.map((p) => p.linkSeq).filter((seq) => !linkRowsBySeq.has(seq));
-      if (missing.length) {
-        const { data, error } = await client.from("links").select(`${FEED_SELECT}, seq`).in("seq", missing);
-        if (error) {
-          console.error("failed to load the filtered links", error);
-          return null;
-        }
+      const fetched = missing.length ? await client.from("links").select(`${FEED_SELECT}, seq`).in("seq", missing) : Result.ok([]);
+      return Result.map(fetched, (data) => {
         for (const row of data) linkRowsBySeq.set(row.seq, row);
-      }
-      const rows = page.filter((p) => linkRowsBySeq.has(p.linkSeq)).map((p) => ({
-        row: linkRowsBySeq.get(p.linkSeq),
-        shared: {
-          entities: new Set([...p.entitySeqs].map((seq) => entityIndex.entities.get(seq)?.name).filter(Boolean)),
-          topics: new Set(),
-        },
-      }));
-      return { rows, count: page.length };
+        const rows = page.filter((p) => linkRowsBySeq.has(p.linkSeq)).map((p) => ({
+          row: linkRowsBySeq.get(p.linkSeq),
+          shared: {
+            entities: new Set([...p.entitySeqs].map((seq) => entityIndex.entities.get(seq)?.name).filter(Boolean)),
+            topics: new Set(),
+          },
+        }));
+        return { rows, count: page.length };
+      });
     }
 
     // `ids` ({link_id, entity_ids} rows) as links in that order, each with the
     // chips of its matched entities highlighted.
     async function linksWithMatches(client, ids) {
-      if (ids.length === 0) return { rows: [], count: 0 };
-      const order = ids.map((r) => r.link_id);
-      const { data: rows, error } = await client.from("links").select(FEED_SELECT).in("id", order);
-      if (error) {
-        console.error("failed to load links", error);
-        return null;
-      }
       const matched = new Map(ids.map((r) => [r.link_id, new Set(r.entity_ids)]));
-      const position = new Map(order.map((id, i) => [id, i]));
-      rows.sort((a, b) => position.get(a.id) - position.get(b.id));
-      return {
+      return Result.map(await linksInIdOrder(client, ids.map((r) => r.link_id)), (rows) => ({
         rows: rows.map((row) => {
           const entities = (row.link_entities || []).filter((le) => le.entities && matched.get(row.id).has(le.entities.id));
           return { row, shared: { entities: new Set(entities.map((le) => le.entities.name)), topics: new Set() } };
         }),
         count: ids.length,
-      };
+      }));
     }
 
+    // Which page the feed lists, by the first of these it has set; a feed
+    // with none of them is the ranked feed.
+    const pageFetcherByFeedField = {
+      filter: ({ filter, offset, cursor }) => fetchFiltered(filter, offset, cursor),
+      kind: ({ kind, offset }) => fetchKindLinks(kind, offset),
+      topic: ({ topic, offset }) => fetchTopicLinks(topic, offset),
+      entity: ({ entity, offset }) => fetchEntityLinks(entity, offset),
+      related: ({ related, offset }) => fetchRelated(related, offset),
+      intent: ({ intent, asOf, offset }) => fetchQueried(intent, asOf, offset),
+      query: ({ query, cursor }) => fetchLinks({ query, before: cursor }),
+      chronological: ({ query, cursor }) => fetchLinks({ query, before: cursor }),
+    };
+
+    // One page of the feed. Only a page for the feed still showing (the same
+    // `generation`) moves its offset and cursor on.
     async function fetchPage() {
-      // An indexical's page with nothing to list ("this", read on no page).
-      if (feed.indexical && !feed.filter) return { rows: [], count: 0 };
-      if (feed.filter) {
-        const page = await fetchFiltered(feed.filter, feed.offset, feed.cursor);
-        if (page) feed.offset += page.count;
-        if (page?.cursor) feed.cursor = page.cursor;
-        return page;
-      }
-      if (feed.kind) {
-        const page = await fetchKindLinks(feed.kind, feed.offset);
-        if (page) feed.offset += page.count;
-        return page;
-      }
-      if (feed.topic) {
-        const page = await fetchTopicLinks(feed.topic, feed.offset);
-        if (page) feed.offset += page.count;
-        return page;
-      }
-      if (feed.entity) {
-        const page = await fetchEntityLinks(feed.entity, feed.offset);
-        if (page) feed.offset += page.count;
-        return page;
-      }
-      if (feed.related) {
-        const page = await fetchRelated(feed.related, feed.offset);
-        if (page) feed.offset += page.count;
-        return page;
-      }
-      if (feed.intent) {
-        const page = await fetchQueried(feed.intent, feed.asOf, feed.offset);
-        if (page) feed.offset += page.count;
-        return page;
-      }
-      if (feed.query || feed.chronological) {
-        const rows = await fetchLinks({ query: feed.query, before: feed.cursor });
-        if (!rows) return null;
-        if (rows.length > 0) feed.cursor = { createdAt: rows.at(-1).created_at, id: rows.at(-1).id };
-        return { rows, count: rows.length };
-      }
-      const page = await fetchRanked(feed.asOf, feed.offset);
-      if (page) feed.offset += page.count;
-      return page;
+      // An indexical's or a term's page lists nothing until its filter is read
+      // (or ever, for "this" read on no page).
+      if ((feed.indexical || feed.term) && !feed.filter) return emptyPage();
+      const { generation } = feed;
+      const field = Object.keys(pageFetcherByFeedField).find((key) => feed[key]);
+      const page = await (field ? pageFetcherByFeedField[field](feed) : fetchRanked(feed.asOf, feed.offset));
+      if (generation !== feed.generation) return page;
+      return Result.map(page, (p) => {
+        feed.offset += p.count;
+        if (p.cursor) feed.cursor = p.cursor;
+        return p;
+      });
     }
 
     // Rows are links, or {row, shared} for related and entity links.
@@ -2487,11 +2441,14 @@
       feed.replacing = replace;
       updateSkeletons();
       const generation = feed.generation;
-      const page = await fetchPage();
+      const { data: page, error } = await fetchPage();
       if (generation !== feed.generation) return;
       feed.loading = false;
       updateSkeletons();
-      if (!page) return false;
+      if (error) {
+        console.error(FEED_LOAD_FAILED, error);
+        return false;
+      }
       if (page.count < FEED_PAGE_SIZE) feed.done = true;
       // Ranks can shift between pages as votes come in, so a link may come
       // back twice.
@@ -2519,6 +2476,7 @@
       feed.kind = null;
       feed.filter = null;
       feed.indexical = null;
+      feed.term = null;
       feed.order = null;
       feed.chronological = false;
       // Ranks are computed as of this moment for every page of this feed.
@@ -2565,7 +2523,7 @@
 
       // A post's or an entity's own address opens on it (setupLinkPage), not
       // the feed.
-      if (linkIdFromPath() || entityIdFromPath() || topicPathFromPath() || kindPathFromPath() || indexicalFromPath() || orderFromPath()) {
+      if (linkIdFromPath() || entityIdFromPath() || topicPathFromPath() || kindPathFromPath() || indexicalFromPath() || termFromPath() || orderFromPath()) {
         articleList.replaceChildren();
         return;
       }
@@ -2635,6 +2593,10 @@
       return location.pathname.match(INDEXICAL_PATH_PATTERN)?.[1]?.replace(/-/g, " ") ?? null;
     }
 
+    function termFromPath() {
+      return location.pathname.match(TERM_PATH_PATTERN)?.[1]?.replace(/-/g, " ") ?? null;
+    }
+
     function isFocused() {
       return document.documentElement.classList.contains("focused");
     }
@@ -2658,6 +2620,20 @@
     function showFocusSection(listId, items) {
       document.getElementById(listId).replaceChildren(...items);
       document.getElementById(`${listId}-title`).hidden = items.length === 0;
+    }
+
+    // Whether ltree path `child` is exactly one level under `parent`.
+    const isChildPath = (parent) => (child) =>
+      child.startsWith(`${parent}.`) && child.split(".").length === parent.split(".").length + 1;
+
+    // A tree page's children, the `nodes` exactly one level below `path` (a
+    // kind's subkinds, a topic's subtopics), as chips in its Kinds section;
+    // `chipKind` is the tree, which picks the page each chip opens.
+    function showChildKinds(path, nodes, chipKind) {
+      showFocusSection(
+        "focus-kinds",
+        nodes.filter(({ id }) => isChildPath(path)(id)).map(({ label, id }) => tagItem(label, "", chipKind, id)),
+      );
     }
 
     // The band's bottom, in page coordinates, where its fade begins.
@@ -2757,6 +2733,27 @@
     // every link that mentions it, newest first (entity_links), a page at a
     // time as you scroll, with its chip highlighted on each. Tapping an entity
     // chip anywhere opens it; history works as for a post's page.
+    // A page's parent, as a link to its page (setHref is setKindHref or
+    // setTopicHref): the kind an entity is, the kind or topic one level up.
+    function parentLink(label, setHref, id) {
+      const link = document.createElement("a");
+      link.textContent = label;
+      link.dataset.name = label;
+      setHref(link, id);
+      return link;
+    }
+
+    const countLabel = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+
+    // The line under every page's title: what it is (its parent, as
+    // [relation, parentLink(...)] or a plain phrase at a root), then its facts
+    // (counts and the like), joined by " · ". Never a raw id or path: the
+    // parent link is how the tree shows.
+    function showPageMeta(element, parent, ...facts) {
+      const parts = [parent, ...facts].filter(Boolean).map((part) => [part].flat());
+      document.getElementById(element).replaceChildren(...parts.flatMap((part, i) => (i ? [" · ", ...part] : part)));
+    }
+
     async function focusEntity(id, { name = "", push = true, saveFeed = true } = {}) {
       const generation = ++focusGeneration;
       enterFocus(`/e/${id}`, { push, saveFeed });
@@ -2765,7 +2762,7 @@
       showFocusSection("focus-topics", []);
       showFocusSection("focus-kinds", []);
       document.getElementById("focus-entity-name").textContent = name;
-      document.getElementById("focus-entity-meta").textContent = "";
+      document.getElementById("focus-entity-meta").replaceChildren();
       focusEntityHead.hidden = false;
       focusTopicHead.hidden = true;
       focusKindHead.hidden = true;
@@ -2792,11 +2789,11 @@
         focusStatus.textContent = error ? "Couldn't load this entity." : "This entity doesn't exist.";
       } else {
         document.getElementById("focus-entity-name").textContent = entity.name;
-        const posts = count == null ? "" : ` · ${count} ${count === 1 ? "post" : "posts"}`;
-        const kind = document.createElement(entity.kind_path ? "a" : "span");
-        kind.textContent = entityKindLabel(entity);
-        if (entity.kind_path) setKindHref(kind, entity.kind_path);
-        document.getElementById("focus-entity-meta").replaceChildren(kind, posts);
+        showPageMeta(
+          "focus-entity-meta",
+          entity.kind_path ? parentLink(entityKindLabel(entity), setKindHref, entity.kind_path) : entityKindLabel(entity),
+          count != null && countLabel(count, "post", "posts"),
+        );
         findSources.href = findSourcesUrl(FIND_ENTITY_SOURCES_PROMPT, {
           name: entity.name,
           kind: entityKindLabel(entity),
@@ -2818,8 +2815,8 @@
       return `${day(a)} ${time(a)} – ${a.toDateString() === new Date(b - 1).toDateString() ? "" : `${day(b)} `}${time(b)}`;
     }
 
-    // A topic's own page, seb.now/t/<path>: its name, path and definition on
-    // the band with a button that asks Claude for new sources covering it, and
+    // A topic's own page, seb.now/t/<path>: its name, the topic one level up
+    // (a link to its page), path and definition on the band with a button that asks Claude for new sources covering it, and
     // below it every link labelled with it or one of its children, newest
     // first (topic_links), a page at a time as you scroll.
     async function focusTopic(path, { name = "", push = true, saveFeed = true } = {}) {
@@ -2831,7 +2828,7 @@
       showFocusSection("focus-kinds", []);
       focusEntityHead.hidden = true;
       document.getElementById("focus-topic-name").textContent = name;
-      document.getElementById("focus-topic-meta").textContent = path;
+      document.getElementById("focus-topic-meta").replaceChildren();
       document.getElementById("focus-topic-description").textContent = "";
       findSources.hidden = true;
       focusTopicHead.hidden = false;
@@ -2845,20 +2842,29 @@
       loadMore();
 
       const client = await supabaseReady;
-      const [{ data: topic, error }, { data: count }] = await Promise.all([
+      const parentPath = path.split(".").slice(0, -1).join(".");
+      const [{ data: topic, error }, { data: parent }, { data: count }, { data: children }] = await Promise.all([
         client.from("topics").select("name, description").eq("id", path).maybeSingle(),
+        parentPath
+          ? client.from("topics").select("id, name").eq("id", parentPath).maybeSingle()
+          : Promise.resolve({ data: null }),
         client.rpc("topic_link_count", { topic: path }),
+        client.rpc("topic_children", { parent: path }),
       ]);
       if (generation !== focusGeneration) return;
       if (error || !topic) {
         focusTopicHead.hidden = true;
-      focusKindHead.hidden = true;
+        focusKindHead.hidden = true;
         focusStatus.textContent = error ? "Couldn't load this topic." : "This topic doesn't exist.";
       } else {
         document.getElementById("focus-topic-name").textContent = topic.name;
-        const posts = count == null ? "" : ` · ${count} ${count === 1 ? "post" : "posts"}`;
-        document.getElementById("focus-topic-meta").textContent = `${path}${posts}`;
+        showPageMeta(
+          "focus-topic-meta",
+          parent ? ["a kind of ", parentLink(parent.name, setTopicHref, parent.id)] : "a top-level topic",
+          count != null && countLabel(count, "post", "posts"),
+        );
         document.getElementById("focus-topic-description").textContent = topic.description ?? "";
+        showChildKinds(path, (children ?? []).map((c) => ({ label: c.name, id: c.id })), "topic");
         findSources.href = findSourcesUrl(FIND_SOURCES_PROMPT, {
           name: topic.name,
           path,
@@ -2912,30 +2918,16 @@
         return;
       }
       document.getElementById("focus-kind-name").textContent = kind.label;
-      const meta = [];
-      const parent = kinds.find((k) => path.startsWith(`${k.path}.`) && k.path.split(".").length === path.split(".").length - 1);
-      if (parent) {
-        const link = document.createElement("a");
-        link.textContent = parent.label;
-        link.dataset.name = parent.label;
-        setKindHref(link, parent.path);
-        meta.push("a kind of ", link);
-      } else {
-        meta.push("every kind");
-      }
+      const parent = kinds.find((k) => isChildPath(k.path)(path));
       const [count] = counts ?? [];
-      if (count) {
-        const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
-        meta.push(` · ${plural(count.entities, "entity", "entities")} · ${plural(count.posts, "post", "posts")}`);
-      }
-      document.getElementById("focus-kind-meta").replaceChildren(...meta);
-      document.getElementById("focus-kind-description").textContent = kind.description ?? "";
-      showFocusSection(
-        "focus-kinds",
-        kinds
-          .filter((k) => k.path.startsWith(`${path}.`) && k.path.split(".").length === path.split(".").length + 1)
-          .map((k) => tagItem(k.label, "", "kind", k.path)),
+      showPageMeta(
+        "focus-kind-meta",
+        parent ? ["a kind of ", parentLink(parent.label, setKindHref, parent.path)] : "every kind",
+        count && countLabel(count.entities, "entity", "entities"),
+        count && countLabel(count.posts, "post", "posts"),
       );
+      document.getElementById("focus-kind-description").textContent = kind.description ?? "";
+      showChildKinds(path, kinds.map((k) => ({ label: k.label, id: k.path })), "kind");
       // Indexicals that pick out things of this kind ("tonight", a Period)
       // are listed first, ahead of its entities.
       await loadTopicIndex();
@@ -2989,15 +2981,14 @@
         updateFocusBand();
         return;
       }
-      const kind = document.createElement("a");
-      kind.textContent = kindName(summary.kind_path);
-      kind.dataset.name = kind.textContent;
-      setKindHref(kind, summary.kind_path);
-      const meta = summary.context === "time"
-        ? ["a ", kind, ` · now ${formatInterval(summary.starts, summary.ends)}`,
-           ` · ${summary.posts} ${summary.posts === 1 ? "post" : "posts"}`]
-        : ["picks out any ", kind, " · read from the page you type it on"];
-      document.getElementById("focus-kind-meta").replaceChildren(...meta);
+      const time = summary.context === "time";
+      showPageMeta(
+        "focus-kind-meta",
+        [time ? "a " : "picks out any ", parentLink(kindName(summary.kind_path), setKindHref, summary.kind_path)],
+        ...(time
+          ? [`now ${formatInterval(summary.starts, summary.ends)}`, countLabel(summary.posts, "post", "posts")]
+          : ["read from the page you type it on"]),
+      );
       document.getElementById("focus-kind-description").textContent = summary.description;
       if (summary.context === "time") {
         feed.filter = { terms: [{ indexical: term, at }], local: null, log: [] };
@@ -3006,8 +2997,66 @@
       updateFocusBand();
     }
 
+    // A term's own page, seb.now/s/<words> ("event"): a name the search box
+    // reads several ways (an entity "Event", the kind Event), with every sense
+    // as a chip in its section, each opening its own page, and below, the
+    // links that pass any of them, newest first: filter_links with the senses
+    // as one disjunction, the way typedFilter reads the same words.
+    async function focusTerm(term, { push = true, saveFeed = true } = {}) {
+      const generation = ++focusGeneration;
+      enterFocus(`/s/${term.replace(/ /g, "-")}`, { push, saveFeed });
+      focusMain.replaceChildren();
+      showKindHead(term, [], "");
+      resetFeed("");
+      feed.term = term;
+      articleList.replaceChildren();
+      updateSearchEmpty();
+      window.scrollTo({ top: 0, behavior: "instant" });
 
-    // The kind band, filled with a page that isn't a kind (a sort order's): `title`, then `meta` (strings and nodes) and `description`.
+      await loadTopicIndex();
+      const entities = await matchEntities(`${term} `);
+      if (generation !== focusGeneration) return;
+      const senses = senseLexicon(entities, matchTopics(`${term} `))
+        .find((entry) => entry.words.join(" ") === term)?.senses ?? [];
+      if (!senses.length) {
+        focusKindHead.hidden = true;
+        focusStatus.textContent = "Nothing is called that.";
+        feed.done = true;
+        updateFocusBand();
+        return;
+      }
+      const count = `${senses.length} ${senses.length === 1 ? "sense" : "senses"}`;
+      showKindHead(term, [count, senseLabel(senses, kindName)], senses.length > 1 ? TERM_DESCRIPTION : "");
+      const of = (key) => senses.filter((sense) => sense[key]);
+      showFocusSection("focus-kinds", of("kind").map(({ kind }) => tagItem(kind.label, "kind", "kind", kind.path)));
+      showFocusSection("focus-entities", [
+        ...of("indexical").map(({ indexical, label }) => tagItem(indexical.term, label, "indexical", indexical.term)),
+        ...of("entity").map(({ entity, label }) => tagItem(entity.name, label, "entity", entity.id)),
+      ]);
+      showFocusSection("focus-topics", of("topic").map(({ topic }) => tagItem(topic.name, "", "topic", topic.id)));
+
+      const named = of("entity").map(({ entity }) => entity);
+      const filterSenses = [
+        ...of("kind").map(({ kind }) => ({ kind: kind.path })),
+        ...of("topic").map(({ topic }) => ({ topic: topic.id })),
+        ...of("indexical").map(({ indexical }) => indexicalSense(indexical)).filter(Boolean),
+        ...(named.length ? [{ entities: named.map((e) => e.id) }] : []),
+      ];
+      const local = of("topic").length || of("indexical").length || named.some((e) => e.seq == null)
+        ? null
+        : [...of("kind").map(({ kind }) => ({ kind: kind.path })), ...(named.length ? [{ seqs: named.map((e) => e.seq) }] : [])];
+      if (filterSenses.length) {
+        feed.filter = Filter.term(filterSenses, term, senses.map((sense) => sense.label), local);
+        // The list may have ended empty while the senses were being read.
+        feed.done = false;
+        loadMore();
+      } else {
+        feed.done = true;
+      }
+      updateFocusBand();
+    }
+
+    // The kind band, filled with a page that isn't a kind (a sort order's): `title`, then `meta` (showPageMeta's parts) and `description`.
     function showKindHead(title, meta, description) {
       showFocusSection("focus-entities", []);
       showFocusSection("focus-topics", []);
@@ -3016,7 +3065,7 @@
       focusTopicHead.hidden = true;
       findSources.hidden = true;
       document.getElementById("focus-kind-name").textContent = title;
-      document.getElementById("focus-kind-meta").replaceChildren(...meta);
+      showPageMeta("focus-kind-meta", ...meta);
       document.getElementById("focus-kind-description").textContent = description;
       focusKindHead.hidden = false;
     }
@@ -3040,7 +3089,7 @@
         return;
       }
       const words = Object.keys(QUERY_SORT_WORDS).filter((w) => QUERY_SORT_WORDS[w] === sort);
-      showKindHead(SORT_LABELS[sort], ["an order · typed as ", words.join(", ")], ORDER_DESCRIPTIONS[sort] ?? "");
+      showKindHead(SORT_LABELS[sort], ["an order", `typed as ${words.join(", ")}`], ORDER_DESCRIPTIONS[sort] ?? "");
       updateSearchEmpty();
       updateFocusBand();
       loadMore();
@@ -3111,7 +3160,7 @@
       // Topic and entity chips open their page in place; a modified click
       // (new tab) follows the link as usual.
       document.addEventListener("click", (event) => {
-        const chip = event.target.closest("a[href^='/e/'], a[href^='/t/'], a[href^='/k/'], a[href^='/i/'], a[href^='/o/']");
+        const chip = event.target.closest("a[href^='/e/'], a[href^='/t/'], a[href^='/k/'], a[href^='/i/'], a[href^='/s/'], a[href^='/o/']");
         if (!chip || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         const order = chip.pathname.match(ORDER_PATH_PATTERN)?.[1];
         if (order) {
@@ -3120,11 +3169,18 @@
           else focusOrder(order);
           return;
         }
-        const term = chip.pathname.match(INDEXICAL_PATH_PATTERN)?.[1]?.replace(/-/g, " ");
+        const indexical = chip.pathname.match(INDEXICAL_PATH_PATTERN)?.[1]?.replace(/-/g, " ");
+        if (indexical) {
+          event.preventDefault();
+          if (feed.indexical === indexical) window.scrollTo({ top: 0, behavior: "smooth" });
+          else focusIndexical(indexical);
+          return;
+        }
+        const term = chip.pathname.match(TERM_PATH_PATTERN)?.[1]?.replace(/-/g, " ");
         if (term) {
           event.preventDefault();
-          if (feed.indexical === term) window.scrollTo({ top: 0, behavior: "smooth" });
-          else focusIndexical(term);
+          if (feed.term === term) window.scrollTo({ top: 0, behavior: "smooth" });
+          else focusTerm(term);
           return;
         }
         const kindPath = chip.pathname.match(KIND_PATH_PATTERN)?.[1];
@@ -3159,6 +3215,7 @@
         else if (topicPathFromPath()) focusTopic(topicPathFromPath(), { push: false });
         else if (kindPathFromPath()) focusKind(kindPathFromPath(), { push: false });
         else if (indexicalFromPath()) focusIndexical(indexicalFromPath(), { push: false });
+        else if (termFromPath()) focusTerm(termFromPath(), { push: false });
         else if (orderFromPath()) focusOrder(orderFromPath(), { push: false });
         else if (isFocused()) leaveFocus();
       });
@@ -3169,6 +3226,7 @@
       else if (topicPathFromPath()) focusTopic(topicPathFromPath(), { push: false, saveFeed: false });
       else if (kindPathFromPath()) focusKind(kindPathFromPath(), { push: false, saveFeed: false });
       else if (indexicalFromPath()) focusIndexical(indexicalFromPath(), { push: false, saveFeed: false });
+      else if (termFromPath()) focusTerm(termFromPath(), { push: false, saveFeed: false });
       else if (orderFromPath()) focusOrder(orderFromPath(), { push: false, saveFeed: false });
     }
 
@@ -3838,6 +3896,8 @@
       top: "Every post, highest net votes first.",
       discussed: "Every post, most replied to first.",
     };
+    // What a term's page (/s/…) says it lists.
+    const TERM_DESCRIPTION = "These words name every one of these at once; the posts below are about any of them.";
     // Words the page reads as a sort order on its own, without asking Jev.
     const QUERY_SORT_WORDS = {
       latest: "latest", newest: "latest", new: "latest", recent: "latest", fresh: "latest", today: "latest",
@@ -4068,9 +4128,15 @@
         }, Filter.unit());
     }
 
+    // The kind one level up from `path`, null for the root.
+    function parentKindPath(path) {
+      return path.includes(".") ? path.slice(0, path.lastIndexOf(".")) : null;
+    }
+
     // The kind one level up from `path`, "kind" for the root.
     function parentKindName(path) {
-      return path.includes(".") ? kindName(path.slice(0, path.lastIndexOf("."))) : "kind";
+      const parent = parentKindPath(path);
+      return parent ? kindName(parent) : "kind";
     }
 
     function wordMatches(typed, nameWord, partial) {
@@ -4481,14 +4547,15 @@
 
     async function withEntityIds(matches) {
       const missing = matches.map((m) => m.e.seq).filter((seq) => !entityIdsBySeq.has(seq));
-      if (missing.length) {
-        const { data, error } = await (await supabaseReady).from("entities").select("id, seq").in("seq", missing);
-        if (error) throw error;
-        for (const row of data) entityIdsBySeq.set(row.seq, row.id);
-      }
-      return matches.filter((m) => entityIdsBySeq.has(m.e.seq)).map(({ e, posts }) => ({
-        id: entityIdsBySeq.get(e.seq), seq: e.seq, name: e.name, kind: e.kind, kind_path: e.kind_path, posts,
-      }));
+      const fetched = missing.length
+        ? await (await supabaseReady).from("entities").select("id, seq").in("seq", missing)
+        : Result.ok([]);
+      return Result.map(fetched, (rows) => {
+        for (const row of rows) entityIdsBySeq.set(row.seq, row.id);
+        return matches.filter((m) => entityIdsBySeq.has(m.e.seq)).map(({ e, posts }) => ({
+          id: entityIdsBySeq.get(e.seq), seq: e.seq, name: e.name, kind: e.kind, kind_path: e.kind_path, posts,
+        }));
+      });
     }
 
     // filter_links over the local index: the links passing every term, with
@@ -4533,10 +4600,7 @@
       if (!typed.length) return Promise.resolve([]);
       const partial = /[a-z0-9]$/i.test(text) ? typed.pop() : null;
       const matched = entityIndex.ready ? matchIndexedEntities(entityIndex.version, typed, partial) : matchServerEntities(typed, partial);
-      return matched.then((entities) => entities ?? [], (error) => {
-        console.error("failed to match entities", error);
-        return [];
-      });
+      return matched.then((entities) => Result.unwrapOr(entities, [], (error) => console.error("failed to match entities", error)));
     }
 
     const matchIndexedEntities = memoize(
@@ -4547,15 +4611,11 @@
 
     const matchServerEntities = memoize(
       (typed, partial) => JSON.stringify([typed, partial]),
-      async (typed, partial) => {
-        const { data, error } = await (await supabaseReady).rpc("match_entities", {
-          words: typed,
-          partial,
-          max_results: QUERY_ENTITY_SUGGESTIONS,
-        });
-        if (error) throw error;
-        return withKindPaths(data);
-      },
+      async (typed, partial) => Result.chain((await supabaseReady).rpc("match_entities", {
+        words: typed,
+        partial,
+        max_results: QUERY_ENTITY_SUGGESTIONS,
+      }), async (entities) => Result.ok(await withKindPaths(entities))),
       { ttlMs: Infinity, maxEntries: ENTITY_MATCH_CACHE_SIZE },
     );
 
@@ -4583,21 +4643,20 @@
       else showQueryChips(text, feed.intent);
     }
 
-    // What query-parse makes of `text` with these candidate topics, or null.
-    // Each reading costs a credit, so one is never asked for twice.
+    // What query-parse makes of `text` with these candidate topics, as a
+    // Result. Each reading costs a credit, so one is never asked for twice.
     const readQueryOnce = memoize(
       (text, topicIds) => JSON.stringify([text.toLowerCase(), topicIds]),
       async (text, topicIds) => {
         const client = await supabaseReady;
         // Reads are charged to the session's account.
         await pendingSession;
-        const { data, error } = await client.functions.invoke("query-parse", { body: { text, topic_ids: topicIds } });
-        if (error) {
-          if (error.context?.status === 429) showQueryBalance(0);
-          throw error;
-        }
-        showQueryBalance(data.credits_left);
-        return { sort: data.sort, topic: data.topic, search: data.search };
+        const reading = await client.functions.invoke("query-parse", { body: { text, topic_ids: topicIds } });
+        if (reading.error?.context?.status === 429) showQueryBalance(0);
+        return Result.map(reading, ({ credits_left, sort, topic, search }) => {
+          showQueryBalance(credits_left);
+          return { sort, topic, search };
+        });
       },
       { ttlMs: Infinity, maxEntries: QUERY_READ_CACHE_SIZE },
     );
@@ -4605,10 +4664,7 @@
     function readQuery(text, topicIds) {
       // Out of reads: the box is a plain title search from here on.
       if (queryCreditsLeft === 0) return Promise.resolve(null);
-      return readQueryOnce(text, topicIds).catch((error) => {
-        console.error("failed to read query", error);
-        return null;
-      });
+      return readQueryOnce(text, topicIds).then((reading) => Result.unwrapOr(reading, null, (error) => console.error("failed to read query", error)));
     }
 
     const queryBalance = document.getElementById("query-balance");
@@ -4644,7 +4700,7 @@
     // several senses (an org and its building) is one requirement met by any of
     // them. The other suggestions only rank their links first.
     function withEntities(intent, entities, text) {
-      const tokens = tagTokens(text, intent, matchTopics(text), entities, [false]);
+      const tokens = tagTokens(text, intent, matchTopics(text), entities, false);
       const byName = new Map();
       for (const t of tokens) {
         if (!t.tag?.entity) continue;
@@ -4727,21 +4783,63 @@
       renderSearchMarks(intent, topicMatches);
     }
 
-    // Tags the typed words that make a good match, in place in the search box:
-    // the reading's sort words and topic (filled), then, dashed, an entity or a
-    // topic suggestion whose whole name is typed, then a kind of entity. Each is
-    // labelled with the level above it in the kind tree: "company" reads org,
-    // "uber" company. A word is tagged once, first match wins, and whole-word
-    // matches all go before the word still being typed is matched as a prefix,
-    // so "event" is the kind, not the product "Éventail". Spans are text nodes,
-    // never innerHTML. `topicMatches`: matchTopics of the text, already computed.
-    // The words of `value` with what each is tagged as, as the search box
-    // shows them (see renderSearchMarks): the reading's sort words and topic,
-    // then an entity or a topic suggestion whose whole name is typed, then a
-    // kind. Longer entity names go first, so "tim fernholz" is one name, not
-    // "Tim" and a loose "fernholz". `prefixes`: [false] places whole words
-    // only; [false, true] then lets the word still being typed match by prefix.
-    function tagTokens(value, intent, topicMatches, entities, prefixes = [false, true]) {
+    // Every named thing a typed word can be read as, each with its sense: the
+    // suggested entities and topics, the entity kinds (by their label and by
+    // their path's last word) and the indexicals. A sense carries what its tag
+    // needs: an id (a kind typed two ways is one sense), its label (the level
+    // above it in the kind tree for a kind, "company" reading org; its own
+    // kind for an entity, "uber" reading company) and its place in the kind
+    // tree (`path`, null for a topic), which senseLabel reads when a name has
+    // several.
+    function namedSenses(entities, topics) {
+      return [
+        ...entities.map((entity) => ({
+          name: entity.name,
+          sense: { id: `e:${entity.id}`, entity, label: entityKindLabel(entity), path: entity.kind_path ?? null },
+        })),
+        ...topics.map((topic) => ({
+          name: topic.name,
+          sense: { id: `t:${topic.id}`, topic, label: "topic", path: null },
+        })),
+        ...kindIndex.flatMap((kind) => kind.names.map((name) => ({
+          name,
+          sense: { id: `k:${kind.path}`, kind, label: parentKindName(kind.path), path: parentKindPath(kind.path) },
+        }))),
+        ...indexicalIndex.map((indexical) => ({
+          name: indexical.term,
+          sense: { id: `i:${indexical.term}`, indexical, label: kindName(indexical.kind_path), path: indexical.kind_path },
+        })),
+      ];
+    }
+
+    // The names typed words can be read as, each with every sense its words
+    // have (senses.ts's lexicon), longest names first.
+    function senseLexicon(entities, topics) {
+      return lexicon(namedSenses(entities, topics), queryWords, (sense) => sense.id);
+    }
+
+    // What a name with one sense is tagged as (namedSenses' senses), by the
+    // sense's field: what the tag carries and the page it opens.
+    const tagBySenseField = {
+      entity: ({ entity }) => ({ entity, page: markPage(entity.name, setEntityHref, entity.id) }),
+      topic: ({ topic }) => ({ topic, page: markPage(topic.name, setTopicHref, topic.id) }),
+      kind: (sense) => ({ page: markPage(sense.kind.label, setKindHref, sense.kind.path) }),
+      indexical: ({ indexical }) => ({ indexical: indexical.term, page: markPage(indexical.term, setIndexicalHref, indexical.term) }),
+    };
+
+    // The words of `value` with what each is tagged as, in place in the search
+    // box (renderSearchMarks): the reading's sort words and topic (filled),
+    // then, dashed, every name whose whole is typed (an entity, a topic
+    // suggestion, a kind, an indexical), longer names first, so "tim fernholz"
+    // is one name, not "Tim" and a loose "fernholz". A name never picks one of
+    // its senses: one sense is tagged as itself and opens its page; several
+    // (an entity "Event", the kind Event) are one tag, labelled with what they
+    // share ("work ×2"), opening /s/<words>, the page that lists them. With
+    // `complete`, the word still being typed may then finish a name, but only
+    // the one name it can (senses.ts's claimNames): "nightc" is Nightcall,
+    // "night" is still nothing. Spans are text nodes, never innerHTML.
+    // `topicMatches`: matchTopics of the text, already computed.
+    function tagTokens(value, intent, topicMatches, entities, complete = true) {
       const tokens = [...value.matchAll(/[\p{L}\p{N}]+/gu)].map((m) => ({
         start: m.index,
         end: m.index + m[0].length,
@@ -4754,19 +4852,15 @@
         t.open = !QUERY_STOPWORDS.has(t.word);
       });
 
-      // Tags the open tokens covering every word of `name`, if all are typed;
-      // with `prefix`, the word still being typed may cover a longer one.
-      function tagName(name, tag, prefix) {
-        const nameWords = queryWords(name);
-        if (!nameWords.length) return false;
-        const matches = (t, n) => wordMatches(t.word, n, prefix && t.partial);
-        const hits = tokens.filter((t) => t.open && nameWords.some((n) => matches(t, n)));
-        if (!nameWords.every((n) => hits.some((t) => matches(t, n)))) return false;
-        for (const t of hits) {
-          t.tag = tag;
-          t.open = false;
+      // Tags the words of every name `entries` reads in the open words.
+      function claim(entries, tagOf) {
+        for (const { entry, at } of claimNames(tokens, entries, wordMatches, complete)) {
+          const tag = tagOf(entry);
+          for (const i of at) {
+            tokens[i].tag = tag;
+            tokens[i].open = false;
+          }
         }
-        return true;
       }
 
       if (!value.trim()) return tokens;
@@ -4779,33 +4873,26 @@
           }
         }
       }
-      const required = new Set((intent?.required ?? []).flatMap((g) => g.ids));
-      const longestFirst = [...entities].sort((a, b) => queryWords(b.name).length - queryWords(a.name).length);
-      for (const prefix of prefixes) {
-        if (intent?.topic) {
-          tagName(intent.topic.name, { kind: "topic", topic: intent.topic, page: markPage(intent.topic.name, setTopicHref, intent.topic.id) }, prefix);
-        }
-        for (const entity of longestFirst) {
-          const kind = entityKindLabel(entity);
-          tagName(entity.name, { kind, suggested: !required.has(entity.id), entity, page: markPage(entity.name, setEntityHref, entity.id) }, prefix);
-        }
-        for (const topic of topicMatches) {
-          tagName(topic.name, { kind: "topic", suggested: true, topic, page: markPage(topic.name, setTopicHref, topic.id) }, prefix);
-        }
-        for (const kind of kindIndex) {
-          const tag = { kind: parentKindName(kind.path), suggested: true, page: markPage(kind.label, setKindHref, kind.path) };
-          kind.names.some((name) => tagName(name, tag, prefix));
-        }
-        for (const indexical of indexicalIndex) {
-          const tag = {
-            kind: kindName(indexical.kind_path),
-            suggested: true,
-            indexical: indexical.term,
-            page: markPage(indexical.term, setIndexicalHref, indexical.term),
-          };
-          tagName(indexical.term, tag, prefix);
-        }
+      if (intent?.topic) {
+        const { topic } = intent;
+        claim(lexicon([{ name: topic.name, sense: topic }], queryWords, (t) => t.id),
+          () => ({ kind: "topic", topic, page: markPage(topic.name, setTopicHref, topic.id) }));
       }
+      const required = new Set((intent?.required ?? []).flatMap((g) => g.ids));
+      claim(senseLexicon(entities, topicMatches), (entry) => {
+        const [sense, ...more] = entry.senses;
+        const suggested = !entry.senses.some((s) => s.entity && required.has(s.entity.id));
+        if (more.length) {
+          const term = entry.words.join(" ");
+          return {
+            kind: senseLabel(entry.senses, kindName),
+            suggested,
+            entity: entry.senses.find((s) => s.entity)?.entity,
+            page: markPage(term, setTermHref, term),
+          };
+        }
+        return { kind: sense.label, suggested, ...match(tagBySenseField, sense) };
+      });
       return tokens;
     }
 

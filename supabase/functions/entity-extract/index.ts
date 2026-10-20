@@ -1,13 +1,15 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import "jsr:@supabase/functions-js@2/edge-runtime.d.ts";
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ChoiceQuestion, JevClient, JsonValue } from "../_shared/jev.ts";
-import { isPresent, json, reporting } from "../_shared/helpers.ts";
+import { isPresent, json, reporting, sumBy } from "../_shared/helpers.ts";
+import { linksToEnrich, markEnriched } from "../_shared/enrich.ts";
 import { serveJev } from "../_shared/jev_function.ts";
 import { pool } from "../_shared/pool.ts";
 import { nameHints } from "../_shared/hints.ts";
-import { fold, pageCandidates, WORD } from "../_shared/names.ts";
+import { fold, NameHints, pageCandidates, WORD } from "../_shared/names.ts";
 import { fetchHtml, fetchPage, PageContent, pageText, readPage } from "../_shared/page.ts";
 import { candidates } from "./candidates.ts";
+import { aloneSentence, contains, containsName, nameWords, readSpans, sentenceWith, SpanReading } from "../_shared/spans.ts";
 import { ENTITY_EXTRACT, JEV } from "../_shared/constants.ts";
 
 // Finds the named entities a link mentions and links each to a row in
@@ -28,6 +30,13 @@ import { ENTITY_EXTRACT, JEV } from "../_shared/constants.ts";
 //     Pusateri") is always asked, with those longer names as options too: a
 //     page's short forms are mostly the person or thing it named in full, and
 //     taking an exact match would join every bare "Sarah" into one entity.
+//  Between 2 and 3, a name the text only ever says inside a longer name
+//  ("Tokyo" in "Palais de Tokyo") is a fragment (_shared/spans.ts): one more
+//  Jev question asks of each longer name holding one whether it is one name
+//  or runs several together ("Ledger Flex and Ledger Stax"); the run-together
+//  names give way to their parts, and every other fragment is dropped, so the
+//  short name is never a mention of its own. The page pass counts the title's
+//  names as read whole, and offers them as longer names too.
 // Mentions land in `link_entities` with `found_in` 'title' or 'page'; an
 // entity the title already names keeps its title row. Links are processed one
 // at a time so an entity created for one link can be matched by the next.
@@ -37,6 +46,11 @@ import { ENTITY_EXTRACT, JEV } from "../_shared/constants.ts";
 // RUN_BUDGET_MS. POST {"link_ids": [...]} runs both passes on those links.
 // "dry_run": true reports without writing.
 //
+// POST {"respan": true, "link_ids": [...], "batch": "<label>"} re-reads the
+// mentions already stored for those links with the same span rule and stages
+// every fragment, or run-together name, as a `drop_mention` row in
+// `entity_edits` (status 'staged'), applying nothing; "dry_run" only reports.
+//
 // POST {"eval": true} scores the page pass's candidates against the
 // hand-labelled names in `entity_gold` (on its links, or on `link_ids`), with
 // no Jev call and no writes: per link, which labelled names are among the
@@ -45,6 +59,7 @@ import { ENTITY_EXTRACT, JEV } from "../_shared/constants.ts";
 // "text": true adds the page text as read.
 
 const NEW_ENTITY = "new";
+const UNIQUE_VIOLATION = "23505";
 const SAME_AS_PREFIX = "same_as_";
 
 const MENTION_OPTIONS = {
@@ -116,12 +131,19 @@ interface Mention {
   kind: Kind;
   entity_id: string | null;
   entity_name: string;
-  decision: "exact" | "matched" | "new" | "same_as";
+  decision: "exact" | "matched" | "new" | "same_as" | "known";
   match_p?: number;
   same_as?: string;
 }
 
 type Name = Omit<Mention, "entity_id" | "entity_name" | "decision" | "match_p" | "same_as">;
+
+// A name the span rule set aside, and why: only part of a longer name, or a
+// longer name that ran several things together.
+interface Dropped {
+  surface: string;
+  reason: "part_of_name" | "runs_together";
+}
 
 function hostOf(url: string): string {
   try {
@@ -137,20 +159,6 @@ function describe(c: Candidate): string {
     c.description ? `: ${c.description}` : "",
     c.example_title ? `. Mentioned before in: "${c.example_title}"` : "",
   ].join("");
-}
-
-// A name's words, for finding the same name inside a longer one: case, curly
-// apostrophes and a possessive 's don't count.
-function nameWords(surface: string): string[] {
-  return surface.toLowerCase().replace(/’/g, "'").replace(/'s\b/g, "").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-}
-
-function containsName(longer: string[], shorter: string[]): boolean {
-  if (shorter.length >= longer.length) return false;
-  for (let i = 0; i + shorter.length <= longer.length; i++) {
-    if (shorter.every((word, j) => longer[i + j] === word)) return true;
-  }
-  return false;
 }
 
 // Whether `a` resolves before `b`: more words first, and of two spellings of
@@ -185,6 +193,43 @@ function phraseInstructions({ surface, sentence }: Phrase, question: string): Js
   return sentence
     ? { phrase: surface, sentence, question: `In \`sentence\`, from the page \`link\` points to, ${question}` }
     : { phrase: surface, question: `In the title of \`link\`, ${question}` };
+}
+
+// The options for whether a longer name holding `parts` is one name.
+function spanCriteria(parts: string[]): Record<"whole" | "parts", string> {
+  const quoted = parts.map((part) => `"${part}"`).join(", ");
+  const one = parts.length === 1;
+  return {
+    whole: `One name, of one thing. ${quoted} ${one ? "is" : "are"} only part of it here, not ${one ? "a name" : "names"} of ${one ? "its" : "their"} own.`,
+    parts: `Not one name: it runs ${quoted} together with other words or another name, and ${one ? "it names" : "they name"} something on ${one ? "its" : "their"} own.`,
+  };
+}
+
+// Asks, of each longer name holding a fragment, whether it runs several things
+// together; those that do (p of "parts" at least SPAN_PARTS_MIN_P) are returned.
+function askRunTogether(jev: JevClient, linkId: string, state: JsonValue, spend: (inputTokens: number) => void) {
+  return async <N extends Name>(holders: { name: N; parts: N[] }[]): Promise<Set<N>> => {
+    const questions = Object.fromEntries(holders.map(({ name, parts }, i) => [
+      `s${i}`,
+      {
+        type: "choice",
+        instructions: phraseInstructions(name, "is `phrase` the name of one thing, or does it run separate things together?"),
+        criteria: spanCriteria(parts.map((part) => part.surface)),
+      } satisfies ChoiceQuestion,
+    ]));
+    const result = await jev.ask(state, questions, linkId);
+    spend(result.usage.input_tokens);
+    return new Set(holders
+      .filter((_, i) => (result.answers[`s${i}`].probabilities.parts ?? 0) >= ENTITY_EXTRACT.SPAN_PARTS_MIN_P)
+      .map(({ name }) => name));
+  };
+}
+
+function droppedBy<N extends Name>(spans: SpanReading<N>): Dropped[] {
+  return [
+    ...spans.parts.map(({ surface }) => ({ surface, reason: "part_of_name" as const })),
+    ...spans.runTogether.map(({ surface }) => ({ surface, reason: "runs_together" as const })),
+  ];
 }
 
 async function findNames(jev: JevClient, linkId: string, state: JsonValue, phrases: Phrase[]) {
@@ -227,27 +272,35 @@ async function findNames(jev: JevClient, linkId: string, state: JsonValue, phras
   return { names, inputTokens: result.usage.input_tokens };
 }
 
-async function mentionsOf(db: SupabaseClient, jev: JevClient, link: Link, phrases: Phrase[]) {
+// `text` is what the pass read (the title, or the title and the page), for the
+// span rule; `known` are names already resolved for this link (the title's, on
+// the page), which count as read whole and can be the longer name a short form
+// stands for.
+async function mentionsOf(db: SupabaseClient, jev: JevClient, link: Link, phrases: Phrase[], text: string, known: Mention[] = []) {
   const state = { link: { title: link.title, site: hostOf(link.url) } };
-  if (!phrases.length) return { mentions: [] as Mention[], inputTokens: 0 };
+  if (!phrases.length) return { mentions: [] as Mention[], dropped: [] as Dropped[], inputTokens: 0 };
 
   const found = await findNames(jev, link.id, state, phrases);
   let inputTokens = found.inputTokens;
+  const spans = await readSpans(found.names, known, text, askRunTogether(jev, link.id, state, (n) => inputTokens += n));
+  const names = spans.kept;
 
   const pending: { name: Name; options: Candidate[]; longer: Name[] }[] = [];
   const mentions: Mention[] = [];
-  for (const name of found.names) {
+  for (const name of names) {
     const { data, error } = await db.rpc("entity_candidates", { phrase: name.surface, max_results: ENTITY_EXTRACT.CANDIDATE_ENTITIES });
     if (error) throw new Error(error.message);
     const options = data as Candidate[];
-    const longer = longerNames(name, found.names);
+    const longer = longerNames(name, [...names, ...known]);
     // An exact match is the same name *as the same kind*: "Tonight" the film
     // isn't the period, and a name with senses of other kinds only is asked.
     const exact = options.find((c) => c.name.toLowerCase() === name.surface.toLowerCase() && c.kind === name.kind);
     if (longer.length) {
-      // A longer name that is already an entity would be offered twice and split the vote.
+      // A longer name that is already an entity would be offered twice and split
+      // the vote: by its name, or by the entity a known name resolved to.
       const offered = new Set(longer.map((o) => o.surface.toLowerCase()));
-      pending.push({ name, options: options.filter((c) => !offered.has(c.name.toLowerCase())), longer });
+      const offeredIds = new Set(longer.flatMap((o) => ("entity_id" in o && o.entity_id ? [o.entity_id as string] : [])));
+      pending.push({ name, options: options.filter((c) => !offered.has(c.name.toLowerCase()) && !offeredIds.has(c.id)), longer });
     } else if (exact) {
       mentions.push({ ...name, entity_id: exact.id, entity_name: exact.name, decision: "exact" });
     } else if (options.length) {
@@ -287,15 +340,16 @@ async function mentionsOf(db: SupabaseClient, jev: JevClient, link: Link, phrase
     });
   }
 
-  return { mentions: followSameAs(mentions), inputTokens };
+  return { mentions: followSameAs(mentions, known), dropped: droppedBy(spans), inputTokens };
 }
 
-// A name resolved to a longer one in the same pass takes that name's entity,
-// following chains ("Trump" → "Donald Trump" → "President Donald Trump"); a
-// name only points to one `before` it, so there are no cycles, and sorting by
-// `before` lets `saveMentions` create an entity before its short forms need it.
-function followSameAs(mentions: Mention[]): Mention[] {
-  const bySurface = new Map(mentions.map((m) => [m.surface, m]));
+// A name resolved to a longer one in the same pass (or a known one) takes that
+// name's entity, following chains ("Trump" → "Donald Trump" → "President
+// Donald Trump"); a name only points to one `before` it, so there are no
+// cycles, and sorting by `before` lets `saveMentions` create an entity before
+// its short forms need it.
+function followSameAs(mentions: Mention[], known: Mention[]): Mention[] {
+  const bySurface = new Map([...known, ...mentions].map((m) => [m.surface, m]));
   const target = (m: Mention): Mention => (m.same_as && bySurface.has(m.same_as) ? target(bySurface.get(m.same_as)!) : m);
   for (const m of mentions) {
     if (m.decision !== "same_as") continue;
@@ -323,23 +377,58 @@ async function saveMentions(db: SupabaseClient, linkId: string, mentions: Mentio
 async function processTitle(db: SupabaseClient, jev: JevClient, link: Link, dryRun: boolean) {
   const hints = await nameHints(db, [link.title], null);
   const phrases = candidates(link.title, hints).map((surface) => ({ surface, sentence: null }));
-  const { mentions, inputTokens } = await mentionsOf(db, jev, link, phrases);
+  const { mentions, dropped, inputTokens } = await mentionsOf(db, jev, link, phrases, link.title);
   if (!dryRun) {
     await saveMentions(db, link.id, mentions, "title");
-    const { error } = await db.from("link_enrichment").upsert({ link_id: link.id, entities_at: new Date().toISOString() });
+    const { error } = await markEnriched(db, "entities", [link.id]);
     if (error) throw new Error(error.message);
   }
-  return { link_id: link.id, title: link.title, found_in: "title", candidates: phrases.map((p) => p.surface), mentions, inputTokens };
+  return { link_id: link.id, title: link.title, found_in: "title", candidates: phrases.map((p) => p.surface), mentions, dropped, inputTokens };
 }
 
 function sectionTexts(page: PageContent): string[] {
   return page.sections.map((s) => [s.heading, s.text].filter(Boolean).join("\n"));
 }
 
-async function processPage(db: SupabaseClient, jev: JevClient, link: Link, page: PageContent, dryRun: boolean) {
+// The title's phrases that are part of a title name but that the page also
+// says on its own ("Tokyo" after "Palais de Tokyo"): the page's own candidates
+// leave out everything the title says, so these are offered again with the
+// page sentence that says them.
+async function titleFragmentsOnPage(db: SupabaseClient, link: Link, known: Mention[], body: string): Promise<Phrase[]> {
+  if (!known.length || !body) return [];
+  const titlePhrases = candidates(link.title, await nameHints(db, [link.title], null));
+  return titlePhrases.flatMap((surface) => {
+    const holders = known.filter((k) => contains(k, { surface }));
+    const sentence = holders.length ? aloneSentence(body, surface, holders.map((h) => h.surface)) : null;
+    return sentence ? [{ surface, sentence }] : [];
+  });
+}
+
+// What the page pass asks about: the page's own candidates, and the title
+// fragments the page says on its own.
+async function pagePhrases(db: SupabaseClient, link: Link, page: PageContent, known: Mention[], hints: NameHints): Promise<Phrase[]> {
+  const ownPhrases = pageCandidates(page.sections, link.title, hints);
+  const offered = new Set(ownPhrases.map((p) => p.surface.toLowerCase()));
+  const recovered = await titleFragmentsOnPage(db, link, known, sectionTexts(page).join("\n"));
+  return [...ownPhrases, ...recovered.filter((p) => !offered.has(p.surface.toLowerCase()))];
+}
+
+// The text a page pass reads, whole: `pageText` is capped for storage, but the
+// candidates come from every section, so the span rule must see them all. The
+// names the page declares in its structured data each stand on their own line:
+// a declared name is a reference of its own, never a fragment.
+function readText(link: Link, page: PageContent): string {
+  return [link.title, ...sectionTexts(page), ...page.declared.map((d) => d.name)].join("\n");
+}
+
+// `titleNames` are the title pass's names when they weren't saved (a dry run);
+// otherwise the stored title mentions are read.
+async function processPage(db: SupabaseClient, jev: JevClient, link: Link, page: PageContent, dryRun: boolean, titleNames?: Mention[]) {
+  const known = titleNames ?? await storedMentions(db, link.id, "title");
   const hints = await nameHints(db, sectionTexts(page), page.lang, page.declared);
-  const phrases = pageCandidates(page.sections, link.title, hints);
-  const { mentions, inputTokens } = await mentionsOf(db, jev, link, phrases);
+  const phrases = await pagePhrases(db, link, page, known, hints);
+  const text = readText(link, page);
+  const { mentions, dropped, inputTokens } = await mentionsOf(db, jev, link, phrases, text, known);
   if (!dryRun) {
     const { error: contentError } = await db.from("link_content").upsert({
       link_id: link.id,
@@ -351,10 +440,120 @@ async function processPage(db: SupabaseClient, jev: JevClient, link: Link, page:
     });
     if (contentError) throw new Error(contentError.message);
     await saveMentions(db, link.id, mentions, "page");
-    const { error } = await db.from("link_enrichment").upsert({ link_id: link.id, page_entities_at: new Date().toISOString() });
+    const { error } = await markEnriched(db, "page_entities", [link.id]);
     if (error) throw new Error(error.message);
   }
-  return { link_id: link.id, title: link.title, found_in: "page", status: page.status, candidates: phrases.map((p) => p.surface), mentions, inputTokens };
+  return { link_id: link.id, title: link.title, found_in: "page", status: page.status, candidates: phrases.map((p) => p.surface), mentions, dropped, inputTokens };
+}
+
+interface StoredMention {
+  entity_id: string;
+  surface: string | null;
+  p: number;
+  found_in: FoundIn;
+  entities: { name: string; kind: Kind } | null;
+}
+
+// A link's mentions found by Jev in `foundIn` (or both passes), as resolved names.
+// Hand rows (`labeled_by` manual) count as context too, but only Jev's are
+// ever re-judged (`jevOnly`).
+async function storedMentions(db: SupabaseClient, linkId: string, foundIn?: FoundIn, jevOnly = false): Promise<(Mention & { found_in: FoundIn })[]> {
+  let query = db.from("link_entities").select("entity_id, surface, p, found_in, entities(name, kind)").eq("link_id", linkId);
+  if (jevOnly) query = query.eq("labeled_by", "jev");
+  query = foundIn ? query.eq("found_in", foundIn) : query.in("found_in", ["title", "page"]);
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return (data as unknown as StoredMention[]).flatMap(({ entity_id, surface, p, found_in, entities }) =>
+    entities
+      // A hand row may have no surface: it names its entity by the entity's name.
+      ? [{ surface: surface ?? entities.name, sentence: null, p, kind: entities.kind, entity_id, entity_name: entities.name, decision: "known" as const, found_in }]
+      : []
+  );
+}
+
+// The label witnesses of each entity: every way the posts have named it.
+async function entityLabels(db: SupabaseClient, ids: string[]): Promise<Map<string, string[]>> {
+  if (!ids.length) return new Map();
+  const { data, error } = await db.from("identity_witnesses").select("entity_id, surface, value")
+    .eq("sense", "label").in("entity_id", [...new Set(ids)]);
+  if (error) throw new Error(error.message);
+  const labels = new Map<string, string[]>();
+  for (const w of data as { entity_id: string; surface: string | null; value: string }[]) {
+    labels.set(w.entity_id, [...(labels.get(w.entity_id) ?? []), w.surface ?? w.value]);
+  }
+  return labels;
+}
+
+// Re-reads the mentions stored for `link` with the span rule, pass by pass,
+// and returns those it would drop with their entities.
+async function respanLink(db: SupabaseClient, jev: JevClient, link: Link) {
+  // The page is read again, so the span rule sees what extraction saw: every
+  // section in full and the names the page declares in its structured data,
+  // neither of which the stored text keeps. Without it there is no such
+  // evidence, so nothing is judged or staged (and no Jev call is made).
+  const page = await fetchPage(link.url).catch(() => null);
+  if (page === null || !page.sections.length) {
+    return { link_id: link.id, title: link.title, read_page: false, drops: [] as { mention: Mention; reason: string }[], inputTokens: 0 };
+  }
+  const stored = await storedMentions(db, link.id, undefined, true);
+  const context = await storedMentions(db, link.id, "title");
+  const text = readText(link, page);
+  const titles = stored.filter((m) => m.found_in === "title");
+  const pages = stored.filter((m) => m.found_in === "page")
+    .map((m) => ({ ...m, sentence: sentenceWith(text, m.surface) ?? m.surface }));
+  const state = { link: { title: link.title, site: hostOf(link.url) } };
+  let inputTokens = 0;
+  const ask = askRunTogether(jev, link.id, state, (n) => inputTokens += n);
+  // A title name is a fragment only if the page doesn't say it on its own
+  // either; hand-labelled title rows count as names read whole.
+  const handTitles = context.filter((c) => !titles.some((t) => t.entity_id === c.entity_id));
+  const title = await readSpans(titles, handTitles, text, ask);
+  const pageSpans = await readSpans(pages, [...title.kept, ...handTitles], text, ask);
+  // A mention's entity may be named elsewhere on the page in other words ("New
+  // York" besides a fragment "NYC" in "NYC Ballet"): its other labels standing
+  // alone keep the association, as does a run-together surface that holds one
+  // of them ("Ledger Flex and Ledger Stax" stored as Ledger Flex).
+  const labels = await entityLabels(db, stored.map((m) => m.entity_id!));
+  const namesOf = (m: Mention) => [m.entity_name, ...(labels.get(m.entity_id!) ?? [])];
+  const wholes = [...stored, ...context].map((m) => m.surface);
+  const namedOtherwise = (m: Mention) =>
+    namesOf(m).some((label) => label.toLowerCase() !== m.surface.toLowerCase() && aloneSentence(text, label, wholes) !== null);
+  const drops = [title, pageSpans].flatMap((spans) => [
+    ...spans.parts.filter((m) => !namedOtherwise(m)).map((m) => ({ mention: m, reason: "only part of a longer name here" })),
+    ...spans.runTogether
+      .filter((m) => !namesOf(m).some((label) => contains(m, { surface: label })) && !namedOtherwise(m))
+      .map((m) => ({ mention: m, reason: "runs several names together" })),
+  ]);
+  return { link_id: link.id, title: link.title, read_page: true, drops, inputTokens };
+}
+
+// Stages each drop as an `entity_edits` row, skipping mentions already staged
+// or dropped.
+async function stageDrops(db: SupabaseClient, batch: string, results: Awaited<ReturnType<typeof respanLink>>[]) {
+  const rows = results.flatMap(({ link_id, drops }) => drops.map(({ mention, reason }) => ({
+    batch,
+    op: "drop_mention",
+    link_id,
+    entity_id: mention.entity_id!,
+    entity_name: mention.entity_name,
+    reason: `${reason}: "${mention.surface}"`.slice(0, 300),
+    decided_by: "jev",
+  })));
+  if (!rows.length) return 0;
+  const { data: existing, error } = await db.from("entity_edits").select("link_id, entity_id")
+    .eq("op", "drop_mention").in("status", ["staged", "applied"]).in("link_id", [...new Set(rows.map((r) => r.link_id))]);
+  if (error) throw new Error(error.message);
+  const seen = new Set((existing as { link_id: string; entity_id: string }[]).map((r) => `${r.link_id} ${r.entity_id}`));
+  const fresh = rows.filter((r) => !seen.has(`${r.link_id} ${r.entity_id}`));
+  // One row at a time, so a drop another request staged meanwhile (the unique
+  // index on staged drops) skips that row instead of failing the batch.
+  let staged = 0;
+  for (const row of fresh) {
+    const { error: insertError } = await db.from("entity_edits").insert(row);
+    if (insertError && insertError.code !== UNIQUE_VIOLATION) throw new Error(insertError.message);
+    if (!insertError) staged++;
+  }
+  return staged;
 }
 
 // Pages are fetched FETCH_CONCURRENCY at a time, ahead of the one-at-a-time Jev work.
@@ -390,7 +589,11 @@ function score(gold: string[], found: string[]) {
   const exact = g.filter((x) => f.some((y) => y.join(" ") === x.join(" "))).length;
   const missed = gold.filter((_, i) => !f.some((y) => overlaps(y, g[i])));
   const relevant = f.filter((y) => g.some((x) => overlaps(x, y))).length;
-  return { exact, overlapping: gold.length - missed.length, relevant, missed };
+  // Found names that are only part of a labelled name ("Tokyo" for "Palais
+  // de Tokyo"): counted relevant above, but they are the span rule's misses.
+  const fragments = found.filter((_, i) =>
+    !g.some((x) => x.join(" ") === f[i].join(" ")) && g.some((x) => f[i].length < x.length && overlaps(x, f[i])));
+  return { exact, overlapping: gold.length - missed.length, relevant, missed, fragments };
 }
 
 async function evaluate(db: SupabaseClient, jev: JevClient, ids: string[] | null, decide: boolean, withText: boolean) {
@@ -415,7 +618,8 @@ async function evaluate(db: SupabaseClient, jev: JevClient, ids: string[] | null
     const t1 = performance.now();
     const hints = await nameHints(db, sectionTexts(page), page.lang, page.declared);
     const t2 = performance.now();
-    const phrases = pageCandidates(page.sections, link.title, hints);
+    const known = await storedMentions(db, link.id, "title");
+    const phrases = await pagePhrases(db, link, page, known, hints);
     const t3 = performance.now();
     const surfaces = phrases.map((p) => p.surface);
     const text = pageText(page.sections);
@@ -433,14 +637,22 @@ async function evaluate(db: SupabaseClient, jev: JevClient, ids: string[] | null
       candidate_list: surfaces,
     };
     if (decide) {
-      const { mentions } = await mentionsOf(db, jev, link, phrases);
+      const { mentions, dropped } = await mentionsOf(db, jev, link, phrases, readText(link, page), known);
       const m = score(names, mentions.map((x) => x.surface));
-      result.mentions = { count: mentions.length, exact: m.exact, overlapping: m.overlapping, relevant: m.relevant, list: mentions.map((x) => x.surface) };
+      result.mentions = {
+        count: mentions.length,
+        exact: m.exact,
+        overlapping: m.overlapping,
+        relevant: m.relevant,
+        fragments: m.fragments,
+        list: mentions.map((x) => x.surface),
+        dropped,
+      };
     }
     if (withText) result.text = text;
     results.push(result);
   }
-  const sum = (f: (r: Record<string, unknown>) => number) => results.reduce((s, r) => s + f(r), 0);
+  const sum = (f: (r: Record<string, unknown>) => number) => sumBy(results, f);
   const goldTotal = sum((r) => r.gold as number);
   const mention = (k: string) => sum((r) => ((r.mentions as Record<string, number> | undefined)?.[k] ?? 0));
   return {
@@ -454,6 +666,7 @@ async function evaluate(db: SupabaseClient, jev: JevClient, ids: string[] | null
         mention_recall_exact: mention("exact") / goldTotal,
         mention_recall_overlapping: mention("overlapping") / goldTotal,
         mention_precision: mention("relevant") / mention("count"),
+        mention_fragments: sum((r) => ((r.mentions as { fragments?: string[] } | undefined)?.fragments?.length ?? 0)),
       }
       : {}),
     results,
@@ -482,16 +695,8 @@ async function linksById(db: SupabaseClient, ids: string[]): Promise<Link[]> {
   return data;
 }
 
-async function unprocessedLinks(db: SupabaseClient, step: "entities" | "page_entities", max: number): Promise<Link[]> {
-  const { data: rows, error } = await db.rpc("links_to_enrich", { step, max_results: max });
-  if (error) throw new Error(error.message);
-  const ids = (rows as { link_id: string }[]).map((r) => r.link_id);
-  if (!ids.length) return [];
-  const { data, error: linksError } = await db.from("links").select("id, title, url").in("id", ids);
-  if (linksError) throw new Error(linksError.message);
-  const byId = new Map((data as Link[]).map((l) => [l.id, l]));
-  return ids.flatMap((id) => byId.get(id) ?? []);
-}
+const unprocessedLinks = (db: SupabaseClient, step: "entities" | "page_entities", max: number) =>
+  linksToEnrich<Link>(db, step, max, "id, title, url");
 
 Deno.serve(serveJev({
   fn: "entity-extract",
@@ -504,12 +709,32 @@ Deno.serve(serveJev({
     const evaluation = await evaluate(db, jev, ids, body.decide === true, body.text === true);
     return json(evaluation);
   }
+  if (body.respan === true) {
+    const batch = typeof body.batch === "string" ? body.batch : "";
+    if (!ids || !ENTITY_EXTRACT.BATCH_PATTERN.test(batch)) return json({ error: "respan needs link_ids and a batch label" }, 400);
+    const results = (await pool(await linksById(db, ids), 1, reporting(report, (link: Link) => ({ link_id: link.id, found_in: "respan" }), (link) =>
+      respanLink(db, jev, link)))).filter(isPresent);
+    const staged = dryRun ? 0 : await stageDrops(db, batch, results);
+    return {
+      links: results.length,
+      drops: sumBy(results, (r) => r.drops.length),
+      staged,
+      input_tokens: sumBy(results, "inputTokens"),
+      results: results.map(({ link_id, title, drops }) => ({
+        link_id,
+        title,
+        drops: drops.map(({ mention, reason }) => ({ surface: mention.surface, entity: mention.entity_name, reason })),
+      })),
+    };
+  }
 
   // One link at a time, so an entity a link creates is matchable by the next.
   const titleLinks = ids ? await linksById(db, ids) : await unprocessedLinks(db, "entities", ENTITY_EXTRACT.LINKS_PER_RUN);
   const titles = await pool(titleLinks, 1, reporting(report, (link: Link) => ({ link_id: link.id, found_in: "title" }), (link) =>
     processTitle(db, jev, link, dryRun)));
 
+  // A dry run saves nothing, so its page pass takes the title pass's names directly.
+  const titleNamesOf = new Map(titles.filter(isPresent).map((r) => [r.link_id, r.mentions]));
   const pageLinks = ids ? titleLinks : await unprocessedLinks(db, "page_entities", ENTITY_EXTRACT.PAGE_LINKS_PER_RUN);
   const prefetched = prefetch(pageLinks, fetchPage);
   const overBudget = () => !ids && Date.now() - started > ENTITY_EXTRACT.RUN_BUDGET_MS;
@@ -517,7 +742,7 @@ Deno.serve(serveJev({
     pageLinks.map((link, i) => ({ link, page: prefetched[i] })),
     1,
     reporting(report, ({ link }) => ({ link_id: link.id, found_in: "page" }), async ({ link, page }) =>
-      overBudget() ? null : processPage(db, jev, link, await page, dryRun)),
+      overBudget() ? null : processPage(db, jev, link, await page, dryRun, dryRun ? titleNamesOf.get(link.id) : undefined)),
   );
 
   const results = [...titles, ...pageResults].filter(isPresent);
@@ -526,7 +751,8 @@ Deno.serve(serveJev({
     links: results.length,
     mentions: mentions.length,
     new_entities: mentions.filter((m) => m.decision === "new").length,
-    input_tokens: results.reduce((s, r) => s + r.inputTokens, 0),
+    dropped: sumBy(results, (r) => r.dropped.length),
+    input_tokens: sumBy(results, "inputTokens"),
     results,
   };
 }));

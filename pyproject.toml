@@ -25,6 +25,8 @@ dev = [
     "ruff>=0.6.0",
     "hypothesis>=6.100.0",
     "psycopg[binary]>=3.2",
+    "mypy>=2.4.0",
+    "types-markdown>=3.10.2.20261007",
 ]
 research = [
     "scikit-learn>=1.5.0",
@@ -34,6 +36,24 @@ research = [
 
 [tool.ruff]
 target-version = "py312"
+line-length = 120
 
 [tool.ruff.lint]
-select = ["F", "ANN"]
+select = ["F", "E", "W", "I", "UP", "B", "SIM", "RUF", "ANN"]
+# The formatter owns line length; what it leaves long is a string or a comment.
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+# Not the repo's supabase/ directory.
+known-third-party = ["supabase"]
+
+[tool.ruff.lint.per-file-ignores]
+# Exploratory scripts: held to the formatter and the basics, not to the
+# stricter style rules.
+"research/**" = ["B", "SIM", "E402", "E741", "UP046", "RUF002"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/seb_now", "tools"]
+plugins = ["tools/mypy_typed_rows.py"]

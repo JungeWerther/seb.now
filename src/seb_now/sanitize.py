@@ -23,11 +23,11 @@ from seb_now.constants import (
     GOOGLE_FONTS_STYLESHEET_ORIGIN,
     POST_SLUG_PATTERN,
     SAFE_URL_SCHEMES,
-    SUPABASE_JS_MODULE_URL,
+    SUPABASE_JS_URL,
 )
 
 PAGE_SCRIPT_PATTERN = re.compile(r'<script type="module">(.*?)</script>', re.DOTALL)
-_SCRIPT_JSON_ESCAPES = {"<": "\\u003c", ">": "\\u003e", "&": "\\u0026", " ": "\\u2028", " ": "\\u2029"}
+_SCRIPT_JSON_ESCAPES = {"<": "\\u003c", ">": "\\u003e", "&": "\\u0026", "\u2028": "\\u2028", "\u2029": "\\u2029"}
 
 
 def safe_http_url(url: str | None) -> str | None:
@@ -47,7 +47,7 @@ def is_safe_slug(slug: str) -> bool:
 
 def script_json(value: object) -> str:
     """JSON for a JS literal inside an inline <script>: can't close the tag."""
-    return re.sub("[<>&  ]", lambda m: _SCRIPT_JSON_ESCAPES[m.group()], json.dumps(value))
+    return re.sub("[<>&\u2028\u2029]", lambda m: _SCRIPT_JSON_ESCAPES[m.group()], json.dumps(value))
 
 
 def script_hash(script: str) -> str:
@@ -74,11 +74,11 @@ def _origin(url: str) -> str:
     return f"{parts.scheme}://{parts.netloc}"
 
 
-# Only the page's own inline script (by hash) and supabase-js's origin may
+# Only the page's own inline script (by hash) and the one supabase-js file may
 # run script, so markup that slips past escaping still can't execute.
 def page_csp(html: str, supabase_url: str) -> str:
     scripts = PAGE_SCRIPT_PATTERN.findall(html)
     return content_security_policy(
-        script_src=[*(script_hash(script) for script in scripts), _origin(SUPABASE_JS_MODULE_URL)],
+        script_src=[*(script_hash(script) for script in scripts), SUPABASE_JS_URL],
         connect_src=[_origin(supabase_url)] if supabase_url else [],
     )

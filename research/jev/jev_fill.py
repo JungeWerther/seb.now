@@ -98,9 +98,7 @@ class JevForm(Generic[M]):
         for name, template in self._templates.items():
             question_id = f"{key}{KEY_SEPARATOR}{name}" if key else name
             beside = {**self._extras[name], **(context or {})}
-            instructions = (
-                {**beside, "question": template.instructions} if beside else template.instructions
-            )
+            instructions = {**beside, "question": template.instructions} if beside else template.instructions
             out[question_id] = template.model_copy(update={"instructions": instructions})
         return out
 
@@ -160,9 +158,7 @@ def _question_for(name: str, annotation: object, description: str | None, extra:
     if annotation is bool:
         criteria = extra.get("criteria") if isinstance(extra, dict) else None
         return Noul(instructions=description, criteria=criteria)
-    raise TypeError(
-        f"field {name!r}: {annotation!r} is not a DescribedStrEnum, DescribedIntEnum or bool"
-    )
+    raise TypeError(f"field {name!r}: {annotation!r} is not a DescribedStrEnum, DescribedIntEnum or bool")
 
 
 def _value_from(annotation: type, answer: Answer) -> object:

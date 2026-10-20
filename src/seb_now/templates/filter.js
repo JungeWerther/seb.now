@@ -7,6 +7,8 @@
 // there.
 // Keep it free of page globals (no DOM, no supabase client): everything the
 // page knows comes in as arguments.
+// Between a chip's kinds, when its senses are of several.
+const CHIP_KIND_SEPARATOR = " / ";
 const Filter = {
     unit: () => ({ terms: [], local: [], log: [] }),
     // One term with all its senses; `localSenses` is null when one of them
@@ -14,7 +16,7 @@ const Filter = {
     term: (senses, label, kinds, localSenses) => ({
         terms: [oneOrAny(senses)],
         local: localSenses && [oneOrAny(localSenses)],
-        log: [{ kind: [...new Set(kinds)].join(" / "), label }],
+        log: [{ kind: [...new Set(kinds)].join(CHIP_KIND_SEPARATOR), label }],
     }),
     concat: (a, b) => ({
         terms: [...a.terms, ...b.terms],
@@ -26,32 +28,41 @@ function oneOrAny(senses) {
     const [only] = senses;
     return senses.length === 1 && only !== undefined ? only : { any: senses };
 }
-// One sense in a canonical spelling: entity ids sorted, since a sense with
+const separatorByKeyPart = {
+    field: ":",
+    entity: ",",
+    period: "/",
+    reading: "@",
+    sense: "|",
+    term: "&",
+    page: "@",
+    cursor: "|",
+};
+// Each sense's spelling, canonical: entity ids sorted, since a sense with
 // several entities passes through any of them.
+const spellingBySenseField = {
+    kind: ({ kind }) => kind,
+    entities: ({ entities }) => [...entities].sort().join(separatorByKeyPart.entity),
+    topic: ({ topic }) => topic,
+    period: ({ period }) => period.join(separatorByKeyPart.period),
+    at: ({ indexical, at }) => [indexical, at].join(separatorByKeyPart.reading),
+    focus: ({ indexical, focus }) => [indexical, JSON.stringify(Object.entries(focus).sort())].join(separatorByKeyPart.reading),
+};
+// One sense in a canonical spelling, under its field.
 function senseKey(sense) {
-    if ("kind" in sense)
-        return `k:${sense.kind}`;
-    if ("entities" in sense)
-        return `e:${[...sense.entities].sort().join(",")}`;
-    if ("topic" in sense)
-        return `t:${sense.topic}`;
-    if ("period" in sense)
-        return `p:${sense.period[0]}/${sense.period[1]}`;
-    if ("at" in sense)
-        return `i:${sense.indexical}@${sense.at}`;
-    return `i:${sense.indexical}#${JSON.stringify(Object.entries(sense.focus).sort())}`;
+    return [fieldOf(spellingBySenseField, sense), match(spellingBySenseField, sense)].join(separatorByKeyPart.field);
 }
 // One term in a canonical spelling: its senses deduplicated and sorted, since
 // disjunction doesn't care about order or repeats.
 function termKey(term) {
     const senses = "any" in term ? term.any : [term];
-    return [...new Set(senses.map(senseKey))].sort().join("|");
+    return [...new Set(senses.map(senseKey))].sort().join(separatorByKeyPart.sense);
 }
 // The filter's cache key. Conjunction is commutative and idempotent, so
 // terms are deduplicated and sorted: "paris event" and "event paris" are the
 // same filter. The log is left out; it only decides what the chips say.
 function filterKey(filter) {
-    return [...new Set(filter.terms.map(termKey))].sort().join("&");
+    return [...new Set(filter.terms.map(termKey))].sort().join(separatorByKeyPart.term);
 }
 // The cursor after `rows`, or null when there are none.
 function nextFilterCursor(rows) {
@@ -60,7 +71,8 @@ function nextFilterCursor(rows) {
 }
 // The key of one page of `filter`: its filter's key and where it starts.
 function filterPageKey(filter, cursor) {
-    return cursor ? `${filterKey(filter)}@${cursor.createdAt}|${cursor.id}` : filterKey(filter);
+    const key = filterKey(filter);
+    return cursor ? [key, [cursor.createdAt, cursor.id].join(separatorByKeyPart.cursor)].join(separatorByKeyPart.page) : key;
 }
 // How long a cached page is reused. Keyset pages don't shift when links are
 // added, but entity extraction can still tag an older link later, so no page
@@ -69,8 +81,9 @@ const FILTER_CACHE_TTL_MS = 5 * 60 * 1000;
 // Pages kept at most; the least recently used goes first.
 const FILTER_CACHE_MAX_PAGES = 50;
 // `load` memoized by key. The promise is what's kept, so a second request for
-// a page still in flight shares the first; a load that fails (null or a
-// rejection) is dropped so the next request tries again.
+// a page still in flight shares the first; a failed load (or one that
+// rejects, which comes back as a failure) is dropped so the next request
+// tries again.
 function memoize(key, load, { ttlMs = FILTER_CACHE_TTL_MS, maxEntries = FILTER_CACHE_MAX_PAGES, now = () => Date.now() } = {}) {
     const entries = new Map();
     return (...args) => {
@@ -82,14 +95,10 @@ function memoize(key, load, { ttlMs = FILTER_CACHE_TTL_MS, maxEntries = FILTER_C
             entries.set(k, hit);
             return hit.value;
         }
-        const value = load(...args).then((v) => {
-            if (v === null && entries.get(k)?.value === value)
+        const value = Result.settle(Promise.resolve(args).then((a) => load(...a))).then((result) => {
+            if (!Result.isOk(result) && entries.get(k)?.value === value)
                 entries.delete(k);
-            return v;
-        }, (error) => {
-            if (entries.get(k)?.value === value)
-                entries.delete(k);
-            throw error;
+            return result;
         });
         entries.delete(k);
         entries.set(k, { value, expires: now() + ttlMs });

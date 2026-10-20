@@ -279,7 +279,22 @@ in the same pass contains or respells ("Pusateri" in "Drew Pusateri", "Sean
 O'Kane"/"Sean O’Kane") is always asked, never taken on an exact match, with
 those longer names as extra options; picking one gives it that name's entity,
 so a page's short forms don't become entities of their own (a bare "Sarah"
-would otherwise exact-match one global "Sarah" for every Sarah). Links run one at a time so
+would otherwise exact-match one global "Sarah" for every Sarah). A name the text
+only ever says inside a longer name it also read ("Tokyo" in "Palais de Tokyo",
+"Louis Vuitton" in "Fondation Louis Vuitton") is a fragment (`_shared/spans.ts`)
+and never a mention of its own: if it meant the longer name's thing that is
+already a mention, and if it didn't it isn't one. Before resolving, one more Jev
+question asks of each longer name holding a fragment whether it is one name or
+runs several things together ("Ledger Flex and Ledger Stax", "After World War
+II"); a run-together name (p of "parts" ≥ `SPAN_PARTS_MIN_P`) gives way to its
+parts, and every other fragment is dropped. Each result lists its `dropped`
+names. The page pass counts the title's names as read whole and offers them as
+longer names a page's short form can stand for (taking that entity). `POST
+{"respan": true, "link_ids": [...], "batch": "<label>"}` re-reads mentions already
+stored with the same rule and stages each drop as a `drop_mention` row in
+`entity_edits` (see "Reversible graph edits"), applying nothing; with `"decide":
+true` the eval also reports `mention_fragments`, mentions that are only part of a
+labelled name, which its overlap-based precision counts as relevant. Links run one at a time so
 a new entity is matchable by the next link. After the title, a second pass
 reads the page the link points to (one question per phrase asks name-and-kind
 at once), marked by `link_enrichment.page_entities_at`. `_shared/names.ts`
@@ -405,8 +420,13 @@ entity names and run filter queries itself (no request per keystroke or query),
 it keeps a copy of the entity index: every mentioned entity's name and kind, and
 which links mention it (`20261016210000_entity_index.sql`). Rows are counted by a
 `seq` identity column on `links`, `entities` and `link_entities`. The
-**`index-snapshot`** Edge Function (`9-59/10 * * * *`, does nothing when nothing
-changed since the last snapshot) calls `public.index_snapshot()` (service_role
+**`index-snapshot`** Edge Function (`9-59/10 * * * *`) builds a new snapshot only
+when `gen` moved on since the latest one, or when something was added and the
+latest is older than `INDEX_SNAPSHOT.MAX_AGE_MS` (an hour) or over
+`INDEX_SNAPSHOT.MAX_NEW_PAIRS` (1,000) mentions behind — pages catch up from it
+with `index_diff`, which carries nothing past 2,000 mentions asked from
+`INDEX_DIFF_OVERLAP` (500) below the watermark, so that cap must stay under
+1,500; otherwise it does nothing. It calls `public.index_snapshot()` (service_role
 only), delta-encodes it (`_shared/index_snapshot.ts`, which documents the format;
 keep the page's decoder in sync), gzips it and uploads it to the public `index`
 Storage bucket as `snapshots/<gen>-<l>-<e>-<p>.json.gz`, a new name each time so
@@ -603,12 +623,26 @@ the words it couldn't place searched for too. The matched words are also tagged 
 place in the box (`renderSearchMarks`, run by `showQueryChips`): `#search-marks` is a
 copy of the typed text laid out identically behind the transparent input, with the
 text invisible and good matches wrapped in `<mark data-kind>` (a small kind label
-above the word, drawn by CSS) — the reading's sort words and topic filled, an entity
-or topic suggestion whose whole name is typed dashed, then (last, so they never take a
-word from a longer name) the names of entity kinds; neighbouring words of one name
-share one tag. Whole-word matches (exact or singular/plural) are all placed before the
-word still being typed may match as a prefix, so a typed "event" is the kind, not the
-product "Éventail" that `match_entities` suggests for it by prefix. Kinds and entities are labelled with the level above them in the kind
+above the word, drawn by CSS) — the reading's sort words and topic filled, then,
+dashed, every name whose whole is typed. **A tag never picks a sense.** Every named
+thing the box can read (the `match_entities` suggestions, the topic suggestions, the
+kinds by label and path segment, the indexicals: `namedSenses`) goes into one
+`lexicon` (`frontend/src/senses.ts`) keyed by its folded words, so a name keeps all its
+senses, and `claimNames` places names longest first, whole words first. A name with
+one sense is tagged as itself and opens its page; a name with several (Nightcall and
+The Nightcall, the kind Event and an entity "Event") is one tag labelled with what
+they share (`senseLabel`: "work ×2", "artifact ×3" from `commonKindPath`, "senses ×n"
+across a topic and a kind) that opens `/s/<words>`, the term's page. The word still
+being typed is a guess, not a reading: it only finishes a name (by prefix) when exactly
+one name could take it, so "nightc" is Nightcall but "night", a prefix of Nightcall,
+Nightwatch and Night Owl, is tagged as nothing (before this a prefix tagged whichever
+suggestion came first, so "night" read as the song). A typed "event" is still the kind,
+not the product "Éventail", since whole words go first. **A term's own page**,
+`seb.now/s/<words>` (`focusTerm`, `setTermHref`, `TERM_PATH_PATTERN`), shows the words,
+how many senses and their shared label in the kind band, each sense as a chip in its
+section (kinds, entities and indexicals, topics) opening its own page, and below every
+link about any of them: one `filter_links` term `{any: [...]}`, read locally when every
+sense is a kind or an indexed entity. Kinds and entities are labelled with the level above them in the kind
 tree (`public.kinds`, an `ltree` under `entity`, loaded once with the topics), not
 the full ancestry: "company" reads `org`, an entity "Uber" `company` (its
 `entities.kind_path`, fetched by id with the `match_entities` results). A label runs
@@ -618,7 +652,7 @@ copy again but above the input and see-through, holds just those words as `/t/<p
 or `/e/<id>` links (with `data-name`, which the chip-link click handler prefers over
 the typed text), so tapping one opens its page in place while a tap anywhere else
 reaches the input; a kind links to its page (`/k/<path>`), an indexical to its
-(`/i/<term>`) and a sort word to its order's (`/o/<sort>`). **Every tag opens a
+(`/i/<term>`), a name with several senses to its term's (`/s/<words>`) and a sort word to its order's (`/o/<sort>`). **Every tag opens a
 page — CI enforces it** (`tests/test_search_marks_pages.py`): each tag `tagTokens`
 builds carries `page: markPage(name, setXHref, id)`, `renderSearchMarks` never
 leaves a tagged word as plain text, and every `set*Href` a tag names must build an
@@ -707,8 +741,17 @@ keyset (`before_created_at`, `before_id`, the last row's `created_at`/`link_id`;
 `20261017130000_filter_links_keyset.sql`) and caches each page by
 `filterPageKey` (5 min, 50 pages, a page in flight shared, failures not kept), so
 "paris event" reuses "event paris"; the local index keeps its own offset path.
+Values that can fail travel as `Result`s (`frontend/src/prelude.ts`, inlined
+first at `__PRELUDE_JS__`): `{ data, error }`, the shape supabase-js answers in,
+so the feed's page fetchers, `memoize` and the loaders it wraps return one
+rather than null or a throw, and `loadMore` reads the error once. Dispatch on a
+value's shape is a table (`Mapping`/`Cases` + `match`: `spellingBySenseField`,
+the page's `tagBySenseField` and `pageFetcherByFeedField`), named
+`<value>By<Key>`; `frontend/test/conventions.test.mjs` enforces that, no
+if-chains on fields, and no string literals in function bodies (the page
+script's existing ones are a shrink-only baseline, `page-strings.json`).
 CI's `frontend` job runs ESLint (strict type-checked), `tsc --noEmit`, the build
-(failing if the committed `filter.js` differs) and `frontend/test/`;
+(failing if a committed compiled script differs) and `frontend/test/`;
 `tests/qa/` has `npm run keyset` (keyset pages equal offset pages on an embedded
 Postgres) next to #81's `db` and `page`. Order names live in `SORTS` (the function) and
 `SORT_LABELS` (the page) and must match `feed_query`'s check.
@@ -749,11 +792,29 @@ inline script go through `script_json` (escapes `<`/`>`/`&`, so a value can't
 close the `<script>`); post slugs must match `POST_SLUG_PATTERN` since they
 become file paths. The backstop is a `<meta>` Content-Security-Policy:
 `index.html` allows only its own inline module script, by a SHA-256 hash that
-`site.py` computes over the final rendered script, plus the pinned
-`SUPABASE_JS_MODULE_URL` origin; post pages allow no script at all. So
+`site.py` computes over the final rendered script, plus exactly one file,
+`SUPABASE_JS_URL` (supabase-js's self-contained UMD build on jsDelivr, pinned,
+loaded with `SUPABASE_JS_INTEGRITY` as its SRI hash); never a whole CDN origin,
+since any package on it could then run (`tests/test_sanitize.py` checks every
+script-src host names a file). Post pages allow no script at all. So
 inline event handlers (`onerror=` etc.) can't be used in markup — image
 error handling is one capture-phase listener in the page script — and bumping
-supabase-js means changing `SUPABASE_JS_MODULE_URL`, not the template.
+supabase-js means changing `SUPABASE_JS_URL` and `SUPABASE_JS_INTEGRITY`
+together (`openssl dgst -sha384 -binary dist/umd/supabase.js | base64` on the
+npm package's file), not the template. An ESM build doesn't fit: esm.sh and
+jsDelivr's `+esm` modules import further modules (each dependency, node
+polyfills), so a CSP allowing one URL would block them.
+
+**Framing (clickjacking).** A `<meta>` CSP can't set `frame-ancestors`, and DO
+App Platform static sites can't send custom response headers (no
+`X-Frame-Options`/CSP header option in the app spec), so the index and consent
+pages defend themselves: their CSS hides `body` until `html.unframed` is set,
+and the first lines of their module script throw if `window.top !==
+window.self` and otherwise add that class. A framed copy (including a
+sandboxed frame with scripts off) therefore never shows anything to click.
+Post pages have no script and nothing to click, so they're left framable. If
+the site ever moves behind something that can set headers, add
+`Content-Security-Policy: frame-ancestors 'none'` there.
 
 **Header menu.** The header's left icon (Lucide `circle-user-round`) opens a
 dropdown of round "bubbles" (`#menu-bubbles`), one per menu item. Each bubble
@@ -917,7 +978,9 @@ line), shown in the kind band (`showKindHead`).
 
 **A topic's own page.** Every topic has a page at `seb.now/t/<path>` (its ltree
 id, `ai.agents`), on the same focused view (`focusTopic`): the band shows
-`#focus-topic` (name, path, post count and the topic's `description`) and the
+`#focus-topic` (name; "a kind of" the topic one level up, a link to that page;
+post count and the topic's `description`), then its direct subtopics as chips in the
+Kinds section (`public.topic_children`) and the
 list is every link labelled with the topic or one of its children, newest
 first, from `public.topic_links(topic, max_results, page_offset)` (security
 invoker, `topic` passed as text and cast to `ltree`; the count comes from
@@ -935,6 +998,16 @@ channels, Mastodon accounts and feeds covering it, in the shapes a
 `public.sources` row takes, checking the feed first through this site's MCP
 server when the reader has it connected (`get_links_by_topic` for a topic,
 `search_links` on the name for an entity).
+
+**Every page's meta line is `showPageMeta`.** The line under a kind's, topic's,
+entity's or indexical's title is drawn by one function: its parent first (a
+`parentLink` to the kind or topic it sits under, or a plain phrase at a root),
+then its facts, joined by " · ", never its raw id or path.
+`tests/test_parent_links.py` enforces all three; pages with no parent (a post,
+a term, a sort order) are in its `FLAT_PAGES`. A page that is a node of
+a tree (a kind, a topic) also lists its children one level below it in its
+Kinds section through `showChildKinds(path, nodes, chipKind)`, which itself keeps only the
+nodes one level below `path`; the same test enforces both.
 
 **A kind's own page.** Every entity kind has a page at `seb.now/k/<path>` (its
 path in `public.kinds`, `entity.agent.org.company`), on the same focused view
@@ -1058,8 +1131,9 @@ moved `SWIPE_CAPTURE_SLOP_PX`, and never starts on a `<button>` —
 capturing on `pointerdown` retargets a plain tap's `click` to the swipe
 area, so links and buttons inside would never receive it.
 
-supabase-js is loaded with a dynamic `import()` (`supabaseReady`), not a
-static import, so the page script — swipe handlers included — runs before
+supabase-js is loaded by a `<script>` element the page script adds
+(`supabaseReady`, resolving to the UMD build's `window.supabase`), not a
+static tag or import, so the page script — swipe handlers included — runs before
 the library has downloaded; every client call awaits `supabaseReady`.
 Swipe handlers are attached before the anonymous session and the
 own-vote/score/visited queries resolve; `castVote`/`removeVote` take the

@@ -46,6 +46,7 @@ ALLOWED = {
     ("topic-label/index.ts", "NONE"): "sentinel option key of the Jev question",
     ("topic-label/index.ts", "ROOT"): "sentinel for the taxonomy's root node",
     ("entity-extract/index.ts", "NEW_ENTITY"): "sentinel option key of the Jev question",
+    ("entity-extract/index.ts", "UNIQUE_VIOLATION"): "Postgres error code, fixed by the protocol",
     ("entity-extract/index.ts", "SAME_AS_PREFIX"): "option-key prefix the code parses back",
     ("entity-extract/index.ts", "MENTION_OPTIONS"): "a Jev question's options (prompt schema)",
     ("entity-extract/index.ts", "KIND_OPTIONS"): "a Jev question's options (prompt schema)",
@@ -79,11 +80,8 @@ ALLOWED = {
     ("mcp/index.ts", "AUTHORIZATION_SERVER"): "derived from ENV.SUPABASE_URL",
     ("mcp/index.ts", "CORS_HEADERS"): "HTTP response headers",
     ("mcp/index.ts", "RANK_FORMULA"): "ranked_feed's formula, quoted to agents",
-    ("mcp/index.ts", "TOOLS"): "MCP tool schemas",
-    ("mcp/index.ts", "USER_TOOLS"): "MCP tool schemas",
+    ("mcp/index.ts", "TOOLS"): "MCP tool registry",
     ("mcp/index.ts", "VOTE_VALUES"): "votes.value for each vote tool argument",
-    ("mcp/index.ts", "HANDLERS"): "MCP tool dispatch table",
-    ("mcp/index.ts", "USER_HANDLERS"): "MCP tool dispatch table",
     ("event-extract/index.ts", "NONE"): "sentinel option key of the Jev question",
     ("place-resolve/index.ts", "NONE"): "sentinel option key of the Jev question",
     ("event-extract/index.ts", "PHRASE_PREFIX"): "option-key prefix the code parses back",
@@ -127,7 +125,7 @@ def test_environment_is_read_only_in_constants_ts() -> None:
 
 
 def test_detector_skips_regexes_and_finds_typed_constants() -> None:
-    source = 'const A = 1;\nexport const B: number[] = [2];\nconst C =\n  /x/;\nconst d = 3;\n  const E = 4;\n'
+    source = "const A = 1;\nexport const B: number[] = [2];\nconst C =\n  /x/;\nconst d = 3;\n  const E = 4;\n"
     assert top_level_constants(source) == ["A", "B"]
 
 
