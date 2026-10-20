@@ -28,7 +28,10 @@ class UnsupportedSchema(ValueError):
 class Style(BaseModel):
     """What every style model is: its tokens, and nothing else."""
 
-    model_config = {"extra": "forbid", "frozen": True}
+    # Strict, as JSON Schema is: "1.5" and true aren't numbers. Tokens are
+    # read and written by their own names, which are aliases, since a token
+    # may be named like one of the model's own attributes (`model_config`).
+    model_config = {"extra": "forbid", "frozen": True, "strict": True, "serialize_by_alias": True}
 
 
 def _primitive(schema: object) -> object:
@@ -67,7 +70,10 @@ def _model(name: str, canonical_schema: str) -> type[Style]:
             "$defs": dict(defs),
             **rest,
         } if not rest and sorted(required) == sorted(properties):
-            fields: dict[str, Any] = {key: (_token(token, defs), ...) for key, token in properties.items()}
+            fields: dict[str, Any] = {
+                f"token_{i}": (_token(token, defs), Field(alias=key))
+                for i, (key, token) in enumerate(properties.items())
+            }
             return create_model(f"Style_{name}", __base__=Style, **fields)
     raise UnsupportedSchema("a style type's schema is a closed object of required tokens with its $defs")
 

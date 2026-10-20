@@ -42,6 +42,9 @@ def test_a_style_of_the_type_validates() -> None:
         pytest.param({**DARK, "bg": "url(https://x/?leak)"}, id="url-value"),
         pytest.param({**DARK, "column_width": "720px;}body{"}, id="breakout"),
         pytest.param({**DARK, "weight": 10001}, id="out-of-bounds"),
+        pytest.param({**DARK, "weight": "1.5"}, id="number-as-string"),
+        pytest.param({**DARK, "weight": True}, id="boolean-as-number"),
+        pytest.param({**DARK, "bg": 101010}, id="number-as-colour"),
         pytest.param({**DARK, "density": "tight"}, id="not-in-enum"),
         pytest.param({key: value for key, value in DARK.items() if key != "bg"}, id="missing-token"),
         pytest.param({**DARK, "extra": "1"}, id="extra-token"),
@@ -74,6 +77,19 @@ def test_a_style_outside_the_type_is_refused(style: dict[str, object]) -> None:
 def test_a_schema_outside_the_vocabulary_is_refused(schema: dict[str, object]) -> None:
     with pytest.raises(UnsupportedSchema):
         style_model("odd", schema)
+
+
+def test_an_integer_is_a_number() -> None:
+    assert style_model("theme", THEME).model_validate({**DARK, "weight": 2}).model_dump()["weight"] == 2
+
+
+@pytest.mark.parametrize("name", ["model_config", "model_dump", "schema", "json", "copy", "dict", "fields"])
+def test_a_token_may_be_named_like_a_model_attribute(name: str) -> None:
+    model = style_model(name, compiled({name: {"enum": ["a", "b"]}, "bg": {"$ref": "#/$defs/color"}}))
+    style = {name: "a", "bg": "#101010"}
+    assert model.model_validate(style).model_dump() == style
+    with pytest.raises(ValidationError):
+        model.model_validate({name: "c", "bg": "#101010"})
 
 
 def test_a_model_is_built_once_per_schema() -> None:
