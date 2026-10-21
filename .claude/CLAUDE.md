@@ -908,11 +908,16 @@ they're meant to be fitted against votes.
 
 **Seen links — "new" means new to the reader** (`20261017231500_latest_unseen_first.sql`).
 A link is seen once its row has been on screen (`SEEN_VISIBLE_RATIO` of it for
-`SEEN_DWELL_MS`, an `IntersectionObserver` set up in `hydrateArticles`, so a fling
-past it doesn't count) or it was clicked (`link_visits`). On-screen rows go to
+`SEEN_DWELL_MS` while the page is visible, an `IntersectionObserver` set up in
+`hydrateArticles`, so neither a fling past it nor a tab left in the background
+counts: hiding the page cancels every dwell in progress, and showing it again
+re-observes the rows, which start their dwell over) or it was clicked
+(`link_visits`). On-screen rows go to
 `public.link_impressions (viewer_id, link_id, seen_at)`, one row per reader and
 link (private to the viewer by RLS, insert-only, batched every `SEEN_FLUSH_MS`
-and when the page is hidden, a repeat ignored). `feed_query`'s `latest` order puts
+and when the page is hidden, a repeat ignored), with `seen_at` the moment the
+dwell ended, not the flush, so a feed restarted before the flush already counts
+it. `feed_query`'s `latest` order puts
 seen links after unseen ones, each part newest first; they're moved down, not
 left out, so `/o/latest` still lists every post. Only what was seen at or before
 `as_of` counts, so rows seen while scrolling don't reorder the pages still to
@@ -920,7 +925,8 @@ come; back-to-top restarts with a fresh `as_of`. "new" is a sort word
 (`QUERY_SORT_WORDS`), but since it also opens names (New York) `querySorts` only
 reads it as one at the end or before filler or another sort word (`QUERY_NAME_OPENING_SORT_WORDS`:
 "new", "what's new", "new in paris", not "new york"). QA: `tests/qa`, `npm run
-latest` (and `npm run page` for the reading).
+latest` (and `npm run page` for the reading; `npm run seen` runs the built page in
+headless Chromium with a fake supabase-js and checks when rows count as seen).
 
 **A link's own page.** Every link has a page at `seb.now/p/<id>` (the same
 address a federated post links to, served by the catch-all document). Tapping a
