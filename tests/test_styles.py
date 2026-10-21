@@ -3,7 +3,7 @@ from enum import StrEnum
 import pytest
 from pydantic import ValidationError
 
-from seb_now.styles import UnsupportedSchema, style_model
+from seb_now.styles import UnsupportedSchema, css_declarations, css_property, style_model
 
 DEFS = {
     "color": {"type": "string", "pattern": "^#[0-9a-f]{6}([0-9a-f]{2})?$"},
@@ -109,3 +109,19 @@ def test_a_token_may_be_named_like_a_model_attribute(name: str) -> None:
 def test_a_model_is_built_once_per_schema() -> None:
     reordered = dict(reversed(list(THEME.items())))
     assert style_model("theme", THEME) is style_model("theme", reordered)
+
+
+def test_a_style_as_css_declarations() -> None:
+    style = style_model("theme", THEME).model_validate(DARK)
+    assert set(css_declarations(style).removesuffix(";").split("; ")) == {
+        "--bg: #101010",
+        "--column-width: 720px",
+        "--weight: 1.5",
+        "--density: compact",
+    }
+
+
+@pytest.mark.parametrize("token", ["Bg", "1bg", "bg-color", "bg;}", "b" * 33])
+def test_a_token_name_css_cannot_carry_is_refused(token: str) -> None:
+    with pytest.raises(UnsupportedSchema):
+        css_property(token)

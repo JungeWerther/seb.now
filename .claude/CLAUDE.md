@@ -929,7 +929,8 @@ come; back-to-top restarts with a fresh `as_of`. "new" is a sort word
 reads it as one at the end or before filler or another sort word (`QUERY_NAME_OPENING_SORT_WORDS`:
 "new", "what's new", "new in paris", not "new york"). QA: `tests/qa`, `npm run
 latest` (and `npm run page` for the reading; `npm run seen` runs the built page in
-headless Chromium with a fake supabase-js and checks when rows count as seen).
+headless Chromium with a fake supabase-js, `tests/qa/page_harness.mjs`, and checks
+when rows count as seen).
 
 **A link's own page.** Every link has a page at `seb.now/p/<id>` (the same
 address a federated post links to, served by the catch-all document). Tapping a
@@ -1092,7 +1093,25 @@ refusals mapped to statuses (422 a schema or value the type refuses, 403 not
 yours, 409 a name taken or a type still in use, 404 no such row).
 `seb_now.styles.style_model(name, schema)` reads a stored schema back as a
 pydantic model by interpreting that closed vocabulary (never generating code;
-`UnsupportedSchema` for anything else), built once per schema. QA: CI's `db` job
+`UnsupportedSchema` for anything else), built once per schema. **The page reads its
+tokens as CSS custom properties**: a token `column_width` is `--column-width`
+(`css_property`), and the template's `:root` declares a default for every
+token it uses (`--column-width`, `--dock-width`; no width is written out
+anywhere else, `tests/test_site_styles.py`). At build time `site.py` loads the
+built-in styles (no owner; the first by name of each type), validates each
+with `style_model` and writes their declarations (`css_declarations`) as a
+second `:root` rule at `/*__STYLE_TOKENS__*/`, after the defaults; a style that
+doesn't validate writes nothing. In the browser, **Appearance**
+(`#appearance-overlay`, a header-menu bubble) lists every style by type, and
+picking one sets its tokens on `document.documentElement.style`;
+`frontend/src/styles.ts` (`styleDeclarations`, inlined at `__STYLES_JS__`)
+checks each value against the type's schema again first (patterns, bounds,
+enums, and no `(`, `;`, braces, `\` or angle brackets), so a style sets only
+the tokens its type names. Picking a type's built-in style clears the pick.
+The pick, with the style's values and schema, is kept in localStorage
+(`seb-now-styles`, per type), so it applies before supabase-js has loaded;
+`refreshStoredStyles` then replaces it with the database's copy, or drops a
+style deleted since. QA: `tests/qa`, `npm run appearance`. QA: CI's `db` job
 runs `tests/db` on the `supabase/postgres` image (each run a fresh database
 shaped like production's, `tests/db/production_shape.sql`), including a check
 that Python and `pg_jsonschema` accept and refuse the same values.

@@ -45,6 +45,13 @@ DEFS_PREFIX = "#/$defs/"
 # styles.py — an enum token's field is lax inside the strict model, so a
 # keyword's plain string reads as its StrEnum member (strict wants a member)
 ENUM_TOKEN_STRICT = False
+# styles.py — a token `column_width` is the CSS custom property `--column-width`
+CSS_TOKEN_PREFIX = "--"
+# styles.py — a token name the CSS may carry: the same rule as the meta-schema's
+# propertyNames, checked again before a name is written into the page's <style>
+STYLE_TOKEN_NAME_PATTERN = r"^[a-z][a-z0-9_]{0,31}$"
+# site.py — the legacy entities.kind every style has
+STYLE_ENTITY_KIND = "style"
 
 # site.py — topic chips shown per article, highest-p first
 ARTICLE_TOPIC_CHIPS = 2
