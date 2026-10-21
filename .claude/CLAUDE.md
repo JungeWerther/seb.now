@@ -1058,6 +1058,36 @@ QA: `tests/qa`, `npm run sources`. The page labels every entity by its
 legacy flat `entities.kind`, which is just "source" for all of them; so
 `FEED_SELECT` and `related_feed` carry `kind_path`.
 
+**Style types — design tokens in the entity graph**
+(`20261020120000_style_types.sql`). A style type is a kind `entity.style.<name>`
+with a `kinds.schema` (JSON Schema) and `owner_id`; a style is an entity of that
+kind (legacy `kind` `'style'`) holding one value per token in `entities.style`.
+A type's schema may only name primitives from `public.style_primitives` (color,
+length, duration, number, font: patterns that admit no `(`, `;`, `{`, `}`, `\` or
+`<`, so a value can't be `url()` or break out of CSS) or a short keyword `enum`;
+`style_meta_schema()` refuses anything else (a pattern of its own, a `$ref`
+outside our `$defs`, nesting), and the type is stored compiled by
+`style_type_schema()`: every token required, nothing else allowed, the
+primitives inlined. Schemas never change after creation. `pg_jsonschema` checks
+every type and every style in the database. Readers add their own types and
+styles under RLS (owner writes, everyone reads; at most `style_types_per_user()`
+and `styles_per_user()`, counted under a per-owner lock), may change a style's
+`style`/`description` only, and styles stay out of `match_entities`,
+`entity_candidates`, `known_names`, identity witnesses and the entity index log.
+`entity.style.layout` (`column_width`, `dock_width`) is the first type, with the
+built-in style "seb.now layout". The **`style-types`** Edge Function (`verify_jwt`
+on) is the HTTP API: `GET /primitives`, `GET|POST /types`, `DELETE /types/:name`,
+`GET|POST /styles`, `PATCH|DELETE /styles/:id`, a route table whose bodies are
+parsed by `_shared/args.ts`, every request run as the caller so RLS decides, and
+refusals mapped to statuses (422 a schema or value the type refuses, 403 not
+yours, 409 a name taken or a type still in use, 404 no such row).
+`seb_now.styles.style_model(name, schema)` reads a stored schema back as a
+pydantic model by interpreting that closed vocabulary (never generating code;
+`UnsupportedSchema` for anything else), built once per schema. QA: CI's `db` job
+runs `tests/db` on the `supabase/postgres` image (each run a fresh database
+shaped like production's, `tests/db/production_shape.sql`), including a check
+that Python and `pg_jsonschema` accept and refuse the same values.
+
 **Places — `place-resolve`.** Links place entities to Wikidata so where a place
 is comes from what it is (`entities.place_path`, see "Reversible graph edits and
 where places are"), never from its name: "Palais de Tokyo" is in the 16th

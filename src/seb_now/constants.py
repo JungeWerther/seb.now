@@ -18,6 +18,34 @@ class SourceType(StrEnum):
     DIRECT_LINK = "direct_link"
 
 
+# styles.py — the JSON Schema keywords and types a style type's stored schema
+# may use (20261020120000_style_types.sql); anything else is refused.
+class SchemaKeyword(StrEnum):
+    TYPE = "type"
+    PROPERTIES = "properties"
+    REQUIRED = "required"
+    ADDITIONAL_PROPERTIES = "additionalProperties"
+    DEFS = "$defs"
+    REF = "$ref"
+    ENUM = "enum"
+    DESCRIPTION = "description"
+    PATTERN = "pattern"
+    MINIMUM = "minimum"
+    MAXIMUM = "maximum"
+
+
+class JsonType(StrEnum):
+    OBJECT = "object"
+    STRING = "string"
+    NUMBER = "number"
+
+
+# styles.py — where a token's $ref points: one of the schema's own $defs
+DEFS_PREFIX = "#/$defs/"
+# styles.py — an enum token's field is lax inside the strict model, so a
+# keyword's plain string reads as its StrEnum member (strict wants a member)
+ENUM_TOKEN_STRICT = False
+
 # site.py — topic chips shown per article, highest-p first
 ARTICLE_TOPIC_CHIPS = 2
 # site.py — entity chips shown per article (bottom left, beside its votes),

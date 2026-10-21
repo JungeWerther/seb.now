@@ -24,7 +24,7 @@ EXCLUDED_FILES = {"constants.py"}
 # typing idiom — there's no separate metaparameter to extract. Built-in
 # exceptions are the same shape: the literal is a human-readable message,
 # not a metaparameter worth naming in constants.py.
-EXCLUDED_CALLEES = {"TypeVar", "RuntimeError", "ValueError", "TypeError", "KeyError"}
+EXCLUDED_CALLEES = {"TypeVar", "RuntimeError", "ValueError", "TypeError", "KeyError", "UnsupportedSchema"}
 
 LITERAL_TYPES = (bool, int, float, str)
 
