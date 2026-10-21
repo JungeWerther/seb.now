@@ -1361,7 +1361,8 @@
     }
 
     // Hidden, no dwell runs on; visible again, each watched row is observed
-    // afresh, so one still on screen starts its whole dwell over.
+    // afresh, so one still on screen starts its whole dwell over. Rows off the
+    // page stay watched: the feed saved while a post is open comes back.
     const seenByVisibility = {
       [PAGE_HIDDEN]: () => {
         for (const timer of seenTimers.values()) clearTimeout(timer);
@@ -1371,8 +1372,7 @@
       [PAGE_VISIBLE]: () => {
         for (const li of seenWatched) {
           seenObserver?.unobserve(li);
-          if (li.isConnected) seenObserver?.observe(li);
-          else seenWatched.delete(li);
+          seenObserver?.observe(li);
         }
       },
     };
@@ -1382,13 +1382,23 @@
       seenWatched.delete(li);
       seenObserver.unobserve(li);
       if (!li.isConnected || !li.dataset.linkId) return;
-      seenQueue.set(li.dataset.linkId, new Date().toISOString());
+      if (!seenQueue.has(li.dataset.linkId)) seenQueue.set(li.dataset.linkId, new Date().toISOString());
       seenFlushTimer ??= setTimeout(flushSeen, SEEN_FLUSH_MS);
     }
 
-    async function flushSeen() {
+    // Writes run one after another; a feed waits for the one started when it
+    // took its as_of (resetFeed), so an impression from before as_of can't land
+    // between its pages and reorder them.
+    let seenWriting = Promise.resolve();
+
+    function flushSeen() {
       clearTimeout(seenFlushTimer);
       seenFlushTimer = null;
+      seenWriting = seenWriting.then(writeSeen).catch((error) => console.error(SEEN_FLUSH_FAILED, error));
+      return seenWriting;
+    }
+
+    async function writeSeen() {
       if (seenQueue.size === 0) return;
       const seen = [...seenQueue];
       seenQueue.clear();
@@ -2004,6 +2014,7 @@
       order: null,
       chronological: false,
       asOf: null,
+      seenWritten: null,
       offset: 0,
       cursor: null,
       seen: new Set(),
@@ -2478,6 +2489,8 @@
       feed.replacing = replace;
       updateSkeletons();
       const generation = feed.generation;
+      await feed.seenWritten;
+      if (generation !== feed.generation) return;
       const { data: page, error } = await fetchPage();
       if (generation !== feed.generation) return;
       feed.loading = false;
@@ -2518,6 +2531,7 @@
       feed.chronological = false;
       // Ranks are computed as of this moment for every page of this feed.
       feed.asOf = new Date().toISOString();
+      feed.seenWritten = flushSeen();
       feed.offset = 0;
       feed.cursor = null;
       feed.seen = new Set();

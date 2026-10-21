@@ -916,8 +916,11 @@ re-observes the rows, which start their dwell over) or it was clicked
 `public.link_impressions (viewer_id, link_id, seen_at)`, one row per reader and
 link (private to the viewer by RLS, insert-only, batched every `SEEN_FLUSH_MS`
 and when the page is hidden, a repeat ignored), with `seen_at` the moment the
-dwell ended, not the flush, so a feed restarted before the flush already counts
-it. `feed_query`'s `latest` order puts
+dwell ended, not the flush (a link's first dwell; a later one doesn't move it), so
+a feed restarted before the flush already counts it. Writes run in order, and
+`resetFeed` starts one right after taking `as_of` (`feed.seenWritten`), which
+`loadMore` waits for before the first page, so no impression from before `as_of`
+lands between a feed's pages and reorders them. `feed_query`'s `latest` order puts
 seen links after unseen ones, each part newest first; they're moved down, not
 left out, so `/o/latest` still lists every post. Only what was seen at or before
 `as_of` counts, so rows seen while scrolling don't reorder the pages still to

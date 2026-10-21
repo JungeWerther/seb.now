@@ -34,7 +34,10 @@ const FAKE_SUPABASE = `(() => {
   const session = { user, access_token: "t" };
   window.supabase = { createClient: () => ({
     from: chain,
-    rpc: chain,
+    rpc: (fn, args) => {
+      window.__calls.push({ table: fn, op: "rpc", args: [args] });
+      return chain(fn);
+    },
     auth: {
       getSession: async () => ({ data: { session }, error: null }),
       signInAnonymously: async () => ({ data: { session, user }, error: null }),
@@ -118,6 +121,26 @@ const check = (label, got, want) => {
   await setVisibility(page, "hidden");
   await page.waitForTimeout(300);
   check("back for a full second: recorded", (await seenWrites(page)).length, 1);
+  check("no script errors", errors, []);
+  await page.close();
+}
+
+{
+  // A row's dwell ends, and the reader starts a new feed before the next flush:
+  // its impression is written before that feed's first page is asked for, so
+  // it can't land between pages and reorder them.
+  const { page, errors } = await openPage();
+  await page.waitForTimeout(1300);
+  check("dwell done, flush still pending", (await seenWrites(page)).length, 0);
+  const before = await page.evaluate(() => window.__calls.length);
+  await page.fill("#search-input", "latest");
+  await page.press("#search-input", "Enter");
+  await page.waitForTimeout(800);
+  const after = await page.evaluate((n) => window.__calls.slice(n).map((c) => `${c.op} ${c.table}`), before);
+  const write = after.indexOf("upsert link_impressions");
+  const firstPage = after.findIndex((c) => c === "rpc feed_query" || c === "rpc ranked_feed");
+  check("the impression is written", write >= 0, true);
+  check("before the new feed's first page", write >= 0 && firstPage > write, true);
   check("no script errors", errors, []);
   await page.close();
 }
