@@ -35,7 +35,7 @@ function grab(name) {
 }
 
 const names = ["QUERY_PREFIX_MIN_LENGTH", "QUERY_STOPWORDS", "QUERY_SORT_WORDS", "QUERY_NAME_OPENING_SORT_WORDS",
-  "querySorts", "QUERY_FILLER_WORDS", "queryWords", "isTopicWord", "localRead", "wordMatches", "kindName", "entityKindLabel", "localNow", "indexicalSense", "typedIndexical", "DECOMPOSED", "typedFilter",
+  "querySorts", "QUERY_FILLER_WORDS", "queryWords", "isTopicWord", "localRead", "wordMatches", "kindName", "entityKindLabel", "localNow", "indexicalSense", "typedIndexical", "typedFilter",
   "localFilterResults", "filterLocalLinks"];
 const src = filterJs + "\n" + names.map(grab).join("\n") + `
 let kindIndex = [], indexicalIndex = [], entityIndex = null, topicIndex = [];

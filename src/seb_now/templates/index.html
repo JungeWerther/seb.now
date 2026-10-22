@@ -1213,31 +1213,23 @@
     __FILTER_JS__
     __SENSES_JS__
 
-    // DOM names more than one part of the page uses.
-    const DOM_EVENT = { load: "load", error: "error", click: "click", visibilityChange: "visibilitychange" };
-    const VISIBILITY = { hidden: "hidden", visible: "visible" };
-    const TAG = { script: "script", item: "li", button: "button", paragraph: "p" };
-    const ARIA_LABEL = "aria-label";
-
-    // `template` with each {} filled by the next of `values`, in order.
-    const FILL_HOLE = /\{\}/;
-    const fill = (template, ...values) =>
-      values.reduce((text, value) => text.replace(FILL_HOLE, () => String(value)), template);
-
     // Loaded without blocking the rest of this script, so swiping and the
     // other UI work while supabase-js is still downloading.
     const SUPABASE_URL = __SUPABASE_URL__;
     const SUPABASE_ANON_KEY = __SUPABASE_ANON_KEY__;
-    const SUPABASE_JS_CROSS_ORIGIN = "anonymous";
+    const SCRIPT_TAG = "script";
+    const ANONYMOUS_CORS = "anonymous";
+    const LOAD_EVENT = "load";
+    const ERROR_EVENT = "error";
     const SUPABASE_JS_FAILED = "supabase-js failed to load";
     // supabase-js's UMD build is a classic script that sets window.supabase.
     const supabaseReady = new Promise((resolve, reject) => {
-      const script = document.createElement(TAG.script);
+      const script = document.createElement(SCRIPT_TAG);
       script.src = __SUPABASE_JS_URL__;
       script.integrity = __SUPABASE_JS_INTEGRITY__;
-      script.crossOrigin = SUPABASE_JS_CROSS_ORIGIN;
-      script.addEventListener(DOM_EVENT.load, () => resolve(window.supabase));
-      script.addEventListener(DOM_EVENT.error, () => reject(new Error(SUPABASE_JS_FAILED)));
+      script.crossOrigin = ANONYMOUS_CORS;
+      script.addEventListener(LOAD_EVENT, () => resolve(window.supabase));
+      script.addEventListener(ERROR_EVENT, () => reject(new Error(SUPABASE_JS_FAILED)));
       document.head.append(script);
     }).then(({ createClient }) => createClient(SUPABASE_URL, SUPABASE_ANON_KEY));
 
@@ -1328,24 +1320,29 @@
     }
 
     // A row counts as seen once SEEN_VISIBLE_RATIO of it has stayed on screen
-    // for SEEN_DWELL_MS, so a fling past it doesn't. Seen links are recorded in
-    // link_impressions, and the latest order puts them below unseen ones
-    // (feed_query), so "new" means new to this reader.
+    // for SEEN_DWELL_MS while the page is visible, so neither a fling past it nor
+    // a tab left in the background does. Seen links are recorded in
+    // link_impressions with the moment the dwell ended, and the latest order puts
+    // them below unseen ones (feed_query), so "new" means new to this reader.
+    const SEEN_TABLE = "link_impressions";
+    const SEEN_CONFLICT_KEY = "viewer_id,link_id";
+    const SEEN_FLUSH_FAILED = "failed to record seen links";
+    const PAGE_HIDDEN = "hidden";
+    const PAGE_VISIBLE = "visible";
     const SEEN_VISIBLE_RATIO = 0.5;
     const SEEN_DWELL_MS = 1000;
     const SEEN_FLUSH_MS = 3000;
     const seenTimers = new Map();
     const seenWatched = new Set();
-    const seenQueue = new Set();
+    // Link id → when its dwell ended, as seen_at, so a feed restarted before the
+    // next flush already counts it as seen at or before its as_of.
+    const seenQueue = new Map();
     let seenFlushTimer = null;
-    let seenWriting = Promise.resolve();
-    // A hidden page's rows are on screen only geometrically, so they wait.
     const seenObserver = "IntersectionObserver" in window
       ? new IntersectionObserver((entries) => {
-        if (document.visibilityState === VISIBILITY.hidden) return;
         for (const entry of entries) {
           const li = entry.target;
-          if (entry.intersectionRatio >= SEEN_VISIBLE_RATIO) {
+          if (entry.intersectionRatio >= SEEN_VISIBLE_RATIO && document.visibilityState !== PAGE_HIDDEN) {
             if (!seenTimers.has(li)) seenTimers.set(li, setTimeout(() => markSeen(li), SEEN_DWELL_MS));
           } else {
             clearTimeout(seenTimers.get(li));
@@ -1363,67 +1360,58 @@
       }
     }
 
+    // Hidden, no dwell runs on; visible again, each watched row is observed
+    // afresh, so one still on screen starts its whole dwell over. Rows off the
+    // page stay watched: the feed saved while a post is open comes back.
+    const seenByVisibility = {
+      [PAGE_HIDDEN]: () => {
+        for (const timer of seenTimers.values()) clearTimeout(timer);
+        seenTimers.clear();
+        flushSeen();
+      },
+      [PAGE_VISIBLE]: () => {
+        for (const li of seenWatched) {
+          seenObserver?.unobserve(li);
+          seenObserver?.observe(li);
+        }
+      },
+    };
+
     function markSeen(li) {
       seenTimers.delete(li);
       seenWatched.delete(li);
       seenObserver.unobserve(li);
       if (!li.isConnected || !li.dataset.linkId) return;
-      seenQueue.add(li.dataset.linkId);
+      if (!seenQueue.has(li.dataset.linkId)) seenQueue.set(li.dataset.linkId, new Date().toISOString());
       seenFlushTimer ??= setTimeout(flushSeen, SEEN_FLUSH_MS);
     }
 
-    const SEEN_TABLE = "link_impressions";
-    const SEEN_KEY = "viewer_id,link_id";
-    const SEEN_FAILED = "failed to record seen links";
+    // Writes run one after another; a feed waits for the one started when it
+    // took its as_of (resetFeed), so an impression from before as_of can't land
+    // between its pages and reorder them.
+    let seenWriting = Promise.resolve();
 
-    // Settles once every seen link queued so far, and every write already
-    // sent, is stored.
     function flushSeen() {
       clearTimeout(seenFlushTimer);
       seenFlushTimer = null;
-      if (seenQueue.size) {
-        const linkIds = [...seenQueue];
-        seenQueue.clear();
-        seenWriting = Promise.all([seenWriting, writeSeen(linkIds)]);
-      }
+      seenWriting = seenWriting.then(writeSeen).catch((error) => console.error(SEEN_FLUSH_FAILED, error));
       return seenWriting;
     }
 
-    async function writeSeen(linkIds) {
+    async function writeSeen() {
+      if (seenQueue.size === 0) return;
+      const seen = [...seenQueue];
+      seenQueue.clear();
       const session = await pendingSession;
       if (!session) return;
       const { error } = await (await supabaseReady).from(SEEN_TABLE).upsert(
-        linkIds.map((linkId) => ({ viewer_id: session.user.id, link_id: linkId })),
-        { onConflict: SEEN_KEY, ignoreDuplicates: true },
+        seen.map(([linkId, seenAt]) => ({ viewer_id: session.user.id, link_id: linkId, seen_at: seenAt })),
+        { onConflict: SEEN_CONFLICT_KEY, ignoreDuplicates: true },
       );
-      if (error) console.error(SEEN_FAILED, error);
+      if (error) console.error(SEEN_FLUSH_FAILED, error);
     }
 
-    // Leaving drops every unfinished dwell; coming back starts a full one for
-    // each row on screen (observing again reports where it is now).
-    const seenOnVisibility = {
-      [VISIBILITY.hidden]: () => {
-        for (const timer of seenTimers.values()) clearTimeout(timer);
-        seenTimers.clear();
-        flushSeen();
-      },
-      [VISIBILITY.visible]: () => {
-        for (const li of seenWatched) {
-          seenObserver.unobserve(li);
-          if (li.isConnected) seenObserver.observe(li);
-          else seenWatched.delete(li);
-        }
-      },
-    };
-
-    document.addEventListener(DOM_EVENT.visibilityChange, () => seenOnVisibility[document.visibilityState]?.());
-
-    // A feed's cutoff is taken once what was seen before it is stored, so
-    // those links count as seen on every page of it.
-    async function seenCutoff() {
-      await flushSeen();
-      return new Date().toISOString();
-    }
+    document.addEventListener("visibilitychange", () => seenByVisibility[document.visibilityState]?.());
 
     // A clicked link's visit records how the reader came back. Article links
     // open in a new tab (or another app), which keeps this page: the return is
@@ -2026,6 +2014,7 @@
       order: null,
       chronological: false,
       asOf: null,
+      seenWritten: null,
       offset: 0,
       cursor: null,
       seen: new Set(),
@@ -2279,12 +2268,12 @@
     // order reads the caller's own votes. Only links about every required
     // (tagged) entity are kept; links mentioning the other suggested entities
     // come first. All of them are highlighted.
-    // Orders that read the caller's own rows (votes, seen links).
-    const SESSION_SORTS = new Set(["for_you", "latest"]);
+    // Orders that read the viewer's own rows (taste, links already seen).
+    const VIEWER_SORTS = new Set(["for_you", "latest"]);
 
     async function fetchQueried(intent, asOf, offset) {
       const client = await supabaseReady;
-      if (SESSION_SORTS.has(intent.sort)) await pendingSession;
+      if (VIEWER_SORTS.has(intent.sort)) await pendingSession;
       const entities = intent.entities ?? [];
       const required = intent.required ?? [];
       const page = await Result.chain(client.rpc("feed_query", {
@@ -2500,11 +2489,8 @@
       feed.replacing = replace;
       updateSkeletons();
       const generation = feed.generation;
-      if (!feed.asOf) {
-        const asOf = await seenCutoff();
-        if (generation !== feed.generation) return;
-        feed.asOf = asOf;
-      }
+      await feed.seenWritten;
+      if (generation !== feed.generation) return;
       const { data: page, error } = await fetchPage();
       if (generation !== feed.generation) return;
       feed.loading = false;
@@ -2543,9 +2529,9 @@
       feed.term = null;
       feed.order = null;
       feed.chronological = false;
-      // Ranks are computed as of one moment for every page of this feed, set
-      // when its first page loads (seenCutoff).
-      feed.asOf = null;
+      // Ranks are computed as of this moment for every page of this feed.
+      feed.asOf = new Date().toISOString();
+      feed.seenWritten = flushSeen();
       feed.offset = 0;
       feed.cursor = null;
       feed.seen = new Set();
@@ -3683,61 +3669,84 @@
     const NOTIFICATION_BODY_PREVIEW = 160;
     const NOTIFICATION_SELECT = "id, kind, created_at, read_at, replies(link_id, body, profiles(handle), remote_actors(handle), links(title))";
     const NOTIFICATION_PHRASES = { reply_to_you: "replied to you", reply_on_thread: "also replied" };
-    const NOTIFICATIONS = {
-      table: "notifications", id: "id", readAt: "read_at", createdAt: "created_at",
-      isOperator: "is", exactCount: "exact", markRead: "mark_notifications_read",
-    };
-    const INBOX_DOM = {
-      overlay: "inbox-overlay", list: "inbox-list", status: "inbox-status", count: "inbox-count",
-      menuDot: "menu-unread-dot", bubbleDot: "#inbox-bubble .unread-dot", menuButton: "menu-btn",
-      unread: "unread", what: "inbox-what", body: "inbox-body",
-    };
-    const INBOX_TEXT = {
-      menu: "Menu", menuUnread: "Menu, {} unread", none: "",
-      who: "anonymous", replied: "replied", line: "{} {}{}{}", on: " on {}", when: " · {}", preview: "{}…",
-      loading: "Loading…", failed: "Couldn't load your inbox.",
-      empty: "Nothing yet. Replies to you and on posts you replied to land here.",
-      countFailed: "failed to load unread notifications", markFailed: "failed to mark notifications read",
-    };
+    const NOTIFICATIONS_TABLE = "notifications";
+    const NOTIFICATION_READ_AT = "read_at";
+    const NOTIFICATION_CREATED_AT = "created_at";
+    const NOTIFICATION_ID = "id";
+    const EXACT_COUNT = "exact";
+    const IS_OPERATOR = "is";
+    const MARK_NOTIFICATIONS_READ = "mark_notifications_read";
+    const NOTIFICATION_DEFAULT_PHRASE = "replied";
+    const NOTIFICATION_ANONYMOUS = "anonymous";
+    const NOTIFICATION_UNREAD_CLASS = "unread";
+    const NOTIFICATION_WHAT_CLASS = "inbox-what";
+    const NOTIFICATION_BODY_CLASS = "inbox-body";
+    const INBOX_OVERLAY_ID = "inbox-overlay";
+    const INBOX_LIST_ID = "inbox-list";
+    const INBOX_STATUS_ID = "inbox-status";
+    const INBOX_LOADING = "Loading…";
+    const INBOX_FAILED = "Couldn't load your inbox.";
+    const INBOX_EMPTY = "Nothing yet. Replies to you and on posts you replied to land here.";
+    const MENU_UNREAD_DOT_ID = "menu-unread-dot";
+    const INBOX_UNREAD_DOT = "#inbox-bubble .unread-dot";
+    const INBOX_COUNT_ID = "inbox-count";
+    const MENU_BUTTON_ID = "menu-btn";
+    const ARIA_LABEL = "aria-label";
+    const MENU_LABEL = "Menu";
+    const UNREAD_LOAD_FAILED = "failed to load unread notifications";
+    const MARK_READ_FAILED = "failed to mark notifications read";
+    const ELLIPSIS = "…";
+    const LIST_ITEM_TAG = "li";
+    const BUTTON_TAG = "button";
+    const PARAGRAPH_TAG = "p";
+    const CLICK_EVENT = "click";
+    const VISIBILITY_EVENT = "visibilitychange";
+    const UNREAD_LABEL_SEPARATOR = ", ";
+    const UNREAD_LABEL_SUFFIX = " unread";
+    const NOTIFICATION_WHERE_PREFIX = " on ";
+    const NOTIFICATION_WHEN_PREFIX = " · ";
+    const WORD_SEPARATOR = " ";
 
     function showUnreadCount(count) {
       const unread = count > 0;
-      document.getElementById(INBOX_DOM.menuDot).hidden = !unread;
-      document.querySelector(INBOX_DOM.bubbleDot).hidden = !unread;
-      document.getElementById(INBOX_DOM.count).textContent = unread ? count.toLocaleString() : INBOX_TEXT.none;
-      document.getElementById(INBOX_DOM.menuButton)
-        .setAttribute(ARIA_LABEL, unread ? fill(INBOX_TEXT.menuUnread, count) : INBOX_TEXT.menu);
+      document.getElementById(MENU_UNREAD_DOT_ID).hidden = !unread;
+      document.querySelector(INBOX_UNREAD_DOT).hidden = !unread;
+      document.getElementById(INBOX_COUNT_ID).textContent = unread ? count.toLocaleString() : "";
+      document.getElementById(MENU_BUTTON_ID).setAttribute(
+        ARIA_LABEL,
+        unread ? MENU_LABEL + UNREAD_LABEL_SEPARATOR + count + UNREAD_LABEL_SUFFIX : MENU_LABEL,
+      );
     }
 
     async function loadUnreadCount() {
       if (!(await pendingSession)) return;
-      const { count, error } = await (await supabaseReady).from(NOTIFICATIONS.table)
-        .select(NOTIFICATIONS.id, { count: NOTIFICATIONS.exactCount, head: true }).is(NOTIFICATIONS.readAt, null);
-      if (error) console.error(INBOX_TEXT.countFailed, error);
+      const { count, error } = await (await supabaseReady)
+        .from(NOTIFICATIONS_TABLE).select(NOTIFICATION_ID, { count: EXACT_COUNT, head: true }).is(NOTIFICATION_READ_AT, null);
+      if (error) console.error(UNREAD_LOAD_FAILED, error);
       else showUnreadCount(count ?? 0);
     }
 
     function renderNotification(notification) {
       const reply = notification.replies;
-      const item = document.createElement(TAG.item);
-      item.classList.toggle(INBOX_DOM.unread, !notification.read_at);
-      const button = document.createElement(TAG.button);
-      button.type = TAG.button;
-      const what = document.createElement(TAG.paragraph);
-      what.className = INBOX_DOM.what;
-      const who = reply.profiles?.handle || reply.remote_actors?.handle || INBOX_TEXT.who;
-      const where = reply.links?.title ? fill(INBOX_TEXT.on, reply.links.title) : INBOX_TEXT.none;
+      const item = document.createElement(LIST_ITEM_TAG);
+      item.classList.toggle(NOTIFICATION_UNREAD_CLASS, !notification.read_at);
+      const button = document.createElement(BUTTON_TAG);
+      button.type = BUTTON_TAG;
+      const what = document.createElement(PARAGRAPH_TAG);
+      what.className = NOTIFICATION_WHAT_CLASS;
+      const who = reply.profiles?.handle || reply.remote_actors?.handle || NOTIFICATION_ANONYMOUS;
+      const where = reply.links?.title ? NOTIFICATION_WHERE_PREFIX + reply.links.title : "";
       const when = postedLabel(notification.created_at);
-      what.textContent = fill(INBOX_TEXT.line, who, NOTIFICATION_PHRASES[notification.kind] ?? INBOX_TEXT.replied,
-        where, when ? fill(INBOX_TEXT.when, when) : INBOX_TEXT.none);
-      const body = document.createElement(TAG.paragraph);
-      body.className = INBOX_DOM.body;
+      what.textContent = who + WORD_SEPARATOR + (NOTIFICATION_PHRASES[notification.kind] ?? NOTIFICATION_DEFAULT_PHRASE)
+        + where + (when ? NOTIFICATION_WHEN_PREFIX + when : "");
+      const body = document.createElement(PARAGRAPH_TAG);
+      body.className = NOTIFICATION_BODY_CLASS;
       body.textContent = reply.body.length > NOTIFICATION_BODY_PREVIEW
-        ? fill(INBOX_TEXT.preview, reply.body.slice(0, NOTIFICATION_BODY_PREVIEW))
+        ? reply.body.slice(0, NOTIFICATION_BODY_PREVIEW) + ELLIPSIS
         : reply.body;
       button.append(what, body);
-      button.addEventListener(DOM_EVENT.click, () => {
-        document.getElementById(INBOX_DOM.overlay).close();
+      button.addEventListener(CLICK_EVENT, () => {
+        document.getElementById(INBOX_OVERLAY_ID).close();
         focusLink(reply.link_id);
       });
       item.appendChild(button);
@@ -3747,9 +3756,9 @@
     // Unread ones come first, so every unread notification the count includes
     // is shown on some open, however many there are.
     const notificationPage = (client, unread, limit) => {
-      const query = client.from(NOTIFICATIONS.table).select(NOTIFICATION_SELECT);
-      return (unread ? query.is(NOTIFICATIONS.readAt, null) : query.not(NOTIFICATIONS.readAt, NOTIFICATIONS.isOperator, null))
-        .order(NOTIFICATIONS.createdAt, { ascending: false }).limit(limit);
+      const query = client.from(NOTIFICATIONS_TABLE).select(NOTIFICATION_SELECT);
+      return (unread ? query.is(NOTIFICATION_READ_AT, null) : query.not(NOTIFICATION_READ_AT, IS_OPERATOR, null))
+        .order(NOTIFICATION_CREATED_AT, { ascending: false }).limit(limit);
     };
 
     async function fetchInbox(client) {
@@ -3764,38 +3773,38 @@
 
     async function loadInbox() {
       const load = ++inboxLoad;
-      const overlay = document.getElementById(INBOX_DOM.overlay);
+      const overlay = document.getElementById(INBOX_OVERLAY_ID);
       const current = () => load === inboxLoad && overlay.open;
-      const list = document.getElementById(INBOX_DOM.list);
-      const status = document.getElementById(INBOX_DOM.status);
+      const list = document.getElementById(INBOX_LIST_ID);
+      const status = document.getElementById(INBOX_STATUS_ID);
       list.replaceChildren();
-      status.textContent = INBOX_TEXT.loading;
+      status.textContent = INBOX_LOADING;
       const session = await pendingSession;
       if (!session) {
-        status.textContent = INBOX_TEXT.none;
+        status.textContent = "";
         return;
       }
       const client = await supabaseReady;
       const { data, error } = await fetchInbox(client);
       if (!current()) return;
       if (error) {
-        status.textContent = INBOX_TEXT.failed;
+        status.textContent = INBOX_FAILED;
         return;
       }
       const notifications = (data ?? []).filter((n) => n.replies);
-      status.textContent = notifications.length ? INBOX_TEXT.none : INBOX_TEXT.empty;
+      status.textContent = notifications.length ? "" : INBOX_EMPTY;
       list.replaceChildren(...notifications.map(renderNotification));
       const unreadIds = notifications.filter((n) => !n.read_at).map((n) => n.id);
       if (!unreadIds.length) return;
-      const { error: markError } = await client.rpc(NOTIFICATIONS.markRead, { ids: unreadIds });
-      if (markError) console.error(INBOX_TEXT.markFailed, markError);
+      const { error: markError } = await client.rpc(MARK_NOTIFICATIONS_READ, { ids: unreadIds });
+      if (markError) console.error(MARK_READ_FAILED, markError);
       loadUnreadCount();
     }
 
     function setupInbox() {
       loadUnreadCount();
-      document.addEventListener(DOM_EVENT.visibilityChange, () => {
-        if (document.visibilityState === VISIBILITY.visible) loadUnreadCount();
+      document.addEventListener(VISIBILITY_EVENT, () => {
+        if (document.visibilityState === PAGE_VISIBLE) loadUnreadCount();
       });
     }
 
@@ -4146,10 +4155,10 @@
     // (match_entities). Every sense of the same words is one term (a kind
     // called "event" and an entity called "Event" are both read), and longer
     // names are placed first.
-    const DECOMPOSED = "NFKD";
+    const COMPATIBILITY_DECOMPOSITION = "NFKD";
 
     function typedFilter(text, entities) {
-      const folded = text.toLowerCase().normalize(DECOMPOSED).replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter(Boolean);
+      const folded = text.toLowerCase().normalize(COMPATIBILITY_DECOMPOSITION).replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter(Boolean);
       const sorts = querySorts(folded);
       const words = folded.filter((w, i) => !QUERY_FILLER_WORDS.has(w) && sorts[i] !== "latest");
       if (!words.length) return null;

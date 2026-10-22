@@ -63,7 +63,8 @@ def test_new_reads_as_latest() -> None:
 
 def test_page_records_seen_rows_and_queries_latest_as_the_reader() -> None:
     page = _page()
-    assert 'SEEN_TABLE = "link_impressions"' in page and ".from(SEEN_TABLE).upsert(" in page
+    assert 'const SEEN_TABLE = "link_impressions";' in page
+    assert ".from(SEEN_TABLE).upsert(" in page
     assert "observeSeen(visible);" in page
-    assert 'SESSION_SORTS = new Set(["for_you", "latest"])' in page
-    assert "if (SESSION_SORTS.has(intent.sort)) await pendingSession;" in page
+    assert 'const VIEWER_SORTS = new Set(["for_you", "latest"]);' in page
+    assert "if (VIEWER_SORTS.has(intent.sort)) await pendingSession;" in page

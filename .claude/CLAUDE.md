@@ -908,11 +908,19 @@ they're meant to be fitted against votes.
 
 **Seen links — "new" means new to the reader** (`20261017231500_latest_unseen_first.sql`).
 A link is seen once its row has been on screen (`SEEN_VISIBLE_RATIO` of it for
-`SEEN_DWELL_MS`, an `IntersectionObserver` set up in `hydrateArticles`, so a fling
-past it doesn't count) or it was clicked (`link_visits`). On-screen rows go to
+`SEEN_DWELL_MS` while the page is visible, an `IntersectionObserver` set up in
+`hydrateArticles`, so neither a fling past it nor a tab left in the background
+counts: hiding the page cancels every dwell in progress, and showing it again
+re-observes the rows, which start their dwell over) or it was clicked
+(`link_visits`). On-screen rows go to
 `public.link_impressions (viewer_id, link_id, seen_at)`, one row per reader and
 link (private to the viewer by RLS, insert-only, batched every `SEEN_FLUSH_MS`
-and when the page is hidden, a repeat ignored). `feed_query`'s `latest` order puts
+and when the page is hidden, a repeat ignored), with `seen_at` the moment the
+dwell ended, not the flush (a link's first dwell; a later one doesn't move it), so
+a feed restarted before the flush already counts it. Writes run in order, and
+`resetFeed` starts one right after taking `as_of` (`feed.seenWritten`), which
+`loadMore` waits for before the first page, so no impression from before `as_of`
+lands between a feed's pages and reorders them. `feed_query`'s `latest` order puts
 seen links after unseen ones, each part newest first; they're moved down, not
 left out, so `/o/latest` still lists every post. Only what was seen at or before
 `as_of` counts, so rows seen while scrolling don't reorder the pages still to
@@ -920,7 +928,8 @@ come; back-to-top restarts with a fresh `as_of`. "new" is a sort word
 (`QUERY_SORT_WORDS`), but since it also opens names (New York) `querySorts` only
 reads it as one at the end or before filler or another sort word (`QUERY_NAME_OPENING_SORT_WORDS`:
 "new", "what's new", "new in paris", not "new york"). QA: `tests/qa`, `npm run
-latest` (and `npm run page` for the reading).
+latest` (and `npm run page` for the reading; `npm run seen` runs the built page in
+headless Chromium with a fake supabase-js and checks when rows count as seen).
 
 **A link's own page.** Every link has a page at `seb.now/p/<id>` (the same
 address a federated post links to, served by the catch-all document). Tapping a
@@ -1057,6 +1066,36 @@ QA: `tests/qa`, `npm run sources`. The page labels every entity by its
 `kind_path` (`entityKindLabel`: the kind's label, "youtube channel"), never the
 legacy flat `entities.kind`, which is just "source" for all of them; so
 `FEED_SELECT` and `related_feed` carry `kind_path`.
+
+**Style types — design tokens in the entity graph**
+(`20261020120000_style_types.sql`). A style type is a kind `entity.style.<name>`
+with a `kinds.schema` (JSON Schema) and `owner_id`; a style is an entity of that
+kind (legacy `kind` `'style'`) holding one value per token in `entities.style`.
+A type's schema may only name primitives from `public.style_primitives` (color,
+length, duration, number, font: patterns that admit no `(`, `;`, `{`, `}`, `\` or
+`<`, so a value can't be `url()` or break out of CSS) or a short keyword `enum`;
+`style_meta_schema()` refuses anything else (a pattern of its own, a `$ref`
+outside our `$defs`, nesting), and the type is stored compiled by
+`style_type_schema()`: every token required, nothing else allowed, the
+primitives inlined. Schemas never change after creation. `pg_jsonschema` checks
+every type and every style in the database. Readers add their own types and
+styles under RLS (owner writes, everyone reads; at most `style_types_per_user()`
+and `styles_per_user()`, counted under a per-owner lock), may change a style's
+`style`/`description` only, and styles stay out of `match_entities`,
+`entity_candidates`, `known_names`, identity witnesses and the entity index log.
+`entity.style.layout` (`column_width`, `dock_width`) is the first type, with the
+built-in style "seb.now layout". The **`style-types`** Edge Function (`verify_jwt`
+on) is the HTTP API: `GET /primitives`, `GET|POST /types`, `DELETE /types/:name`,
+`GET|POST /styles`, `PATCH|DELETE /styles/:id`, a route table whose bodies are
+parsed by `_shared/args.ts`, every request run as the caller so RLS decides, and
+refusals mapped to statuses (422 a schema or value the type refuses, 403 not
+yours, 409 a name taken or a type still in use, 404 no such row).
+`seb_now.styles.style_model(name, schema)` reads a stored schema back as a
+pydantic model by interpreting that closed vocabulary (never generating code;
+`UnsupportedSchema` for anything else), built once per schema. QA: CI's `db` job
+runs `tests/db` on the `supabase/postgres` image (each run a fresh database
+shaped like production's, `tests/db/production_shape.sql`), including a check
+that Python and `pg_jsonschema` accept and refuse the same values.
 
 **Places — `place-resolve`.** Links place entities to Wikidata so where a place
 is comes from what it is (`entities.place_path`, see "Reversible graph edits and

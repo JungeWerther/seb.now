@@ -199,6 +199,16 @@ export const QUERY_PARSE = Object.freeze({
   CACHE_SIZE: 500,
 });
 
+// style-types. The lengths mirror the checks in 20261020120000_style_types.sql,
+// so a request that the database would refuse is refused here with a clearer
+// message first.
+export const STYLE_TYPES = Object.freeze({
+  KIND_ROOT: "entity.style",
+  MAX_LABEL_LENGTH: 40,
+  MAX_DESCRIPTION_LENGTH: 500,
+  MAX_STYLE_NAME_LENGTH: 60,
+});
+
 // activitypub.
 export const ACTIVITYPUB = Object.freeze({
   OUTBOX_PAGE_SIZE: 20,

@@ -329,3 +329,50 @@ def test_concurrent_inserts_cannot_pass_the_style_quota(url: str, users: tuple[u
         with psycopg.connect(url, autocommit=True) as cleanup:
             cleanup.execute("delete from entities where kind_path = 'entity.style.quota'")
             cleanup.execute("delete from kinds where path = 'entity.style.quota'")
+
+
+PARITY_TYPE = {
+    "properties": {
+        "bg": {"$ref": "#/$defs/color"},
+        "weight": {"$ref": "#/$defs/number"},
+        "model_config": {"enum": ["compact", "roomy"]},
+    }
+}
+PARITY_STYLE = {"bg": "#101010", "weight": 1.5, "model_config": "compact"}
+
+
+@pytest.mark.parametrize(
+    ("token", "value"),
+    [
+        pytest.param("bg", "#1a2b3c", id="colour"),
+        pytest.param("bg", "#1a2b3c80", id="colour-with-alpha"),
+        pytest.param("bg", "#1A2B3C", id="uppercase-colour"),
+        pytest.param("bg", "red", id="named-colour"),
+        pytest.param("bg", "url(https://x)", id="url"),
+        pytest.param("bg", "#101010;}", id="breakout"),
+        pytest.param("bg", "", id="empty"),
+        pytest.param("bg", 7, id="number-as-colour"),
+        pytest.param("weight", 2, id="integer"),
+        pytest.param("weight", -10000, id="lowest"),
+        pytest.param("weight", 10000.5, id="above-maximum"),
+        pytest.param("weight", "1.5", id="number-as-string"),
+        pytest.param("weight", True, id="boolean"),
+        pytest.param("weight", None, id="null"),
+        pytest.param("model_config", "roomy", id="attribute-named-token"),
+        pytest.param("model_config", "tight", id="attribute-named-token-not-in-enum"),
+    ],
+)
+def test_python_reads_a_type_as_the_database_does(db: "psycopg.Connection", token: str, value: object) -> None:
+    from seb_now.styles import style_model
+
+    schema = db.execute("select style_type_schema(%s)", (json.dumps(PARITY_TYPE),)).fetchone()[0]
+    style = {**PARITY_STYLE, token: value}
+    in_database = db.execute(
+        "select extensions.jsonb_matches_schema(%s::json, %s)", (json.dumps(schema), json.dumps(style))
+    ).fetchone()[0]
+    try:
+        style_model("parity", schema).model_validate(style)
+        in_python = True
+    except ValueError:
+        in_python = False
+    assert in_python == in_database
