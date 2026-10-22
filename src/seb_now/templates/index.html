@@ -41,7 +41,13 @@
       --header-brand-gap: 19px;
       --header-height: calc(2 * var(--header-brand-gap) + var(--brand-ink-height));
       --page-pad: calc(var(--gutter) - (var(--favicon-size) - var(--header-icon-glyph)) / 2);
+      /* Tokens of the layout style type (entity.style.layout); the build
+         overrides them from its built-in style and a reader's chosen style
+         from the Appearance menu. */
+      --column-width: 720px;
+      --dock-width: 480px;
     }
+    /*__STYLE_TOKENS__*/
     @media (prefers-color-scheme: dark) {
       :root {
         --bg: #161616;
@@ -56,7 +62,7 @@
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      max-width: calc(720px + var(--favicon-size) - var(--header-icon-glyph));
+      max-width: calc(var(--column-width) + var(--favicon-size) - var(--header-icon-glyph));
       margin: 0 auto;
       /* The first article starts as far below the header (plus its 1px border)
          as the feed is inset from the left. */
@@ -77,7 +83,7 @@
       will-change: transform;
     }
     .header-inner {
-      max-width: calc(720px + 2 * var(--gutter));
+      max-width: calc(var(--column-width) + 2 * var(--gutter));
       height: 100%;
       margin: 0 auto;
       padding: 0 var(--gutter);
@@ -101,7 +107,7 @@
       pointer-events: none;
       will-change: transform;
     }
-    #dock-inner { position: relative; width: 100%; max-width: 480px; }
+    #dock-inner { position: relative; width: 100%; max-width: var(--dock-width); }
     /* Shown while scrolling back up, right-aligned above the search bar. */
     #dock-actions {
       position: absolute;
@@ -137,7 +143,7 @@
     @media (prefers-reduced-motion: reduce) {
       #dock-actions, #dock-actions.visible { transition: none; }
     }
-    #search-bar { position: relative; width: 100%; max-width: 480px; pointer-events: auto; }
+    #search-bar { position: relative; width: 100%; max-width: var(--dock-width); pointer-events: auto; }
     #search-input, #search-marks, #search-links {
       width: 100%;
       box-sizing: border-box;
@@ -281,7 +287,7 @@
     #reply-composer {
       position: relative;
       width: 100%;
-      max-width: 480px;
+      max-width: var(--dock-width);
       pointer-events: auto;
       box-sizing: border-box;
       padding: 0.55rem 0.55rem 0.55rem 1.1rem;
@@ -531,6 +537,23 @@
     }
     #inbox-list .unread button { border-color: var(--negative); }
     #inbox-list .inbox-what { margin: 0; font-size: 0.8rem; color: gray; }
+    .appearance-lead { font-size: 0.85rem; color: gray; margin: 0; }
+    #appearance-status { font-size: 0.85rem; color: gray; margin: 0; }
+    #appearance-status:empty { display: none; }
+    #appearance-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.8rem; }
+    #appearance-list .style-type-label { margin: 0 0 0.35rem; font-size: 0.8rem; color: gray; }
+    #appearance-list .style-choices { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    #appearance-list button {
+      font: inherit;
+      font-size: 0.9rem;
+      color: inherit;
+      padding: 0.35rem 0.8rem;
+      border: 1px solid rgba(128, 128, 128, 0.3);
+      border-radius: 999px;
+      background: var(--post-bg);
+      cursor: pointer;
+    }
+    #appearance-list button[aria-pressed="true"] { border-color: var(--positive); background: var(--positive-soft); }
     #inbox-list .inbox-body { margin: 0.25rem 0 0; font-size: 0.9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
     #taste-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
     .taste-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.3rem 0.75rem; font-size: 0.85rem; }
@@ -1079,6 +1102,10 @@
             <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
             <span>My Profile</span>
           </button></li>
+          <li><button class="bubble" data-overlay="appearance-overlay" tabindex="-1">
+            <span class="bubble-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg></span>
+            <span>Appearance</span>
+          </button></li>
         </ul>
       </div>
       <h1 class="brand">
@@ -1126,6 +1153,15 @@
     </div>
     <p id="profile-hint">Lowercase letters, numbers and _. It's also your fediverse account, <span id="profile-fediverse-name"></span>: your comments are posted there too, and a comment on a link shares that link.</p>
     <p id="profile-status"></p>
+  </dialog>
+  <dialog id="appearance-overlay" class="overlay" aria-labelledby="appearance-title">
+    <div class="overlay-head">
+      <p class="overlay-title" id="appearance-title">Appearance</p>
+      <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
+    <p class="appearance-lead">Styles change the page's design tokens, such as its column width. Your choice is kept in this browser.</p>
+    <p id="appearance-status"></p>
+    <ol id="appearance-list"></ol>
   </dialog>
   <p id="search-empty">No matching articles.</p>
   <section id="focus" hidden>
@@ -1208,10 +1244,12 @@
     // Compiled from frontend/src/*.ts (tsc, see frontend/README.md); site.py
     // inlines it here. Result, Mapping and match (prelude.ts); Filter,
     // filterKey, nextFilterCursor, memoize...; then lexicon, claimNames,
-    // senseLabel (what typed words name, senses.ts).
+    // senseLabel (what typed words name, senses.ts); styleDeclarations,
+    // styleProperties (a style's tokens as custom properties, styles.ts).
     __PRELUDE_JS__
     __FILTER_JS__
     __SENSES_JS__
+    __STYLES_JS__
 
     // Loaded without blocking the rest of this script, so swiping and the
     // other UI work while supabase-js is still downloading.
@@ -3808,7 +3846,170 @@
       });
     }
 
-    const OVERLAY_LOADERS = { "taste-overlay": loadTaste, "profile-overlay": loadProfile, "inbox-overlay": loadInbox };
+    // Appearance: a reader picks a style per style type; its tokens override
+    // the page's own values (styleDeclarations checks each value against the
+    // type's schema first), and Default drops the pick. Picks live in
+    // `styleChoices`, copied to localStorage when it can be written, so they
+    // apply before supabase-js has loaded; the database copy then replaces
+    // them, or drops one deleted since, unless a pick has changed meanwhile.
+    const STYLE_CHOICES_KEY = "seb-now-styles";
+    const STYLE_KIND = "style";
+    const ENTITIES_TABLE = "entities";
+    const KIND_COLUMN = "kind";
+    const STYLE_SELECT = "id, name, kind_path, style, kinds(path, label, schema)";
+    const STYLE_KIND_PATH = "kind_path";
+    const STYLE_NAME = "name";
+    const STYLE_ID = "id";
+    const STYLE_DEFAULT_LABEL = "Default";
+    const APPEARANCE_OVERLAY_ID = "appearance-overlay";
+    const APPEARANCE_LIST_ID = "appearance-list";
+    const APPEARANCE_STATUS_ID = "appearance-status";
+    const APPEARANCE_LOADING = "Loading…";
+    const APPEARANCE_FAILED = "Couldn't load the styles.";
+    const APPEARANCE_EMPTY = "No styles yet.";
+    const STYLE_TYPE_LABEL_CLASS = "style-type-label";
+    const STYLE_CHOICES_CLASS = "style-choices";
+    const DIV_TAG = "div";
+    const BUTTON_TYPE = "button";
+    const ARIA_PRESSED = "aria-pressed";
+    const STYLE_LOAD_FAILED = "failed to load styles";
+    const STYLE_CHOICES_UNREADABLE = "ignoring a stored style choice";
+
+    // { [kind_path]: { id, style, schema } }, or {} when there's none or it can't be read.
+    function storedStyleChoices() {
+      try {
+        const choices = JSON.parse(localStorage.getItem(STYLE_CHOICES_KEY));
+        return choices && typeof choices === typeof {} ? choices : {};
+      } catch {
+        return {};
+      }
+    }
+
+    let styleChoices = storedStyleChoices();
+    // Bumped by every pick, so a refresh that started before one is dropped.
+    let styleChoicesRevision = 0;
+
+    function setStyleChoices(choices) {
+      styleChoices = choices;
+      try {
+        localStorage.setItem(STYLE_CHOICES_KEY, JSON.stringify(choices));
+      } catch {
+        // Storage off (private window): the picks last for this page only.
+      }
+    }
+
+    function clearStyle(schema) {
+      const root = document.documentElement.style;
+      styleProperties(schema).forEach((property) => root.removeProperty(property));
+    }
+
+    // Sets a style's tokens, clearing the type's others first.
+    function applyStyle(schema, values) {
+      clearStyle(schema);
+      const root = document.documentElement.style;
+      styleDeclarations(schema, values).forEach(([property, value]) => root.setProperty(property, value));
+    }
+
+    // A stored choice's schema may be anything; one that can't be read sets nothing.
+    function withStoredChoice(choice, use) {
+      try {
+        use(choice);
+      } catch (error) {
+        console.error(STYLE_CHOICES_UNREADABLE, error);
+      }
+    }
+
+    const styleChoice = (row) => ({ id: row.id, style: row.style, schema: row.kinds.schema });
+
+    function applyStoredStyles() {
+      Object.values(styleChoices).forEach((choice) => withStoredChoice(choice, ({ schema, style }) => applyStyle(schema, style)));
+    }
+
+    // Picks `row` for its type, or the type's default when `row` is null.
+    function chooseStyle(type, row) {
+      styleChoicesRevision++;
+      const { [type.path]: previous, ...others } = styleChoices;
+      if (previous) withStoredChoice(previous, ({ schema }) => clearStyle(schema));
+      clearStyle(type.schema);
+      if (row) applyStyle(type.schema, row.style);
+      setStyleChoices(row ? { ...others, [type.path]: styleChoice(row) } : others);
+    }
+
+    // The picks brought up to date from the database: an edited style is
+    // reapplied, a deleted one dropped.
+    async function refreshStoredStyles() {
+      const revision = styleChoicesRevision;
+      const choices = styleChoices;
+      const ids = Object.values(choices).map((choice) => choice?.id).filter(Boolean);
+      if (!ids.length) return;
+      const { data, error } = await (await supabaseReady)
+        .from(ENTITIES_TABLE).select(STYLE_SELECT).in(STYLE_ID, ids);
+      if (error) {
+        console.error(STYLE_LOAD_FAILED, error);
+        return;
+      }
+      if (revision !== styleChoicesRevision) return;
+      const current = new Map(data.filter((row) => row.kinds?.schema).map((row) => [row.kind_path, row]));
+      Object.values(choices).forEach((choice) => withStoredChoice(choice, ({ schema }) => clearStyle(schema)));
+      current.forEach((row) => applyStyle(row.kinds.schema, row.style));
+      setStyleChoices(Object.fromEntries([...current].map(([path, row]) => [path, styleChoice(row)])));
+    }
+
+    // A type's choices: Default (null), then each of its styles.
+    function renderStyleType(rows) {
+      const [{ kinds }] = rows;
+      const options = [null, ...rows];
+      const item = document.createElement(LIST_ITEM_TAG);
+      const label = document.createElement(PARAGRAPH_TAG);
+      label.className = STYLE_TYPE_LABEL_CLASS;
+      label.textContent = kinds.label;
+      const buttons = document.createElement(DIV_TAG);
+      buttons.className = STYLE_CHOICES_CLASS;
+      const setPressed = (chosenId) =>
+        buttons.childNodes.forEach((button, i) => button.setAttribute(ARIA_PRESSED, String((options[i]?.id ?? null) === chosenId)));
+      buttons.replaceChildren(...options.map((row) => {
+        const button = document.createElement(BUTTON_TAG);
+        button.type = BUTTON_TYPE;
+        button.textContent = row?.name ?? STYLE_DEFAULT_LABEL;
+        button.addEventListener(CLICK_EVENT, () => {
+          chooseStyle(kinds, row);
+          setPressed(row?.id ?? null);
+        });
+        return button;
+      }));
+      setPressed(styleChoices[kinds.path]?.id ?? null);
+      item.append(label, buttons);
+      return item;
+    }
+
+    let appearanceLoad = 0;
+    async function loadAppearance() {
+      const load = ++appearanceLoad;
+      const overlay = document.getElementById(APPEARANCE_OVERLAY_ID);
+      const list = document.getElementById(APPEARANCE_LIST_ID);
+      const status = document.getElementById(APPEARANCE_STATUS_ID);
+      list.replaceChildren();
+      status.textContent = APPEARANCE_LOADING;
+      const { data, error } = await (await supabaseReady)
+        .from(ENTITIES_TABLE).select(STYLE_SELECT).eq(KIND_COLUMN, STYLE_KIND)
+        .order(STYLE_KIND_PATH).order(STYLE_NAME);
+      if (load !== appearanceLoad || !overlay.open) return;
+      if (error) {
+        status.textContent = APPEARANCE_FAILED;
+        return;
+      }
+      const byType = data.filter((row) => row.kinds?.schema).reduce(
+        (types, row) => types.set(row.kind_path, [...(types.get(row.kind_path) ?? []), row]), new Map());
+      status.textContent = byType.size ? "" : APPEARANCE_EMPTY;
+      list.replaceChildren(...[...byType.values()].map(renderStyleType));
+    }
+
+    const OVERLAY_LOADERS = {
+      "taste-overlay": loadTaste,
+      "profile-overlay": loadProfile,
+      "inbox-overlay": loadInbox,
+      [APPEARANCE_OVERLAY_ID]: loadAppearance,
+    };
 
     // Must match the replies_body_length check in the replies migration.
     const REPLY_MAX_LENGTH = 500;
@@ -5356,6 +5557,8 @@
       replyInput.addEventListener("blur", () => setTimeout(reposition, 350));
     }
 
+    applyStoredStyles();
+    refreshStoredStyles();
     setupFeed(savedSearchQuery().trim());
     setupVisitReturns();
     setupMenu();
