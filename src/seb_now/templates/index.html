@@ -3907,6 +3907,9 @@
     // Types a reader picks for their own page; 'author' types (cards) are each
     // author's own, set in the editor below the list.
     const PAGE_STYLE_SCOPE = "page";
+    // Filtered in the query, so author styles don't take up the page's result window.
+    const PAGE_STYLE_SELECT = "id, name, kind_path, style, kinds!inner(path, label, schema, style_scope)";
+    const STYLE_SCOPE_FILTER = "kinds.style_scope";
     const STYLE_KIND_PATH = "kind_path";
     const STYLE_NAME = "name";
     const STYLE_ID = "id";
@@ -4042,7 +4045,7 @@
       status.textContent = APPEARANCE_LOADING;
       loadCardStyleEditor();
       const { data, error } = await (await supabaseReady)
-        .from(ENTITIES_TABLE).select(STYLE_SELECT).eq(KIND_COLUMN, STYLE_KIND)
+        .from(ENTITIES_TABLE).select(PAGE_STYLE_SELECT).eq(KIND_COLUMN, STYLE_KIND).eq(STYLE_SCOPE_FILTER, PAGE_STYLE_SCOPE)
         .order(STYLE_KIND_PATH).order(STYLE_NAME);
       if (load !== appearanceLoad || !overlay.open) return;
       if (error) {
@@ -4075,6 +4078,8 @@
     const SCHEMA_COLUMN = "schema";
     const CONTRAST_PAIR_SELECT = "foreground, background, min_ratio";
     const PROFILE_CARD_STYLE_SELECT = "card_style:entities(id, style)";
+    // A fresh id per style: names are unique per type across every owner, so a
+    // predictable name could be taken by someone else first.
     const CARD_STYLE_NAME_PREFIX = "card ";
     const STYLED_CLASS = "styled";
     const CONTRAST_FAIL_CLASS = "fail";
@@ -4094,7 +4099,9 @@
     const AUTHOR_SELECTOR_ATTRIBUTE = "data-author-id";
     const REPLY_ITEMS = "li.reply";
     // The page's own colours, read from its tokens, as a new card style's start.
-    const CARD_STYLE_STARTS = { card_bg: "--post-bg", card_fg: "--fg", card_accent: "--positive" };
+    // The name starts in the text colour: the page's green is under 4.5:1 on a
+    // light card.
+    const CARD_STYLE_STARTS = { card_bg: "--post-bg", card_fg: "--fg", card_accent: "--fg" };
 
     let cardEditor = { schema: null, pairs: [], styleId: null, userId: null };
 
@@ -4174,15 +4181,21 @@
       const saved = cardEditor.styleId
         ? await client.from(ENTITIES_TABLE).update({ style: values }).eq(STYLE_ID, cardEditor.styleId).select(STYLE_ID).single()
         : await client.from(ENTITIES_TABLE)
-          .insert({ name: CARD_STYLE_NAME_PREFIX + cardEditor.userId, kind: STYLE_KIND, kind_path: CARD_STYLE_KIND, style: values })
+          .insert({ name: CARD_STYLE_NAME_PREFIX + crypto.randomUUID(), kind: STYLE_KIND, kind_path: CARD_STYLE_KIND, style: values })
           .select(STYLE_ID).single();
-      const linked = saved.error ? saved : await client.from(PROFILES_TABLE)
+      if (saved.error) {
+        status.textContent = CARD_STYLE_FAILED + saved.error.message;
+        return;
+      }
+      // Kept before linking, so a retry after a failed link updates this style
+      // rather than adding another.
+      cardEditor.styleId = saved.data.id;
+      const linked = await client.from(PROFILES_TABLE)
         .update({ card_style_id: saved.data.id }).eq(STYLE_ID, cardEditor.userId);
       if (linked.error) {
         status.textContent = CARD_STYLE_FAILED + linked.error.message;
         return;
       }
-      cardEditor.styleId = saved.data.id;
       status.textContent = CARD_STYLE_SAVED;
       restyleOwnReplies(values);
       renderCardStyleEditor();

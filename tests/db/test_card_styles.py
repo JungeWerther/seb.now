@@ -56,6 +56,9 @@ def test_an_author_picks_a_readable_card_style(db: "psycopg.Connection", users: 
     [
         pytest.param({"card_fg": "#3f3a6b"}, "card_fg (#3f3a6b) on card_bg (#1e1b4b)", id="text-too-close"),
         pytest.param({"card_accent": "#4c4590"}, "card_accent (#4c4590) on card_bg", id="accent-too-close"),
+        pytest.param(
+            {"card_accent": "#7a72c0"}, "card_accent (#7a72c0) on card_bg", id="name-is-text-so-3-is-not-enough"
+        ),
         pytest.param({"card_bg": "#1e1b4b00"}, "on card_bg (#1e1b4b00)", id="translucent-background"),
         pytest.param({"card_fg": "#f5f5f480"}, "card_fg (#f5f5f480)", id="translucent-text"),
     ],

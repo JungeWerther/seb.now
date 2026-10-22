@@ -23,10 +23,15 @@ PRODUCTION_SHAPE = Path(__file__).with_name("production_shape.sql")
 SERVER_URL = os.environ.get("TEST_DATABASE_URL", "")
 
 
+HERE = Path(__file__).parent
+
+
+# The hook sees the whole session's items, so it only marks the ones in this directory.
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     if not SERVER_URL:
         for item in items:
-            item.add_marker(pytest.mark.skip(reason="TEST_DATABASE_URL not set"))
+            if item.path.is_relative_to(HERE):
+                item.add_marker(pytest.mark.skip(reason="TEST_DATABASE_URL not set"))
 
 
 @pytest.fixture(scope="module")

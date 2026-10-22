@@ -37,7 +37,7 @@ const { browser, origin, close } = await servePage({
   kinds: [card],
   style_contrast_pairs: [
     { kind_path: "entity.style.card", foreground: "card_fg", background: "card_bg", min_ratio: 4.5 },
-    { kind_path: "entity.style.card", foreground: "card_accent", background: "card_bg", min_ratio: 3 },
+    { kind_path: "entity.style.card", foreground: "card_accent", background: "card_bg", min_ratio: 4.5 },
   ],
   profiles: [{ id: USER_ID, card_style: null }],
   entities: [

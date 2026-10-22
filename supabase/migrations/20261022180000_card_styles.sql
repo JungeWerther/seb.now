@@ -9,8 +9,8 @@ alter table public.kinds
   add column style_scope text not null default 'page' check (style_scope in ('page', 'author'));
 
 -- Colour tokens of a style type that must keep a WCAG 2 contrast ratio between
--- them, text on its background (4.5) or a UI accent on it (3). Both must be
--- opaque, since a translucent colour's contrast depends on what's behind it.
+-- them: 4.5 for text on its background (AA), 3 for a non-text UI accent. Both
+-- must be opaque, since a translucent colour's contrast depends on what's behind it.
 create table public.style_contrast_pairs (
   kind_path ltree not null references public.kinds (path) on delete cascade,
   foreground text not null,
@@ -85,7 +85,7 @@ create trigger entities_check_style_contrast before insert or update of style, k
   for each row when (new.style is not null) execute function public.entities_check_style_contrast();
 
 -- The first author type: a card's background, its text, and an accent for the
--- author's name. No built-in style: an author without one keeps the page's look,
+-- author's name, which is text too, so both pairs need 4.5. No built-in style: an author without one keeps the page's look,
 -- which follows the reader's light or dark scheme.
 insert into public.kinds (path, label, description, style_scope, schema) values (
   'entity.style.card', 'Card', 'How your replies look to everyone', 'author',
@@ -97,7 +97,7 @@ insert into public.kinds (path, label, description, style_scope, schema) values 
 );
 insert into public.style_contrast_pairs (kind_path, foreground, background, min_ratio) values
   ('entity.style.card', 'card_fg', 'card_bg', 4.5),
-  ('entity.style.card', 'card_accent', 'card_bg', 3);
+  ('entity.style.card', 'card_accent', 'card_bg', 4.5);
 
 -- A reader's chosen card style: one of their own, of the card type.
 alter table public.profiles

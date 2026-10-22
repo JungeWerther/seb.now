@@ -1141,15 +1141,19 @@ checked tokens on that reply's `li` only (`.reply.styled`), since custom
 properties only reach an element's own subtree. **Contrast is checked in the
 database**: `public.style_contrast_pairs (kind_path, foreground, background,
 min_ratio)` (public-read, no client writes) names the colour tokens of a type
-that must stay readable together, `card_fg` on `card_bg` at 4.5 and `card_accent`
-on it at 3 (WCAG 2 AA for text and for UI), and `entities_check_style_contrast`
+that must stay readable together, `card_fg` and `card_accent` (the author's name,
+text too) on `card_bg`, both at 4.5 (WCAG 2 AA for text), and `entities_check_style_contrast`
 refuses a style whose paired colours aren't opaque or fall below the ratio
 (`public.contrast_ratio(a, b)` over `relative_luminance`), naming the pair. The
 Appearance overlay's **Your replies** editor (`#card-style-editor`) starts from
-the page's own colours, shows each pair's ratio as you pick (`contrastResults` in
+the page's own colours (the name in the text colour), shows each pair's ratio as you pick (`contrastResults` in
 `styles.ts`, the same formula), saves only a style that passes, and restyles your
-replies already on the page. QA: `tests/db/test_card_styles.py` (CI's `db`
-job), `tests/qa`, `npm run cards`.
+replies already on the page. A new style is named `card <random uuid>`, since
+names are unique per type across every owner. Appearance asks only for `page`
+styles (`kinds!inner` filtered on `style_scope`), so authors' cards never use
+up its result window. QA: `tests/db/test_card_styles.py` (CI's `db` job; the
+directory's `conftest.py` skips only its own tests when `TEST_DATABASE_URL` is
+unset), `tests/qa`, `npm run cards`.
 
 **Places — `place-resolve`.** Links place entities to Wikidata so where a place
 is comes from what it is (`entities.place_path`, see "Reversible graph edits and
