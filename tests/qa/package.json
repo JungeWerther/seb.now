@@ -12,7 +12,9 @@
     "notifications": "node notifications_db.mjs ../../supabase/migrations/20261017234700_notifications.sql",
     "credits": "node query_credits_db.mjs ../../supabase/migrations/20261014130000_query_credits.sql ../../supabase/migrations/20261018000200_refund_query_credit.sql",
     "index": "node index_changes_db.mjs ../../src/seb_now/templates/index.html ../../supabase/migrations/20261016210000_entity_index.sql ../../supabase/migrations/20261016230000_index_state_where.sql ../../supabase/migrations/20261018000300_index_changes.sql",
-    "seen": "node seen_page.mjs"
+    "seen": "node seen_page.mjs",
+    "appearance": "node appearance_page.mjs",
+    "cards": "node card_style_page.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.10"

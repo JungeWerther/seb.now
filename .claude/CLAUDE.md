@@ -936,7 +936,8 @@ come; back-to-top restarts with a fresh `as_of`. "new" is a sort word
 reads it as one at the end or before filler or another sort word (`QUERY_NAME_OPENING_SORT_WORDS`:
 "new", "what's new", "new in paris", not "new york"). QA: `tests/qa`, `npm run
 latest` (and `npm run page` for the reading; `npm run seen` runs the built page in
-headless Chromium with a fake supabase-js and checks when rows count as seen).
+headless Chromium with a fake supabase-js, `tests/qa/page_harness.mjs`, and checks
+when rows count as seen).
 
 **A link's own page.** Every link has a page at `seb.now/p/<id>` (the same
 address a federated post links to, served by the catch-all document). Tapping a
@@ -1099,10 +1100,60 @@ refusals mapped to statuses (422 a schema or value the type refuses, 403 not
 yours, 409 a name taken or a type still in use, 404 no such row).
 `seb_now.styles.style_model(name, schema)` reads a stored schema back as a
 pydantic model by interpreting that closed vocabulary (never generating code;
-`UnsupportedSchema` for anything else), built once per schema. QA: CI's `db` job
+`UnsupportedSchema` for anything else), built once per schema. **The page reads its
+tokens as CSS custom properties**: a token `column_width` is `--column-width`
+(`css_property`), and the template's `:root` declares a default for every
+token it uses (`--column-width`, `--dock-width`; no width is written out
+anywhere else, `tests/test_site_styles.py`). At build time `site.py` loads the
+built-in styles (no owner; the first by name of each type), validates each
+with `style_model` and writes their declarations (`css_declarations`) as a
+second `:root` rule at `/*__STYLE_TOKENS__*/`, after the defaults; a style that
+doesn't validate writes nothing. In the browser, **Appearance**
+(`#appearance-overlay`, a header-menu bubble) lists every style by type, and
+picking one sets its tokens on `document.documentElement.style`;
+`frontend/src/styles.ts` (`styleDeclarations`, inlined at `__STYLES_JS__`)
+checks each value against the type's schema again first (patterns, bounds,
+enums, and no `(`, `;`, braces, `\` or angle brackets), so a style sets only
+the tokens its type names. Each type's list opens with **Default**, which drops
+the pick so the page's own values apply (the built-in style is a pick like any
+other). Picks live in `styleChoices`, copied per type to localStorage
+(`seb-now-styles`) when it can be written, so they apply before supabase-js has
+loaded; `refreshStoredStyles` then replaces them with the database's copy, or
+drops a style deleted since, unless a pick was made meanwhile
+(`styleChoicesRevision`). Picking always clears the type's own properties
+first, whatever storage holds. QA: `tests/qa`, `npm run appearance`. QA: CI's `db` job
 runs `tests/db` on the `supabase/postgres` image (each run a fresh database
 shaped like production's, `tests/db/production_shape.sql`), including a check
 that Python and `pg_jsonschema` accept and refuse the same values.
+
+**Card styles — an author's look on their own replies**
+(`20261022180000_card_styles.sql`). A style type has a `kinds.style_scope`: `page`
+types are picked by each reader for their own page (Appearance lists only these;
+readers' own types are always `page`, as the column isn't granted), `author` types
+are an author's look on what they write. `entity.style.card` (`card_bg`,
+`card_fg`, `card_accent`) is the first, with no built-in style, so an author
+without one keeps the page's look and its light/dark scheme. A reader points
+`profiles.card_style_id` at one of their own card styles (the
+`profiles_check_card_style` trigger refuses anyone else's or another type's;
+deleting the style clears it), and every reply of theirs shows in it: `REPLY_SELECT`
+embeds the author's `card_style` with its schema, and `styleReply` sets the
+checked tokens on that reply's `li` only (`.reply.styled`), since custom
+properties only reach an element's own subtree. **Contrast is checked in the
+database**: `public.style_contrast_pairs (kind_path, foreground, background,
+min_ratio)` (public-read, no client writes) names the colour tokens of a type
+that must stay readable together, `card_fg` and `card_accent` (the author's name,
+text too) on `card_bg`, both at 4.5 (WCAG 2 AA for text), and `entities_check_style_contrast`
+refuses a style whose paired colours aren't opaque or fall below the ratio
+(`public.contrast_ratio(a, b)` over `relative_luminance`), naming the pair. The
+Appearance overlay's **Your replies** editor (`#card-style-editor`) starts from
+the page's own colours (the name in the text colour), shows each pair's ratio as you pick (`contrastResults` in
+`styles.ts`, the same formula), saves only a style that passes, and restyles your
+replies already on the page. A new style is named `card <random uuid>`, since
+names are unique per type across every owner. Appearance asks only for `page`
+styles (`kinds!inner` filtered on `style_scope`), so authors' cards never use
+up its result window. QA: `tests/db/test_card_styles.py` (CI's `db` job; the
+directory's `conftest.py` skips only its own tests when `TEST_DATABASE_URL` is
+unset), `tests/qa`, `npm run cards`.
 
 **Places — `place-resolve`.** Links place entities to Wikidata so where a place
 is comes from what it is (`entities.place_path`, see "Reversible graph edits and

@@ -39,3 +39,10 @@ fields where a `Cases` table and `match` would do.
   and lets the word still being typed finish a name only when exactly one
   name could take it; `senseLabel` labels several senses by what they share
   in the kind tree (`commonKindPath`).
+- `src/styles.ts`: a style's tokens as CSS custom properties
+  (`styleDeclarations`), each value checked against its style type's stored
+  schema (`acceptsByTokenField`, `acceptsByPrimitiveType`) before the page
+  sets it; `styleProperties` lists a type's properties, to clear them.
+  `contrastResults` checks a style's colour pairs (`style_contrast_pairs`)
+  with WCAG 2's `contrastRatio`, the same formula as the database's
+  `contrast_ratio`, so the card-style editor can say why before saving.

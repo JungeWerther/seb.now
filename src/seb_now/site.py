@@ -41,17 +41,19 @@ from seb_now.constants import (
     REPLY_ICON_SIZE,
     SCORE_ICON_SIZE,
     SOURCE_FOUND_IN,
+    STYLE_ENTITY_KIND,
     SUPABASE_JS_INTEGRITY,
     SUPABASE_JS_URL,
     SWIPE_ICON_SIZE,
     TEMPLATE_ARTICLE_BLANK,
     SourceType,
 )
-from seb_now.db_types import Table
+from seb_now.db_types import Json, Table
 from seb_now.posts import load_posts, write_posts
 from seb_now.rows import select, validated
 from seb_now.sanitize import page_csp, safe_http_url, script_json
 from seb_now.source_type import classify_source, display_domain, favicon_host
+from seb_now.styles import css_declarations, style_model
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 TEMPLATE_PATH = TEMPLATES_DIR / "index.html"
@@ -61,6 +63,8 @@ PRELUDE_JS_PATH = TEMPLATES_DIR / "prelude.js"
 FILTER_JS_PATH = TEMPLATES_DIR / "filter.js"
 # Compiled from frontend/src/senses.ts the same way.
 SENSES_JS_PATH = TEMPLATES_DIR / "senses.js"
+# Compiled from frontend/src/styles.ts the same way.
+STYLES_JS_PATH = TEMPLATES_DIR / "styles.js"
 OUTPUT_PATH = Path(__file__).parent.parent.parent / "dist" / "index.html"
 
 ARTICLES_PLACEHOLDER = "<!--ARTICLES-->"
@@ -76,9 +80,11 @@ FIND_ENTITY_SOURCES_PROMPT_PLACEHOLDER = "__FIND_ENTITY_SOURCES_PROMPT__"
 SUPABASE_JS_URL_PLACEHOLDER = "__SUPABASE_JS_URL__"
 SUPABASE_JS_INTEGRITY_PLACEHOLDER = "__SUPABASE_JS_INTEGRITY__"
 CSP_PLACEHOLDER = "__CONTENT_SECURITY_POLICY__"
+STYLE_TOKENS_PLACEHOLDER = "/*__STYLE_TOKENS__*/"
 PRELUDE_JS_PLACEHOLDER = "__PRELUDE_JS__"
 FILTER_JS_PLACEHOLDER = "__FILTER_JS__"
 SENSES_JS_PLACEHOLDER = "__SENSES_JS__"
+STYLES_JS_PLACEHOLDER = "__STYLES_JS__"
 
 # Lucide icon bodies (24x24 viewBox), drawn by _lucide at each use's size.
 TRASH_ICON = (
@@ -133,6 +139,18 @@ class FeedRow(TypedDict):
 class DomainSourceTypeRow(TypedDict):
     domain: str
     source_type: str
+
+
+class StyleTypeRow(TypedDict):
+    path: str
+    schema: Json | None
+
+
+class StyleRow(TypedDict):
+    name: str
+    kind_path: str | None
+    style: Json | None
+    kinds: StyleTypeRow | None
 
 
 class Chip(NamedTuple):
@@ -220,6 +238,40 @@ def load_domain_source_types() -> dict[str, SourceType]:
         get_unauthenticated_client().table(Table.DOMAIN_SOURCE_TYPES).select(select(DomainSourceTypeRow)).execute()
     )
     return {row["domain"]: SourceType(row["source_type"]) for row in validated(DomainSourceTypeRow, response.data)}
+
+
+def load_builtin_styles() -> list[StyleRow]:
+    """The styles that come with the site (no owner), first by name within each type."""
+    response = (
+        get_unauthenticated_client()
+        .table(Table.ENTITIES)
+        .select(select(StyleRow))
+        .eq("kind", STYLE_ENTITY_KIND)
+        .is_("owner_id", "null")
+        .order("kind_path")
+        .order("name")
+        .execute()
+    )
+    return validated(StyleRow, response.data)
+
+
+def _style_declarations(row: StyleRow) -> str | None:
+    """A style's tokens as declarations, or None when it doesn't read as its type."""
+    match row:
+        case {"style": dict(style), "kinds": {"path": str(path), "schema": dict(schema)}}:
+            try:
+                return css_declarations(style_model(path, schema).model_validate(style))
+            except ValueError:
+                return None
+    return None
+
+
+def style_tokens_css(styles: Iterable[StyleRow]) -> str:
+    """The built-in styles' tokens as one `:root` rule, the first style of each type,
+    overriding the template's own defaults. Empty when none reads."""
+    first_by_type = {row["kind_path"]: row for row in reversed(list(styles))}
+    declarations = [found for row in first_by_type.values() if (found := _style_declarations(row))]
+    return f":root {{ {' '.join(declarations)} }}" if declarations else ""
 
 
 def posted_label(created_at: str, today: date) -> str:
@@ -374,7 +426,9 @@ def compiled_script(path: Path) -> str:
     return code
 
 
-def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon_key: str = "") -> str:
+def render(
+    articles: Sequence[Article], *, supabase_url: str = "", supabase_anon_key: str = "", style_css: str = ""
+) -> str:
     items = "".join(f"\n{_render_article(article)}" for article in articles)
     list_html = (
         f'    <ul class="articles">{items}\n    </ul>\n'
@@ -384,9 +438,11 @@ def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon
     )
     substitutions = {
         ARTICLES_PLACEHOLDER: list_html,
+        STYLE_TOKENS_PLACEHOLDER: style_css,
         PRELUDE_JS_PLACEHOLDER: compiled_script(PRELUDE_JS_PATH),
         FILTER_JS_PLACEHOLDER: compiled_script(FILTER_JS_PATH),
         SENSES_JS_PLACEHOLDER: compiled_script(SENSES_JS_PATH),
+        STYLES_JS_PLACEHOLDER: compiled_script(STYLES_JS_PATH),
         SUPABASE_URL_PLACEHOLDER: script_json(supabase_url),
         SUPABASE_ANON_KEY_PLACEHOLDER: script_json(supabase_anon_key),
         FEED_PAGE_SIZE_PLACEHOLDER: script_json(FEED_PAGE_SIZE),
@@ -408,7 +464,12 @@ def main() -> None:
     supabase_url = os.environ["SUPABASE_URL"]
     supabase_anon_key = os.environ["SUPABASE_ANON_KEY"]
     articles = build_articles(load_feed(), load_domain_source_types())
-    html = render(articles, supabase_url=supabase_url, supabase_anon_key=supabase_anon_key)
+    html = render(
+        articles,
+        supabase_url=supabase_url,
+        supabase_anon_key=supabase_anon_key,
+        style_css=style_tokens_css(load_builtin_styles()),
+    )
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(html)
     print(f"wrote {OUTPUT_PATH}")

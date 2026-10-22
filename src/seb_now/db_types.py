@@ -51,6 +51,7 @@ class Table(StrEnum):
     REMOTE_ACTORS = "remote_actors"
     REPLIES = "replies"
     SOURCES = "sources"
+    STYLE_CONTRAST_PAIRS = "style_contrast_pairs"
     STYLE_PRIMITIVES = "style_primitives"
     TOPIC_OVERRIDES = "topic_overrides"
     TOPIC_PROPOSAL_ENDORSEMENTS = "topic_proposal_endorsements"
@@ -276,6 +277,7 @@ class KindsRow(TypedDict):
     parent: str | None
     schema: Json | None
     owner_id: str | None
+    style_scope: str
 
 
 class LinkContentRow(TypedDict):
@@ -399,6 +401,7 @@ class ProfilesRow(TypedDict):
     handle: str | None
     display_name: str | None
     created_at: str
+    card_style_id: str | None
 
 
 class QueryCreditsRow(TypedDict):
@@ -442,6 +445,13 @@ class SourcesRow(TypedDict):
     created_at: str
     entity_id: str | None
     handle: str | None
+
+
+class StyleContrastPairsRow(TypedDict):
+    kind_path: str
+    foreground: str
+    background: str
+    min_ratio: float
 
 
 class StylePrimitivesRow(TypedDict):
