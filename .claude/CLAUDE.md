@@ -673,7 +673,14 @@ over and there are at least two filters, `applyFilter` swaps the search results
 for `public.filter_links(filters jsonb, max_results, page_offset)`
 (`20261016180000_filter_links.sql`, security invoker; `filters` is an array of
 `{"kind": "<ltree path>"}` / `{"entities": [ids]}`, a link must pass all of them,
-newest first, with the entities each filter matched as `entity_ids`). **Senses.** A typed term
+newest first, with the entities each filter matched as `entity_ids`). A filter
+query with a sort word ("events in paris, new") lists the links the reader has
+seen last, as the latest order does (see "Seen links";
+`20261020140000_filter_links_seen_last.sql`): `typedFilter` starts its fold from
+`Filter.seenLast()`, which has no local form (what a reader saw isn't in the
+index), so it asks `filter_links(…, seen_last, as_of, before_seen)`, which pages
+by `(seen, created_at, id)`; `filterKey` and `filterPageKey` carry the order and,
+for seen-last, the feed's `as_of`. QA: `tests/qa`, `npm run seen-filter`. **Senses.** A typed term
 stands for every sense it has at once (a superposition, in the MeTTa sense):
 `typedFilter` groups every kind, indexical and entity named by the same words
 into one filter, sent as `{"any": [sense, …]}` (a lone sense is sent bare), and

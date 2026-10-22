@@ -2365,24 +2365,29 @@
     // every one of them, each with what its filters logged, the entities they
     // matched there, highlighted. From the page's own index when the filter
     // can be read there (`offset` into its answer), else from filter_links.
-    async function fetchFiltered(filter, offset, cursor) {
+    async function fetchFiltered(filter, offset, cursor, asOf) {
       const client = await supabaseReady;
       if (entityIndex.ready && filter.local) return fetchLocalFiltered(client, filter.local, offset);
-      return fetchServerFiltered(filter, cursor);
+      return fetchServerFiltered(filter, cursor, asOf);
     }
 
     // One page of filter_links older than `cursor` (all when null), with the
     // cursor the next page starts from. Keyset pages don't shift as links
     // are added, so they're cached by filterPageKey (memoize): "paris
     // event" reuses "event paris", and going back to a filter lists it again
-    // without asking the server.
-    const fetchServerFiltered = memoize(filterPageKey, async (filter, cursor) => {
+    // without asking the server. A seen-last filter counts what the reader saw
+    // at or before the feed's `asOf`.
+    const fetchServerFiltered = memoize(filterPageKey, async (filter, cursor, asOf) => {
       const client = await supabaseReady;
+      if (filter.seenLast) await pendingSession;
       return Result.chain(client.rpc("filter_links", {
         filters: filter.terms,
         max_results: FEED_PAGE_SIZE,
         before_created_at: cursor?.createdAt ?? null,
         before_id: cursor?.id ?? null,
+        seen_last: filter.seenLast,
+        as_of: asOf,
+        before_seen: cursor?.seen ?? null,
       }), async (ids) => Result.map(await linksWithMatches(client, ids), (page) => ({ ...page, cursor: nextFilterCursor(ids) })));
     });
 
@@ -2426,7 +2431,7 @@
     // Which page the feed lists, by the first of these it has set; a feed
     // with none of them is the ranked feed.
     const pageFetcherByFeedField = {
-      filter: ({ filter, offset, cursor }) => fetchFiltered(filter, offset, cursor),
+      filter: ({ filter, offset, cursor, asOf }) => fetchFiltered(filter, offset, cursor, asOf),
       kind: ({ kind, offset }) => fetchKindLinks(kind, offset),
       topic: ({ topic, offset }) => fetchTopicLinks(topic, offset),
       entity: ({ entity, offset }) => fetchEntityLinks(entity, offset),
@@ -4150,17 +4155,19 @@
     // with an indexical, a period or a topic asks the database.
 
     // The filters the whole of `text` names, or null: every word is filler, a
-    // newest-first word (a filtered list is newest first anyway), or part of a
+    // newest-first word (a filtered list is newest first anyway; with one, the
+    // links the reader has seen go last, as in the latest order), or part of a
     // name: a kind's, an indexical's, or the whole name of one of `entities`
     // (match_entities). Every sense of the same words is one term (a kind
     // called "event" and an entity called "Event" are both read), and longer
     // names are placed first.
     const COMPATIBILITY_DECOMPOSITION = "NFKD";
+    const LATEST_SORT = "latest";
 
     function typedFilter(text, entities) {
       const folded = text.toLowerCase().normalize(COMPATIBILITY_DECOMPOSITION).replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter(Boolean);
       const sorts = querySorts(folded);
-      const words = folded.filter((w, i) => !QUERY_FILLER_WORDS.has(w) && sorts[i] !== "latest");
+      const words = folded.filter((w, i) => !QUERY_FILLER_WORDS.has(w) && sorts[i] !== LATEST_SORT);
       if (!words.length) return null;
       const senses = [
         ...kindIndex.flatMap((kind) => kind.names.map((name) => ({
@@ -4219,7 +4226,7 @@
             ? [...term.senses, ...(term.entities.length ? [{ seqs: term.entities.map((e) => e.seq) }] : [])]
             : null;
           return Filter.concat(filter, Filter.term(senses, term.label, term.kinds, local));
-        }, Filter.unit());
+        }, sorts.includes(LATEST_SORT) ? Filter.seenLast() : Filter.unit());
     }
 
     // The kind one level up from `path`, null for the root.

@@ -5,6 +5,7 @@
     "db": "node senses_db.mjs ../../supabase/migrations/20261016235000_senses_and_indexicals.sql",
     "page": "node query_reading.mjs ../../src/seb_now/templates/index.html",
     "keyset": "node keyset_db.mjs ../../supabase/migrations/20261016235000_senses_and_indexicals.sql ../../supabase/migrations/20261017130000_filter_links_keyset.sql",
+    "seen-filter": "node filter_seen_db.mjs ../../supabase/migrations/20261016235000_senses_and_indexicals.sql ../../supabase/migrations/20261017130000_filter_links_keyset.sql ../../supabase/migrations/20261020140000_filter_links_seen_last.sql",
     "sources": "node sources_db.mjs ../../supabase/migrations/20261017140000_source_entities.sql",
     "latest": "node latest_unseen_db.mjs ../../supabase/migrations/20261017231500_latest_unseen_first.sql",
     "sense": "node entity_sense_db.mjs ../../supabase/migrations/20261017180000_entity_sense.sql ../../supabase/migrations/20261017220000_entity_undo_guards.sql ../../supabase/migrations/20261020130000_entity_edit_guards.sql",
