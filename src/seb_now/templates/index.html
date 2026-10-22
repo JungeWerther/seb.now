@@ -3847,20 +3847,20 @@
     }
 
     // Appearance: a reader picks a style per style type; its tokens override
-    // the template's custom properties (styleDeclarations checks each value
-    // against the type's schema first). The choice, with the style's values
-    // and schema, is kept in localStorage, so it applies before supabase-js has
-    // loaded; the database copy then replaces it, or drops it once deleted.
-    // A type's built-in style (no owner) is its default: picking it clears
-    // the choice.
+    // the page's own values (styleDeclarations checks each value against the
+    // type's schema first), and Default drops the pick. Picks live in
+    // `styleChoices`, copied to localStorage when it can be written, so they
+    // apply before supabase-js has loaded; the database copy then replaces
+    // them, or drops one deleted since, unless a pick has changed meanwhile.
     const STYLE_CHOICES_KEY = "seb-now-styles";
     const STYLE_KIND = "style";
     const ENTITIES_TABLE = "entities";
     const KIND_COLUMN = "kind";
-    const STYLE_SELECT = "id, name, kind_path, owner_id, style, kinds(path, label, schema)";
+    const STYLE_SELECT = "id, name, kind_path, style, kinds(path, label, schema)";
     const STYLE_KIND_PATH = "kind_path";
     const STYLE_NAME = "name";
     const STYLE_ID = "id";
+    const STYLE_DEFAULT_LABEL = "Default";
     const APPEARANCE_OVERLAY_ID = "appearance-overlay";
     const APPEARANCE_LIST_ID = "appearance-list";
     const APPEARANCE_STATUS_ID = "appearance-status";
@@ -3873,7 +3873,7 @@
     const BUTTON_TYPE = "button";
     const ARIA_PRESSED = "aria-pressed";
     const STYLE_LOAD_FAILED = "failed to load styles";
-    const STYLE_CHOICES_UNREADABLE = "ignoring stored style choices";
+    const STYLE_CHOICES_UNREADABLE = "ignoring a stored style choice";
 
     // { [kind_path]: { id, style, schema } }, or {} when there's none or it can't be read.
     function storedStyleChoices() {
@@ -3885,19 +3885,17 @@
       }
     }
 
-    function storeStyleChoices(choices) {
+    let styleChoices = storedStyleChoices();
+    // Bumped by every pick, so a refresh that started before one is dropped.
+    let styleChoicesRevision = 0;
+
+    function setStyleChoices(choices) {
+      styleChoices = choices;
       try {
         localStorage.setItem(STYLE_CHOICES_KEY, JSON.stringify(choices));
       } catch {
-        // Storage off (private window): the choice lasts for this page only.
+        // Storage off (private window): the picks last for this page only.
       }
-    }
-
-    // Sets a style's tokens, clearing the type's others first.
-    function applyStyle(schema, values) {
-      const root = document.documentElement.style;
-      styleProperties(schema).forEach((property) => root.removeProperty(property));
-      styleDeclarations(schema, values).forEach(([property, value]) => root.setProperty(property, value));
     }
 
     function clearStyle(schema) {
@@ -3905,30 +3903,43 @@
       styleProperties(schema).forEach((property) => root.removeProperty(property));
     }
 
-    const styleChoice = (row) => ({ id: row.id, style: row.style, schema: row.kinds.schema });
+    // Sets a style's tokens, clearing the type's others first.
+    function applyStyle(schema, values) {
+      clearStyle(schema);
+      const root = document.documentElement.style;
+      styleDeclarations(schema, values).forEach(([property, value]) => root.setProperty(property, value));
+    }
 
-    function applyStoredStyles() {
+    // A stored choice's schema may be anything; one that can't be read sets nothing.
+    function withStoredChoice(choice, use) {
       try {
-        Object.values(storedStyleChoices()).forEach(({ schema, style }) => applyStyle(schema, style));
+        use(choice);
       } catch (error) {
         console.error(STYLE_CHOICES_UNREADABLE, error);
       }
     }
 
-    // A type's choice, or its default (null) for its built-in style.
-    function chooseStyle(row) {
-      const choices = storedStyleChoices();
-      const { [row.kind_path]: previous, ...others } = choices;
-      if (previous) clearStyle(previous.schema);
-      const builtIn = row.owner_id === null;
-      if (!builtIn) applyStyle(row.kinds.schema, row.style);
-      storeStyleChoices(builtIn ? others : { ...others, [row.kind_path]: styleChoice(row) });
+    const styleChoice = (row) => ({ id: row.id, style: row.style, schema: row.kinds.schema });
+
+    function applyStoredStyles() {
+      Object.values(styleChoices).forEach((choice) => withStoredChoice(choice, ({ schema, style }) => applyStyle(schema, style)));
     }
 
-    // The stored choices brought up to date from the database: an edited style
-    // is reapplied, a deleted one dropped.
+    // Picks `row` for its type, or the type's default when `row` is null.
+    function chooseStyle(type, row) {
+      styleChoicesRevision++;
+      const { [type.path]: previous, ...others } = styleChoices;
+      if (previous) withStoredChoice(previous, ({ schema }) => clearStyle(schema));
+      clearStyle(type.schema);
+      if (row) applyStyle(type.schema, row.style);
+      setStyleChoices(row ? { ...others, [type.path]: styleChoice(row) } : others);
+    }
+
+    // The picks brought up to date from the database: an edited style is
+    // reapplied, a deleted one dropped.
     async function refreshStoredStyles() {
-      const choices = storedStyleChoices();
+      const revision = styleChoicesRevision;
+      const choices = styleChoices;
       const ids = Object.values(choices).map((choice) => choice?.id).filter(Boolean);
       if (!ids.length) return;
       const { data, error } = await (await supabaseReady)
@@ -3937,40 +3948,36 @@
         console.error(STYLE_LOAD_FAILED, error);
         return;
       }
+      if (revision !== styleChoicesRevision) return;
       const current = new Map(data.filter((row) => row.kinds?.schema).map((row) => [row.kind_path, row]));
-      Object.values(choices).forEach((choice) => {
-        try {
-          clearStyle(choice.schema);
-        } catch {
-          // An unreadable stored schema has nothing to clear.
-        }
-      });
+      Object.values(choices).forEach((choice) => withStoredChoice(choice, ({ schema }) => clearStyle(schema)));
       current.forEach((row) => applyStyle(row.kinds.schema, row.style));
-      storeStyleChoices(Object.fromEntries([...current].map(([path, row]) => [path, styleChoice(row)])));
+      setStyleChoices(Object.fromEntries([...current].map(([path, row]) => [path, styleChoice(row)])));
     }
 
-    function renderStyleType(rows, choices) {
+    // A type's choices: Default (null), then each of its styles.
+    function renderStyleType(rows) {
       const [{ kinds }] = rows;
+      const options = [null, ...rows];
       const item = document.createElement(LIST_ITEM_TAG);
       const label = document.createElement(PARAGRAPH_TAG);
       label.className = STYLE_TYPE_LABEL_CLASS;
       label.textContent = kinds.label;
       const buttons = document.createElement(DIV_TAG);
       buttons.className = STYLE_CHOICES_CLASS;
-      const chosen = choices[kinds.path]?.id;
-      const setPressed = (isPressed) =>
-        buttons.childNodes.forEach((button, i) => button.setAttribute(ARIA_PRESSED, String(isPressed(rows[i]))));
-      buttons.replaceChildren(...rows.map((row) => {
+      const setPressed = (chosenId) =>
+        buttons.childNodes.forEach((button, i) => button.setAttribute(ARIA_PRESSED, String((options[i]?.id ?? null) === chosenId)));
+      buttons.replaceChildren(...options.map((row) => {
         const button = document.createElement(BUTTON_TAG);
         button.type = BUTTON_TYPE;
-        button.textContent = row.name;
+        button.textContent = row?.name ?? STYLE_DEFAULT_LABEL;
         button.addEventListener(CLICK_EVENT, () => {
-          chooseStyle(row);
-          setPressed((other) => other === row);
+          chooseStyle(kinds, row);
+          setPressed(row?.id ?? null);
         });
         return button;
       }));
-      setPressed((row) => (chosen ? row.id === chosen : row.owner_id === null));
+      setPressed(styleChoices[kinds.path]?.id ?? null);
       item.append(label, buttons);
       return item;
     }
@@ -3994,8 +4001,7 @@
       const byType = data.filter((row) => row.kinds?.schema).reduce(
         (types, row) => types.set(row.kind_path, [...(types.get(row.kind_path) ?? []), row]), new Map());
       status.textContent = byType.size ? "" : APPEARANCE_EMPTY;
-      const choices = storedStyleChoices();
-      list.replaceChildren(...[...byType.values()].map((rows) => renderStyleType(rows, choices)));
+      list.replaceChildren(...[...byType.values()].map(renderStyleType));
     }
 
     const OVERLAY_LOADERS = {

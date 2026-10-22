@@ -1107,11 +1107,14 @@ picking one sets its tokens on `document.documentElement.style`;
 `frontend/src/styles.ts` (`styleDeclarations`, inlined at `__STYLES_JS__`)
 checks each value against the type's schema again first (patterns, bounds,
 enums, and no `(`, `;`, braces, `\` or angle brackets), so a style sets only
-the tokens its type names. Picking a type's built-in style clears the pick.
-The pick, with the style's values and schema, is kept in localStorage
-(`seb-now-styles`, per type), so it applies before supabase-js has loaded;
-`refreshStoredStyles` then replaces it with the database's copy, or drops a
-style deleted since. QA: `tests/qa`, `npm run appearance`. QA: CI's `db` job
+the tokens its type names. Each type's list opens with **Default**, which drops
+the pick so the page's own values apply (the built-in style is a pick like any
+other). Picks live in `styleChoices`, copied per type to localStorage
+(`seb-now-styles`) when it can be written, so they apply before supabase-js has
+loaded; `refreshStoredStyles` then replaces them with the database's copy, or
+drops a style deleted since, unless a pick was made meanwhile
+(`styleChoicesRevision`). Picking always clears the type's own properties
+first, whatever storage holds. QA: `tests/qa`, `npm run appearance`. QA: CI's `db` job
 runs `tests/db` on the `supabase/postgres` image (each run a fresh database
 shaped like production's, `tests/db/production_shape.sql`), including a check
 that Python and `pg_jsonschema` accept and refuse the same values.

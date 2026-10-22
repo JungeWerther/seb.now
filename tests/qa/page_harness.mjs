@@ -1,7 +1,8 @@
 // The built page in headless Chromium, with supabase-js swapped for a fake:
 // the pinned script's URL, SRI hash and CSP are pointed at a stand-in that
 // answers each table from `answers` (filtered by .eq and .in) and records
-// every write and rpc in window.__calls. Needs uv (to build the page) and a
+// every write and rpc in window.__calls. `delays` holds how long, in ms, a
+// "<table>.<method>" query takes to answer (`{ "entities.in": 1500 }`). Needs uv (to build the page) and a
 // Chromium (CHROMIUM_PATH, else Playwright's own).
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -13,19 +14,21 @@ import { chromium } from "playwright-core";
 
 export const USER_ID = "00000000-0000-0000-0000-000000000001";
 
-const fakeSupabase = (answers) => `(() => {
+const fakeSupabase = (answers, delays) => `(() => {
   window.__calls = [];
   const answers = ${JSON.stringify(answers)};
+  const delays = ${JSON.stringify(delays)};
   const WRITES = ["insert", "upsert", "update", "delete"];
-  const chain = (table, rows) => new Proxy(function () {}, {
+  const chain = (table, rows, delay = 0) => new Proxy(function () {}, {
     get(_t, prop) {
-      if (prop === "then") return (resolve) => resolve({ data: rows, error: null, count: 0 });
+      if (prop === "then") return (resolve) => setTimeout(() => resolve({ data: rows, error: null, count: 0 }), delay);
       return (...args) => {
         if (WRITES.includes(prop)) window.__calls.push({ table, op: prop, args });
-        if (prop === "eq") return chain(table, rows.filter((row) => !(args[0] in row) || row[args[0]] === args[1]));
-        if (prop === "in") return chain(table, rows.filter((row) => !(args[0] in row) || args[1].includes(row[args[0]])));
-        if (prop === "single" || prop === "maybeSingle") return chain(table, rows[0] ?? null);
-        return chain(table, rows);
+        const wait = Math.max(delay, delays[table + "." + prop] ?? 0);
+        if (prop === "eq") return chain(table, rows.filter((row) => !(args[0] in row) || row[args[0]] === args[1]), wait);
+        if (prop === "in") return chain(table, rows.filter((row) => !(args[0] in row) || args[1].includes(row[args[0]])), wait);
+        if (prop === "single" || prop === "maybeSingle") return chain(table, rows[0] ?? null, wait);
+        return chain(table, rows, wait);
       };
     },
   });
@@ -49,10 +52,10 @@ const fakeSupabase = (answers) => `(() => {
 })();`;
 
 // Serves the page built with `answers` on `port`; returns { browser, origin, close }.
-export async function servePage(answers, port) {
+export async function servePage(answers, port, delays = {}) {
   const origin = `http://127.0.0.1:${port}`;
   const dir = mkdtempSync(join(tmpdir(), "qa-page-"));
-  const fake = fakeSupabase(answers);
+  const fake = fakeSupabase(answers, delays);
   writeFileSync(join(dir, "fake-supabase.js"), fake);
   const integrity = `sha384-${createHash("sha384").update(fake).digest("base64")}`;
   execFileSync("uv", ["run", "--quiet", "python", "-c", `
