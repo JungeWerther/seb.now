@@ -10,6 +10,7 @@ const LENGTH = { type: "string", pattern: "^(0|[0-9]{1,4}(\\.[0-9]{1,3})?(px|rem
 const kinds = {
   path: "entity.style.layout",
   label: "Layout",
+  style_scope: "page",
   schema: {
     type: "object",
     additionalProperties: false,
@@ -59,7 +60,7 @@ const settle = (page) => page.waitForTimeout(1800);
   check("by default no token is overridden", await tokens(page), { column: "", dock: "", body: "730px" });
   await openAppearance(page);
   check("the layout type lists its styles",
-    await page.$$eval(".style-type-label", (labels) => labels.map((l) => l.textContent)), ["Layout"]);
+    await page.$$eval("#appearance-list .style-type-label", (labels) => labels.map((l) => l.textContent)), ["Layout"]);
   check("Default first and pressed", await pressed(page),
     ["Default:true", "seb.now layout:false", "Wide:false", "Bad:false"]);
   await pick(page, "Wide");

@@ -1,110 +1,21 @@
-"""The style-types migration on Supabase's own Postgres image (pg_jsonschema and
-the anon/authenticated roles), in a fresh database shaped like production's.
-Runs where TEST_DATABASE_URL names a postgres connection to such a server
-(CI's `db` job); skipped elsewhere.
-"""
+"""The style-types migration: types, styles, their checks and who may write them."""
 
 import json
-import os
 import threading
 import uuid
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
-from pathlib import Path
 
 import pytest
 
+from .support import acting_as, add_style, add_type, grant_refusal, policy_refusal, refusal
+
 psycopg = pytest.importorskip("psycopg")
-from psycopg import sql  # noqa: E402
-
-ROOT = Path(__file__).resolve().parents[2]
-MIGRATION = ROOT / "supabase" / "migrations" / "20261020120000_style_types.sql"
-PRODUCTION_SHAPE = Path(__file__).with_name("production_shape.sql")
-SERVER_URL = os.environ.get("TEST_DATABASE_URL", "")
-
-pytestmark = pytest.mark.skipif(not SERVER_URL, reason="TEST_DATABASE_URL not set")
 
 THEME = {"properties": {"bg": {"$ref": "#/$defs/color"}, "density": {"enum": ["compact", "roomy"]}}}
 DARK = {"bg": "#101010", "density": "compact"}
 
 
-@pytest.fixture(scope="module")
-def url() -> Iterator[str]:
-    name = f"style_types_{uuid.uuid4().hex[:12]}"
-    with psycopg.connect(SERVER_URL, autocommit=True) as server:
-        server.execute(sql.SQL("create database {}").format(sql.Identifier(name)))
-    url = psycopg.conninfo.make_conninfo(SERVER_URL, dbname=name)
-    try:
-        with psycopg.connect(url, autocommit=True) as conn:
-            conn.execute(PRODUCTION_SHAPE.read_text())
-        # A session of its own, as CI's migrate job has: nothing it needs is
-        # loaded yet.
-        with psycopg.connect(url) as conn:
-            conn.execute(MIGRATION.read_text())
-        yield url
-    finally:
-        with psycopg.connect(SERVER_URL, autocommit=True) as server:
-            server.execute(sql.SQL("drop database if exists {} with (force)").format(sql.Identifier(name)))
-
-
-@pytest.fixture(scope="module")
-def users(url: str) -> tuple[uuid.UUID, uuid.UUID]:
-    owner, other = uuid.uuid4(), uuid.uuid4()
-    with psycopg.connect(url, autocommit=True) as conn:
-        conn.execute("insert into auth.users (id) values (%s), (%s)", (owner, other))
-    return owner, other
-
-
-@pytest.fixture
-def db(url: str) -> Iterator["psycopg.Connection"]:
-    with psycopg.connect(url) as conn:
-        yield conn
-        conn.rollback()
-
-
-@contextmanager
-def acting_as(conn: "psycopg.Connection", role: str, user: uuid.UUID | None = None) -> Iterator[None]:
-    """Runs the block as a PostgREST request would: the role, and the JWT's claims."""
-    conn.execute(sql.SQL("set local role {}").format(sql.Identifier(role)))
-    claims = json.dumps({"sub": str(user), "role": role} if user else {"role": role})
-    conn.execute("select set_config('request.jwt.claims', %s, true)", (claims,))
-    try:
-        yield
-    finally:
-        conn.execute("reset role")
-
-
-def add_type(conn: "psycopg.Connection", path: str, schema: object, label: str = "Theme") -> None:
-    conn.execute("insert into kinds (path, label, schema) values (%s, %s, %s)", (path, label, json.dumps(schema)))
-
-
-def add_style(conn: "psycopg.Connection", name: str, kind_path: str, style: object) -> uuid.UUID:
-    return conn.execute(
-        "insert into entities (name, kind_path, style) values (%s, %s, %s) returning id",
-        (name, kind_path, json.dumps(style)),
-    ).fetchone()[0]
-
-
-def refusal(conn: "psycopg.Connection", write: Callable[[], object]) -> str:
-    """Why the write was refused ("" when it wasn't), leaving the transaction usable."""
-    try:
-        with conn.transaction():
-            write()
-    except psycopg.Error as error:
-        return str(error)
-    return ""
-
-
 META_REFUSAL = "needs a schema of named primitives or enums"
 STYLE_REFUSAL = "doesn't match the schema of"
-
-
-def policy_refusal(table: str) -> str:
-    return f'new row violates row-level security policy for table "{table}"'
-
-
-def grant_refusal(table: str) -> str:
-    return f"permission denied for table {table}"
 
 
 def test_seeded_layout_is_a_compiled_type_with_its_style(db: "psycopg.Connection") -> None:

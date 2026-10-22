@@ -5,8 +5,8 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const read = (name) => readFileSync(new URL(`../../src/seb_now/templates/${name}`, import.meta.url), "utf8");
-const { styleDeclarations, styleProperties } = vm.runInNewContext(
-  `${read("prelude.js")}\n${read("styles.js")}\n;({ styleDeclarations, styleProperties })`,
+const { styleDeclarations, styleProperties, contrastRatio, contrastResults } = vm.runInNewContext(
+  `${read("prelude.js")}\n${read("styles.js")}\n;({ styleDeclarations, styleProperties, contrastRatio, contrastResults })`,
 );
 
 const plain = (x) => JSON.parse(JSON.stringify(x));
@@ -82,4 +82,19 @@ test("a pattern the engine can't read matches nothing", () => {
 
 test("a type's properties, to clear them", () => {
   assert.deepEqual(plain(styleProperties(SCHEMA)), ["--column-width", "--dock-width", "--font", "--weight", "--density"]);
+});
+
+// The same values tests/db/test_card_styles.py checks the database's contrast_ratio against.
+test("contrast ratios are WCAG 2's, as the database computes them", () => {
+  const cases = [["#000000", "#ffffff", 21], ["#ffffff", "#000000", 21], ["#777777", "#777777", 1],
+    ["#777777", "#ffffff", 4.48], ["#767676", "#ffffff", 4.54]];
+  for (const [a, b, ratio] of cases) assert.equal(Math.round(contrastRatio(a, b) * 100) / 100, ratio, `${a} on ${b}`);
+});
+
+test("a pair passes only when both colours are opaque and far enough apart", () => {
+  const pairs = [{ foreground: "fg", background: "bg", min_ratio: 4.5 }, { foreground: "accent", background: "bg", min_ratio: 3 }];
+  const verdicts = (values) => plain(contrastResults(pairs, values)).map(({ ratio, ok }) => [ratio === null ? null : Math.round(ratio * 10) / 10, ok]);
+  assert.deepEqual(verdicts({ fg: "#ffffff", bg: "#000000", accent: "#777777" }), [[21, true], [4.7, true]]);
+  assert.deepEqual(verdicts({ fg: "#777777", bg: "#ffffff", accent: "#767676" }), [[4.5, false], [4.5, true]]);
+  assert.deepEqual(verdicts({ fg: "#ffffff80", bg: "#000000", accent: undefined }), [[null, false], [null, false]]);
 });

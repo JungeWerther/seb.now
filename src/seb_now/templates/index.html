@@ -554,6 +554,32 @@
       cursor: pointer;
     }
     #appearance-list button[aria-pressed="true"] { border-color: var(--positive); background: var(--positive-soft); }
+    /* An author's card style (entity.style.card), set on their replies only. */
+    .reply.styled { background: var(--card-bg); color: var(--card-fg); padding: 0.4rem 0.65rem; border-radius: 10px; }
+    .reply.styled .reply-author { color: var(--card-accent); }
+    #card-style-editor { margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+    #card-style-editor[hidden] { display: none; }
+    #card-style-editor .style-type-label { margin: 0; font-size: 0.8rem; color: gray; }
+    .card-style-fields { display: flex; flex-wrap: wrap; gap: 0.75rem; font-size: 0.85rem; }
+    .card-style-fields label { display: flex; align-items: center; gap: 0.35rem; }
+    .card-style-fields input { width: 2.2rem; height: 1.6rem; padding: 0; border: none; background: none; cursor: pointer; }
+    .card-style-preview { list-style: none; margin: 0; padding: 0; }
+    #card-style-contrast { list-style: none; margin: 0; padding: 0; font-size: 0.8rem; color: gray; }
+    #card-style-contrast .fail { color: var(--negative); }
+    #card-style-status { font-size: 0.85rem; color: gray; margin: 0; }
+    #card-style-status:empty { display: none; }
+    .card-style-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .card-style-actions button {
+      font: inherit;
+      font-size: 0.9rem;
+      color: inherit;
+      padding: 0.35rem 0.8rem;
+      border: 1px solid rgba(128, 128, 128, 0.3);
+      border-radius: 999px;
+      background: var(--post-bg);
+      cursor: pointer;
+    }
+    .card-style-actions button:disabled { opacity: 0.5; cursor: default; }
     #inbox-list .inbox-body { margin: 0.25rem 0 0; font-size: 0.9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
     #taste-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
     .taste-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.3rem 0.75rem; font-size: 0.85rem; }
@@ -1162,6 +1188,22 @@
     <p class="appearance-lead">Styles change the page's design tokens, such as its column width. Your choice is kept in this browser.</p>
     <p id="appearance-status"></p>
     <ol id="appearance-list"></ol>
+    <section id="card-style-editor" hidden>
+      <p class="style-type-label">Your replies</p>
+      <p class="appearance-lead">Everyone sees your replies in these colours.</p>
+      <div class="card-style-fields">
+        <label>Background <input type="color" data-token="card_bg"></label>
+        <label>Text <input type="color" data-token="card_fg"></label>
+        <label>Name <input type="color" data-token="card_accent"></label>
+      </div>
+      <ol class="card-style-preview"><li class="reply styled"><span class="reply-author">you</span><p class="reply-body">This is how your replies look.</p></li></ol>
+      <ul id="card-style-contrast"></ul>
+      <p id="card-style-status"></p>
+      <div class="card-style-actions">
+        <button type="button" id="card-style-save">Save</button>
+        <button type="button" id="card-style-remove">Use the page's colours</button>
+      </div>
+    </section>
   </dialog>
   <p id="search-empty">No matching articles.</p>
   <section id="focus" hidden>
@@ -3861,7 +3903,10 @@
     const STYLE_KIND = "style";
     const ENTITIES_TABLE = "entities";
     const KIND_COLUMN = "kind";
-    const STYLE_SELECT = "id, name, kind_path, style, kinds(path, label, schema)";
+    const STYLE_SELECT = "id, name, kind_path, style, kinds(path, label, schema, style_scope)";
+    // Types a reader picks for their own page; 'author' types (cards) are each
+    // author's own, set in the editor below the list.
+    const PAGE_STYLE_SCOPE = "page";
     const STYLE_KIND_PATH = "kind_path";
     const STYLE_NAME = "name";
     const STYLE_ID = "id";
@@ -3995,6 +4040,7 @@
       const status = document.getElementById(APPEARANCE_STATUS_ID);
       list.replaceChildren();
       status.textContent = APPEARANCE_LOADING;
+      loadCardStyleEditor();
       const { data, error } = await (await supabaseReady)
         .from(ENTITIES_TABLE).select(STYLE_SELECT).eq(KIND_COLUMN, STYLE_KIND)
         .order(STYLE_KIND_PATH).order(STYLE_NAME);
@@ -4003,10 +4049,163 @@
         status.textContent = APPEARANCE_FAILED;
         return;
       }
-      const byType = data.filter((row) => row.kinds?.schema).reduce(
+      const byType = data.filter((row) => row.kinds?.schema && row.kinds.style_scope === PAGE_STYLE_SCOPE).reduce(
         (types, row) => types.set(row.kind_path, [...(types.get(row.kind_path) ?? []), row]), new Map());
       status.textContent = byType.size ? "" : APPEARANCE_EMPTY;
       list.replaceChildren(...[...byType.values()].map(renderStyleType));
+    }
+
+    // Your card style: how everyone sees your replies (profiles.card_style_id,
+    // one entity of entity.style.card you own). The database refuses colours
+    // too close in contrast (style_contrast_pairs); the editor shows each pair's
+    // ratio as you pick and only saves a style that passes.
+    const CARD_STYLE_KIND = "entity.style.card";
+    const CARD_STYLE_EDITOR_ID = "card-style-editor";
+    const CARD_STYLE_CONTRAST_ID = "card-style-contrast";
+    const CARD_STYLE_STATUS_ID = "card-style-status";
+    const CARD_STYLE_SAVE_ID = "card-style-save";
+    const CARD_STYLE_REMOVE_ID = "card-style-remove";
+    const CARD_STYLE_PREVIEW = ".card-style-preview .reply";
+    const CARD_STYLE_INPUTS = "#card-style-editor input[data-token]";
+    const KINDS_TABLE = "kinds";
+    const PROFILES_TABLE = "profiles";
+    const CONTRAST_PAIRS_TABLE = "style_contrast_pairs";
+    const PATH_COLUMN = "path";
+    const KIND_PATH_COLUMN = "kind_path";
+    const SCHEMA_COLUMN = "schema";
+    const CONTRAST_PAIR_SELECT = "foreground, background, min_ratio";
+    const PROFILE_CARD_STYLE_SELECT = "card_style:entities(id, style)";
+    const CARD_STYLE_NAME_PREFIX = "card ";
+    const STYLED_CLASS = "styled";
+    const CONTRAST_FAIL_CLASS = "fail";
+    const SPAN_TAG = "span";
+    const CONTRAST_ON = " on ";
+    const CONTRAST_SEPARATOR = ": ";
+    const CONTRAST_UNIT = ":1";
+    const CONTRAST_NEEDS = ", needs ";
+    const CONTRAST_UNREADABLE = "not an opaque colour";
+    const CONTRAST_DIGITS = 1;
+    const CARD_STYLE_SAVING = "Saving…";
+    const CARD_STYLE_SAVED = "Saved. Your replies show in these colours.";
+    const CARD_STYLE_REMOVED = "Your replies use the page's colours again.";
+    const CARD_STYLE_FAILED = "Couldn't save: ";
+    const CARD_STYLE_LOAD_FAILED = "failed to load your card style";
+    const INPUT_EVENT = "input";
+    const AUTHOR_SELECTOR_ATTRIBUTE = "data-author-id";
+    const REPLY_ITEMS = "li.reply";
+    // The page's own colours, read from its tokens, as a new card style's start.
+    const CARD_STYLE_STARTS = { card_bg: "--post-bg", card_fg: "--fg", card_accent: "--positive" };
+
+    let cardEditor = { schema: null, pairs: [], styleId: null, userId: null };
+
+    const cardStyleInputs = () => [...document.querySelectorAll(CARD_STYLE_INPUTS)];
+    const cardStyleValues = () => Object.fromEntries(cardStyleInputs().map((input) => [input.dataset.token, input.value]));
+    const tokenLabel = (token) => cardStyleInputs().find((input) => input.dataset.token === token)?.parentElement.firstChild.textContent.trim() ?? token;
+
+    // Sets an author's card style on one reply, or takes it off (no schema).
+    function styleReply(item, schema, values) {
+      const declarations = schema ? styleDeclarations(schema, values) : [];
+      [...item.style].filter((property) => property.startsWith(TOKEN_PROPERTY_PREFIX))
+        .forEach((property) => item.style.removeProperty(property));
+      declarations.forEach(([property, value]) => item.style.setProperty(property, value));
+      item.classList.toggle(STYLED_CLASS, declarations.length > 0);
+    }
+
+    function renderContrast(results) {
+      document.getElementById(CARD_STYLE_CONTRAST_ID).replaceChildren(...results.map(({ pair, ratio, ok }) => {
+        const item = document.createElement(LIST_ITEM_TAG);
+        item.classList.toggle(CONTRAST_FAIL_CLASS, !ok);
+        const parts = [tokenLabel(pair.foreground), CONTRAST_ON, tokenLabel(pair.background), CONTRAST_SEPARATOR,
+          ratio === null ? CONTRAST_UNREADABLE : ratio.toFixed(CONTRAST_DIGITS) + CONTRAST_UNIT,
+          ok ? "" : CONTRAST_NEEDS + pair.min_ratio + CONTRAST_UNIT];
+        item.append(...parts.filter(Boolean).map((text) => Object.assign(document.createElement(SPAN_TAG), { textContent: text })));
+        return item;
+      }));
+      return results.every(({ ok }) => ok);
+    }
+
+    function renderCardStyleEditor() {
+      const values = cardStyleValues();
+      styleReply(document.querySelector(CARD_STYLE_PREVIEW), cardEditor.schema, values);
+      const readable = renderContrast(contrastResults(cardEditor.pairs, values));
+      document.getElementById(CARD_STYLE_SAVE_ID).disabled = !readable;
+      document.getElementById(CARD_STYLE_REMOVE_ID).disabled = !cardEditor.styleId;
+    }
+
+    // Every reply of yours on the page, in your card style (or none).
+    function restyleOwnReplies(values) {
+      [...document.querySelectorAll(REPLY_ITEMS)]
+        .filter((item) => item.getAttribute(AUTHOR_SELECTOR_ATTRIBUTE) === cardEditor.userId)
+        .forEach((item) => styleReply(item, values && cardEditor.schema, values));
+    }
+
+    async function loadCardStyleEditor() {
+      const section = document.getElementById(CARD_STYLE_EDITOR_ID);
+      document.getElementById(CARD_STYLE_STATUS_ID).textContent = "";
+      const session = await pendingSession;
+      if (!session) return;
+      const client = await supabaseReady;
+      const [type, pairs, profile] = await Promise.all([
+        client.from(KINDS_TABLE).select(SCHEMA_COLUMN).eq(PATH_COLUMN, CARD_STYLE_KIND).maybeSingle(),
+        client.from(CONTRAST_PAIRS_TABLE).select(CONTRAST_PAIR_SELECT).eq(KIND_PATH_COLUMN, CARD_STYLE_KIND),
+        client.from(PROFILES_TABLE).select(PROFILE_CARD_STYLE_SELECT).eq(STYLE_ID, session.user.id).maybeSingle(),
+      ]);
+      const failed = [type, pairs, profile].find(({ error }) => error);
+      if (failed || !type.data?.schema) {
+        if (failed) console.error(CARD_STYLE_LOAD_FAILED, failed.error);
+        section.hidden = true;
+        return;
+      }
+      const own = profile.data?.card_style;
+      cardEditor = { schema: type.data.schema, pairs: pairs.data, styleId: own?.id ?? null, userId: session.user.id };
+      const root = getComputedStyle(document.documentElement);
+      cardStyleInputs().forEach((input) => {
+        input.value = own?.style?.[input.dataset.token] ?? root.getPropertyValue(CARD_STYLE_STARTS[input.dataset.token]).trim();
+      });
+      section.hidden = false;
+      renderCardStyleEditor();
+    }
+
+    async function saveCardStyle() {
+      const status = document.getElementById(CARD_STYLE_STATUS_ID);
+      const values = cardStyleValues();
+      status.textContent = CARD_STYLE_SAVING;
+      const client = await supabaseReady;
+      const saved = cardEditor.styleId
+        ? await client.from(ENTITIES_TABLE).update({ style: values }).eq(STYLE_ID, cardEditor.styleId).select(STYLE_ID).single()
+        : await client.from(ENTITIES_TABLE)
+          .insert({ name: CARD_STYLE_NAME_PREFIX + cardEditor.userId, kind: STYLE_KIND, kind_path: CARD_STYLE_KIND, style: values })
+          .select(STYLE_ID).single();
+      const linked = saved.error ? saved : await client.from(PROFILES_TABLE)
+        .update({ card_style_id: saved.data.id }).eq(STYLE_ID, cardEditor.userId);
+      if (linked.error) {
+        status.textContent = CARD_STYLE_FAILED + linked.error.message;
+        return;
+      }
+      cardEditor.styleId = saved.data.id;
+      status.textContent = CARD_STYLE_SAVED;
+      restyleOwnReplies(values);
+      renderCardStyleEditor();
+    }
+
+    async function removeCardStyle() {
+      const status = document.getElementById(CARD_STYLE_STATUS_ID);
+      const client = await supabaseReady;
+      const { error } = await client.from(ENTITIES_TABLE).delete().eq(STYLE_ID, cardEditor.styleId);
+      if (error) {
+        status.textContent = CARD_STYLE_FAILED + error.message;
+        return;
+      }
+      cardEditor.styleId = null;
+      status.textContent = CARD_STYLE_REMOVED;
+      restyleOwnReplies(null);
+      renderCardStyleEditor();
+    }
+
+    function setupCardStyleEditor() {
+      cardStyleInputs().forEach((input) => input.addEventListener(INPUT_EVENT, renderCardStyleEditor));
+      document.getElementById(CARD_STYLE_SAVE_ID).addEventListener(CLICK_EVENT, saveCardStyle);
+      document.getElementById(CARD_STYLE_REMOVE_ID).addEventListener(CLICK_EVENT, removeCardStyle);
     }
 
     const OVERLAY_LOADERS = {
@@ -4019,7 +4218,8 @@
     // Must match the replies_body_length check in the replies migration.
     const REPLY_MAX_LENGTH = 500;
     const REPLY_REMAINING_WARN_AT = 50;
-    const REPLY_SELECT = "id, link_id, body, created_at, profiles(handle), remote_actors(handle)";
+    const REPLY_SELECT =
+      "id, link_id, author_id, body, created_at, profiles(handle, card_style:entities(style, kinds(schema))), remote_actors(handle)";
 
     // Reply bodies are untrusted user text: they only ever reach the DOM
     // through textContent, never innerHTML, so markup in them stays inert.
@@ -4034,6 +4234,9 @@
       body.className = "reply-body";
       body.textContent = reply.body;
       item.append(author, body);
+      if (reply.author_id) item.setAttribute(AUTHOR_SELECTOR_ATTRIBUTE, reply.author_id);
+      const cardStyle = reply.profiles?.card_style;
+      if (cardStyle?.kinds?.schema) styleReply(item, cardStyle.kinds.schema, cardStyle.style);
       list.appendChild(item);
       list.hidden = false;
     }
@@ -5572,6 +5775,7 @@
     setupInbox();
     setupTaste();
     setupProfile();
+    setupCardStyleEditor();
     setupSearch();
     setupEntityIndex();
     setupDockActions();

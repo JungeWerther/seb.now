@@ -1126,6 +1126,31 @@ runs `tests/db` on the `supabase/postgres` image (each run a fresh database
 shaped like production's, `tests/db/production_shape.sql`), including a check
 that Python and `pg_jsonschema` accept and refuse the same values.
 
+**Card styles — an author's look on their own replies**
+(`20261022180000_card_styles.sql`). A style type has a `kinds.style_scope`: `page`
+types are picked by each reader for their own page (Appearance lists only these;
+readers' own types are always `page`, as the column isn't granted), `author` types
+are an author's look on what they write. `entity.style.card` (`card_bg`,
+`card_fg`, `card_accent`) is the first, with no built-in style, so an author
+without one keeps the page's look and its light/dark scheme. A reader points
+`profiles.card_style_id` at one of their own card styles (the
+`profiles_check_card_style` trigger refuses anyone else's or another type's;
+deleting the style clears it), and every reply of theirs shows in it: `REPLY_SELECT`
+embeds the author's `card_style` with its schema, and `styleReply` sets the
+checked tokens on that reply's `li` only (`.reply.styled`), since custom
+properties only reach an element's own subtree. **Contrast is checked in the
+database**: `public.style_contrast_pairs (kind_path, foreground, background,
+min_ratio)` (public-read, no client writes) names the colour tokens of a type
+that must stay readable together, `card_fg` on `card_bg` at 4.5 and `card_accent`
+on it at 3 (WCAG 2 AA for text and for UI), and `entities_check_style_contrast`
+refuses a style whose paired colours aren't opaque or fall below the ratio
+(`public.contrast_ratio(a, b)` over `relative_luminance`), naming the pair. The
+Appearance overlay's **Your replies** editor (`#card-style-editor`) starts from
+the page's own colours, shows each pair's ratio as you pick (`contrastResults` in
+`styles.ts`, the same formula), saves only a style that passes, and restyles your
+replies already on the page. QA: `tests/db/test_card_styles.py` (CI's `db`
+job), `tests/qa`, `npm run cards`.
+
 **Places — `place-resolve`.** Links place entities to Wikidata so where a place
 is comes from what it is (`entities.place_path`, see "Reversible graph edits and
 where places are"), never from its name: "Palais de Tokyo" is in the 16th

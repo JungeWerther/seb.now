@@ -54,3 +54,36 @@ function styleDeclarations(schema, values) {
 function styleProperties(schema) {
     return Object.keys(schema.properties).filter((token) => TOKEN_NAME.test(token)).map(tokenProperty);
 }
+const OPAQUE_COLOR = /^#[0-9a-f]{6}$/i;
+const CHANNEL_STARTS = [1, 3, 5];
+const HEX_RADIX = 16;
+const CHANNEL_MAX = 255;
+const LUMINANCE_WEIGHTS = [0.2126, 0.7152, 0.0722];
+const LINEAR_KNEE = 0.04045;
+const LINEAR_SLOPE = 12.92;
+const GAMMA_OFFSET = 0.055;
+const GAMMA_SCALE = 1.055;
+const GAMMA = 2.4;
+const FLARE = 0.05;
+// WCAG 2 relative luminance of an opaque #rrggbb colour.
+function relativeLuminance(hex) {
+    return CHANNEL_STARTS
+        .map((start) => Number.parseInt(hex.slice(start, start + 2), HEX_RADIX) / CHANNEL_MAX)
+        .map((v) => (v <= LINEAR_KNEE ? v / LINEAR_SLOPE : ((v + GAMMA_OFFSET) / GAMMA_SCALE) ** GAMMA))
+        .reduce((sum, v, i) => sum + v * (LUMINANCE_WEIGHTS[i] ?? 0), 0);
+}
+// WCAG 2 contrast ratio of two opaque #rrggbb colours, 1 to 21.
+function contrastRatio(a, b) {
+    const [high, low] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+    return ((high ?? 0) + FLARE) / ((low ?? 0) + FLARE);
+}
+// Each pair's ratio (null where a colour isn't opaque #rrggbb) and whether it passes.
+function contrastResults(pairs, values) {
+    return pairs.map((pair) => {
+        const [fg, bg] = [values[pair.foreground], values[pair.background]];
+        const ratio = typeof fg === "string" && typeof bg === "string" && OPAQUE_COLOR.test(fg) && OPAQUE_COLOR.test(bg)
+            ? contrastRatio(fg, bg)
+            : null;
+        return { pair, ratio, ok: ratio !== null && ratio >= pair.min_ratio };
+    });
+}

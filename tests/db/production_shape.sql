@@ -1,5 +1,5 @@
--- The part of production's schema the style-types migration touches, as it is
--- before that migration: tables, constraints, triggers and grants. Runs as
+-- The part of production's schema the style and card-style migrations touch, as it is
+-- before those migrations: tables, constraints, triggers and grants. Runs as
 -- postgres in a fresh database on Supabase's own Postgres image, whose roles are
 -- cluster-wide; what Supabase sets up per database comes first.
 create schema extensions;
@@ -58,6 +58,17 @@ alter table public.entities enable row level security;
 create policy "entities are publicly readable" on public.entities for select to anon, authenticated using (true);
 revoke all on public.entities from anon, authenticated;
 grant select, references, trigger on public.entities to anon, authenticated;
+
+create table public.profiles (
+  id uuid primary key references auth.users (id) on delete cascade,
+  handle text unique,
+  display_name text,
+  created_at timestamptz not null default now()
+);
+alter table public.profiles enable row level security;
+create policy "profiles are publicly readable" on public.profiles for select to anon, authenticated using (true);
+create policy "users can update their own profile" on public.profiles for update to authenticated
+  using (auth.uid() = id) with check (auth.uid() = id);
 
 create function public.kind_to_path(k text) returns ltree language sql immutable as $$
   select case k when 'company' then 'entity.agent.org.company' when 'place' then 'entity.place'
