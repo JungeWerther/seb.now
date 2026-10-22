@@ -35,7 +35,7 @@ function grab(name) {
 }
 
 const names = ["QUERY_PREFIX_MIN_LENGTH", "QUERY_STOPWORDS", "QUERY_SORT_WORDS", "QUERY_NAME_OPENING_SORT_WORDS",
-  "querySorts", "QUERY_FILLER_WORDS", "queryWords", "isTopicWord", "localRead", "wordMatches", "kindName", "entityKindLabel", "localNow", "indexicalSense", "typedIndexical", "typedFilter",
+  "querySorts", "QUERY_FILLER_WORDS", "queryWords", "isTopicWord", "localRead", "wordMatches", "kindName", "entityKindLabel", "localNow", "indexicalSense", "typedIndexical", "COMPATIBILITY_DECOMPOSITION", "LATEST_SORT", "typedFilter",
   "localFilterResults", "filterLocalLinks"];
 const src = filterJs + "\n" + names.map(grab).join("\n") + `
 let kindIndex = [], indexicalIndex = [], entityIndex = null, topicIndex = [];
@@ -70,11 +70,11 @@ const norm = (f) => f && JSON.parse(JSON.stringify(f).replace(/"at":"[^"]+"/g, '
 page.set(kinds, indexicals, null);
 check("event tonight → kind ∧ indexical",
   norm(page.typedFilter("event tonight", [])),
-  { terms: [{ kind: "entity.event" }, { indexical: "tonight", at: "NOW" }], local: null, log: [{ kind: "kind", label: "Event" }, { kind: "period", label: "tonight" }] });
+  { terms: [{ kind: "entity.event" }, { indexical: "tonight", at: "NOW" }], local: null, log: [{ kind: "kind", label: "Event" }, { kind: "period", label: "tonight" }], seenLast: false });
 check("tonight alone", norm(page.typedFilter("tonight", [])).terms, [{ indexical: "tonight", at: "NOW" }]);
 check("tonight + film Tonight → one superposed term",
   norm(page.typedFilter("tonight", [tonightFilm])),
-  { terms: [{ any: [{ indexical: "tonight", at: "NOW" }, { entities: ["w1"] }] }], local: null, log: [{ kind: "period / work", label: "tonight" }] });
+  { terms: [{ any: [{ indexical: "tonight", at: "NOW" }, { entities: ["w1"] }] }], local: null, log: [{ kind: "period / work", label: "tonight" }], seenLast: false });
 check("event (kind) + entity Event → superposed",
   norm(page.typedFilter("event paris", [eventEntity, paris])).terms,
   [{ any: [{ kind: "entity.event" }, { entities: ["e9"] }] }, { entities: ["p1"] }]);
@@ -94,7 +94,7 @@ check("typedIndexical('this') off-page → none", page.typedIndexical("this"), n
 page.set(kinds, indexicals, { focus: { entity: "p1" }, name: "Paris" });
 check("tonight this, on the Paris page",
   norm(page.typedFilter("tonight this", [])),
-  { terms: [{ indexical: "tonight", at: "NOW" }, { indexical: "this", focus: { entity: "p1" } }], local: null, log: [{ kind: "period", label: "tonight" }, { kind: "entity", label: "this · Paris" }] });
+  { terms: [{ indexical: "tonight", at: "NOW" }, { indexical: "this", focus: { entity: "p1" } }], local: null, log: [{ kind: "period", label: "tonight" }, { kind: "entity", label: "this · Paris" }], seenLast: false });
 check("typedIndexical('this') on a page", page.typedIndexical("this")?.term, "this");
 check("at is local wall-clock time", /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(page.typedFilter("tonight", []).terms[0].at), true);
 
@@ -119,6 +119,11 @@ check("local: (Event kind ∨ work 'Event') ∧ Paris, newest first",
 check("local: a lone kind still works", page.filterLocalLinks([{ kind: "entity.event" }]).map((r) => r.linkSeq), [11]);
 check("an indexical sense keeps the filter off the local index",
   page.typedFilter("tonight paris", [paris]).local, null);
+const newInParis = page.typedFilter("events in paris new", [paris]);
+check("events in paris, new → seen last, same terms, asked of the database",
+  [newInParis.seenLast, newInParis.terms, newInParis.local],
+  [true, page.typedFilter("events in paris", [paris]).terms, null]);
+check("events in paris → newest first, read locally", page.typedFilter("events in paris", [paris]).seenLast, false);
 
 // "new" is newest first unless another word follows it (New York).
 check("new → latest", page.localRead("new").intent, { sort: "latest", topic: null, search: "" });

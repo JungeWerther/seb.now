@@ -10,18 +10,23 @@
 // Between a chip's kinds, when its senses are of several.
 const CHIP_KIND_SEPARATOR = " / ";
 const Filter = {
-    unit: () => ({ terms: [], local: [], log: [] }),
+    unit: () => ({ terms: [], local: [], log: [], seenLast: false }),
+    // Passes every link and lists the seen ones last. What a reader has seen
+    // isn't in the local index, so it has no local form.
+    seenLast: () => ({ terms: [], local: null, log: [], seenLast: true }),
     // One term with all its senses; `localSenses` is null when one of them
     // can't be read on the local index.
     term: (senses, label, kinds, localSenses) => ({
         terms: [oneOrAny(senses)],
         local: localSenses && [oneOrAny(localSenses)],
         log: [{ kind: [...new Set(kinds)].join(CHIP_KIND_SEPARATOR), label }],
+        seenLast: false,
     }),
     concat: (a, b) => ({
         terms: [...a.terms, ...b.terms],
         local: a.local && b.local && [...a.local, ...b.local],
         log: [...a.log, ...b.log],
+        seenLast: a.seenLast || b.seenLast,
     }),
 };
 function oneOrAny(senses) {
@@ -35,6 +40,7 @@ const separatorByKeyPart = {
     reading: "@",
     sense: "|",
     term: "&",
+    order: "#",
     page: "@",
     cursor: "|",
 };
@@ -58,21 +64,28 @@ function termKey(term) {
     const senses = "any" in term ? term.any : [term];
     return [...new Set(senses.map(senseKey))].sort().join(separatorByKeyPart.sense);
 }
+// The order a seen-last filter is listed in, in its key.
+const SEEN_LAST_ORDER = "seen-last";
 // The filter's cache key. Conjunction is commutative and idempotent, so
 // terms are deduplicated and sorted: "paris event" and "event paris" are the
 // same filter. The log is left out; it only decides what the chips say.
 function filterKey(filter) {
-    return [...new Set(filter.terms.map(termKey))].sort().join(separatorByKeyPart.term);
+    const terms = [...new Set(filter.terms.map(termKey))].sort().join(separatorByKeyPart.term);
+    return filter.seenLast ? [terms, SEEN_LAST_ORDER].join(separatorByKeyPart.order) : terms;
 }
 // The cursor after `rows`, or null when there are none.
 function nextFilterCursor(rows) {
     const last = rows.at(-1);
-    return last ? { createdAt: last.created_at, id: last.link_id } : null;
+    return last ? { seen: last.seen, createdAt: last.created_at, id: last.link_id } : null;
 }
-// The key of one page of `filter`: its filter's key and where it starts.
-function filterPageKey(filter, cursor) {
-    const key = filterKey(filter);
-    return cursor ? [key, [cursor.createdAt, cursor.id].join(separatorByKeyPart.cursor)].join(separatorByKeyPart.page) : key;
+// The key of one page of `filter`: its filter's key, the moment a seen-last
+// filter's seen links are counted at (`asOf`; other filters don't depend on
+// it, so their pages are shared across feeds) and where the page starts.
+function filterPageKey(filter, cursor, asOf) {
+    const key = filter.seenLast ? [filterKey(filter), asOf].join(separatorByKeyPart.page) : filterKey(filter);
+    return cursor
+        ? [key, [String(cursor.seen), cursor.createdAt, cursor.id].join(separatorByKeyPart.cursor)].join(separatorByKeyPart.page)
+        : key;
 }
 // How long a cached page is reused. Keyset pages don't shift when links are
 // added, but entity extraction can still tag an older link later, so no page

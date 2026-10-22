@@ -635,7 +635,6 @@
  "typedFilter \" \"",
  "typedFilter \"${} · ${}\"",
  "typedFilter \"kind\"",
- "typedFilter.words \"latest\"",
  "typedIndexical \" \"",
  "updateFocusBand \"${}px\"",
  "updateFocusBand \"--focus-end\"",

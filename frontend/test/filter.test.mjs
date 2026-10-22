@@ -60,12 +60,48 @@ test("an indexical read at another time is another filter", () => {
   assert.notEqual(filterKey(tonight), filterKey(later));
 });
 
+const AS_OF = "2026-10-20T22:00:00Z";
+const LATER = "2026-10-20T23:00:00Z";
+
 test("pages of one filter have different keys", () => {
   const f = read(event, paris);
-  const cursor = nextFilterCursor([{ link_id: "L", entity_ids: [], created_at: "2026-10-16T00:00:00Z" }]);
-  assert.deepEqual(plain(cursor), { createdAt: "2026-10-16T00:00:00Z", id: "L" });
-  assert.notEqual(filterPageKey(f, null), filterPageKey(f, cursor));
+  const cursor = nextFilterCursor([{ link_id: "L", entity_ids: [], created_at: "2026-10-16T00:00:00Z", seen: false }]);
+  assert.deepEqual(plain(cursor), { seen: false, createdAt: "2026-10-16T00:00:00Z", id: "L" });
+  assert.notEqual(filterPageKey(f, null, AS_OF), filterPageKey(f, cursor, AS_OF));
   assert.equal(nextFilterCursor([]), null);
+});
+
+test("seen-last is part of the filter, from either side of a conjunction", () => {
+  const plainRead = read(event, paris);
+  const newRead = read(Filter.seenLast(), event, paris);
+  assert.equal(newRead.seenLast, true);
+  assert.equal(read(event, Filter.seenLast(), paris).seenLast, true);
+  assert.equal(plainRead.seenLast, false);
+  assert.deepEqual(plain(newRead.terms), plain(plainRead.terms));
+  assert.deepEqual(plain(newRead.log), plain(plainRead.log));
+  assert.notEqual(filterKey(newRead), filterKey(plainRead));
+  assert.equal(filterKey(read(Filter.seenLast(), paris, event)), filterKey(newRead));
+});
+
+test("a seen-last filter isn't read on the local index", () => {
+  assert.ok(read(event, paris).local);
+  assert.equal(read(Filter.seenLast(), event, paris).local, null);
+});
+
+test("a seen-last filter's pages depend on as_of, a newest-first one's don't", () => {
+  const newest = read(event, paris);
+  const seenLast = read(Filter.seenLast(), event, paris);
+  assert.equal(filterPageKey(newest, null, AS_OF), filterPageKey(newest, null, LATER));
+  assert.notEqual(filterPageKey(seenLast, null, AS_OF), filterPageKey(seenLast, null, LATER));
+});
+
+test("the cursor carries whether its link was seen", () => {
+  const f = read(Filter.seenLast(), event);
+  const row = { link_id: "L", entity_ids: [], created_at: "2026-10-16T00:00:00Z" };
+  const unseen = nextFilterCursor([{ ...row, seen: false }]);
+  const seen = nextFilterCursor([{ ...row, seen: true }]);
+  assert.equal(seen.seen, true);
+  assert.notEqual(filterPageKey(f, unseen, AS_OF), filterPageKey(f, seen, AS_OF));
 });
 
 test("a page in flight is shared, then served from the cache", async () => {
