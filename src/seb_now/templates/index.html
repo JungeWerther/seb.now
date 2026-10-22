@@ -1320,20 +1320,29 @@
     }
 
     // A row counts as seen once SEEN_VISIBLE_RATIO of it has stayed on screen
-    // for SEEN_DWELL_MS, so a fling past it doesn't. Seen links are recorded in
-    // link_impressions, and the latest order puts them below unseen ones
-    // (feed_query), so "new" means new to this reader.
+    // for SEEN_DWELL_MS while the page is visible, so neither a fling past it nor
+    // a tab left in the background does. Seen links are recorded in
+    // link_impressions with the moment the dwell ended, and the latest order puts
+    // them below unseen ones (feed_query), so "new" means new to this reader.
+    const SEEN_TABLE = "link_impressions";
+    const SEEN_CONFLICT_KEY = "viewer_id,link_id";
+    const SEEN_FLUSH_FAILED = "failed to record seen links";
+    const PAGE_HIDDEN = "hidden";
+    const PAGE_VISIBLE = "visible";
     const SEEN_VISIBLE_RATIO = 0.5;
     const SEEN_DWELL_MS = 1000;
     const SEEN_FLUSH_MS = 3000;
     const seenTimers = new Map();
-    const seenQueue = new Set();
+    const seenWatched = new Set();
+    // Link id → when its dwell ended, as seen_at, so a feed restarted before the
+    // next flush already counts it as seen at or before its as_of.
+    const seenQueue = new Map();
     let seenFlushTimer = null;
     const seenObserver = "IntersectionObserver" in window
       ? new IntersectionObserver((entries) => {
         for (const entry of entries) {
           const li = entry.target;
-          if (entry.intersectionRatio >= SEEN_VISIBLE_RATIO) {
+          if (entry.intersectionRatio >= SEEN_VISIBLE_RATIO && document.visibilityState !== PAGE_HIDDEN) {
             if (!seenTimers.has(li)) seenTimers.set(li, setTimeout(() => markSeen(li), SEEN_DWELL_MS));
           } else {
             clearTimeout(seenTimers.get(li));
@@ -1344,41 +1353,65 @@
       : null;
 
     function observeSeen(items) {
-      if (seenObserver) for (const li of items) seenObserver.observe(li);
+      if (!seenObserver) return;
+      for (const li of items) {
+        seenWatched.add(li);
+        seenObserver.observe(li);
+      }
     }
+
+    // Hidden, no dwell runs on; visible again, each watched row is observed
+    // afresh, so one still on screen starts its whole dwell over. Rows off the
+    // page stay watched: the feed saved while a post is open comes back.
+    const seenByVisibility = {
+      [PAGE_HIDDEN]: () => {
+        for (const timer of seenTimers.values()) clearTimeout(timer);
+        seenTimers.clear();
+        flushSeen();
+      },
+      [PAGE_VISIBLE]: () => {
+        for (const li of seenWatched) {
+          seenObserver?.unobserve(li);
+          seenObserver?.observe(li);
+        }
+      },
+    };
 
     function markSeen(li) {
       seenTimers.delete(li);
+      seenWatched.delete(li);
       seenObserver.unobserve(li);
       if (!li.isConnected || !li.dataset.linkId) return;
-      seenQueue.add(li.dataset.linkId);
+      if (!seenQueue.has(li.dataset.linkId)) seenQueue.set(li.dataset.linkId, new Date().toISOString());
       seenFlushTimer ??= setTimeout(flushSeen, SEEN_FLUSH_MS);
     }
 
-    const SEEN_TABLE = "link_impressions";
-    const SEEN_CONFLICT_KEY = "viewer_id,link_id";
-    const SEEN_FLUSH_FAILED = "failed to record seen links";
-    const PAGE_HIDDEN = "hidden";
-    const PAGE_VISIBLE = "visible";
+    // Writes run one after another; a feed waits for the one started when it
+    // took its as_of (resetFeed), so an impression from before as_of can't land
+    // between its pages and reorder them.
+    let seenWriting = Promise.resolve();
 
-    async function flushSeen() {
+    function flushSeen() {
       clearTimeout(seenFlushTimer);
       seenFlushTimer = null;
+      seenWriting = seenWriting.then(writeSeen).catch((error) => console.error(SEEN_FLUSH_FAILED, error));
+      return seenWriting;
+    }
+
+    async function writeSeen() {
       if (seenQueue.size === 0) return;
-      const linkIds = [...seenQueue];
+      const seen = [...seenQueue];
       seenQueue.clear();
       const session = await pendingSession;
       if (!session) return;
       const { error } = await (await supabaseReady).from(SEEN_TABLE).upsert(
-        linkIds.map((linkId) => ({ viewer_id: session.user.id, link_id: linkId })),
+        seen.map(([linkId, seenAt]) => ({ viewer_id: session.user.id, link_id: linkId, seen_at: seenAt })),
         { onConflict: SEEN_CONFLICT_KEY, ignoreDuplicates: true },
       );
       if (error) console.error(SEEN_FLUSH_FAILED, error);
     }
 
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === PAGE_HIDDEN) flushSeen();
-    });
+    document.addEventListener("visibilitychange", () => seenByVisibility[document.visibilityState]?.());
 
     // A clicked link's visit records how the reader came back. Article links
     // open in a new tab (or another app), which keeps this page: the return is
@@ -1981,6 +2014,7 @@
       order: null,
       chronological: false,
       asOf: null,
+      seenWritten: null,
       offset: 0,
       cursor: null,
       seen: new Set(),
@@ -2455,6 +2489,8 @@
       feed.replacing = replace;
       updateSkeletons();
       const generation = feed.generation;
+      await feed.seenWritten;
+      if (generation !== feed.generation) return;
       const { data: page, error } = await fetchPage();
       if (generation !== feed.generation) return;
       feed.loading = false;
@@ -2495,6 +2531,7 @@
       feed.chronological = false;
       // Ranks are computed as of this moment for every page of this feed.
       feed.asOf = new Date().toISOString();
+      feed.seenWritten = flushSeen();
       feed.offset = 0;
       feed.cursor = null;
       feed.seen = new Set();
