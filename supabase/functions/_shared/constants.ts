@@ -290,3 +290,27 @@ export const PLACE_RESOLVE = Object.freeze({
   // `entity_edits.batch` for merges it stages, followed by the date.
   MERGE_BATCH_PREFIX: "wikidata",
 });
+
+// relation-extract: typed relations between the entities a link's title names.
+export const RELATION_EXTRACT = Object.freeze({
+  LINKS_PER_RUN: 40,
+  MAX_LINK_IDS: 50,
+  // Entities per link asked about, most certain first; every pair of them is one question.
+  MAX_ENTITIES_PER_LINK: 5,
+  MIN_RELATION_P: 0.5,
+  MAX_DESCRIPTION_CHARS: 300,
+  CONCURRENCY: 6,
+});
+
+// property-extract: what a title's words say about the entities it names.
+export const PROPERTY_EXTRACT = Object.freeze({
+  LINKS_PER_RUN: 100,
+  MAX_LINK_IDS: 300,
+  MIN_FACET_P: 0.5,
+  // A judgement ("viral", "rogue") needs more certainty than a fact.
+  MIN_EVALUATION_P: 0.75,
+  MIN_TOPIC_P: 0.5,
+  CONCURRENCY: 6,
+  // Words in a descriptor run before or after a name.
+  MAX_WORDS: 5,
+});

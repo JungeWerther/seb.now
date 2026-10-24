@@ -368,6 +368,24 @@ marks the link. `POST {"link_ids": [...], "dry_run": true}` reports without
 writing. Events aren't entities yet: a listing's headings are headlines, not
 clean names, so merging them into `entities` (kind `event`) is a later step.
 
+**Relations and properties — `relation-extract`, `property-extract`.** What a
+link's title says entities do to each other, and what it says they are. Both run
+on links `entity-extract` has done (title mentions only), on their own `pg_cron`
+jobs (`2-59/10 * * * *` and `8-59/10 * * * *`). `relation-extract` asks one Jev
+question per pair of a link's top `MAX_ENTITIES_PER_LINK` entities, choosing
+among the 13 relations (`acquires` … `located_in`, directed ones offered both
+ways round; `partners_with`/`competes_with` symmetric, stored subject < object)
+those the pair's kinds allow, or none; a second question gives each claim's
+`status` (stated, planned, called_off, disputed, ended). Claims land in
+`public.entity_relations` (one row per link, so `entity_relation_summary` folds
+them into a noisy-or `p` with first/last seen). `property-extract` finds the
+words a title describes an entity with ("British AI neocloud Nscale",
+`descriptors.ts`, compromise, no model call), asks Jev each word's facet (domain,
+origin, stage, type, evaluation), merges neighbours of one facet and maps a domain
+onto a topic; rows go to `public.entity_properties` (`entity_property_summary`).
+Both tables are public-read, service_role-write; `link_enrichment.relations_at` /
+`properties_at` mark the links done.
+
 **Reversible graph edits and where places are**
 (`20261017180000_entity_sense.sql`). Every judged change to the entity graph
 goes through `public.entity_edits` (service_role only): `drop_mention` (a
