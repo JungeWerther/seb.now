@@ -129,12 +129,13 @@ async function linksById(db: SupabaseClient, ids: string[]): Promise<Link[]> {
   return data;
 }
 
-// Each link's first MAX_ENTITIES_PER_LINK distinct entities, most certain first.
+// Each link's first MAX_ENTITIES_PER_LINK distinct entities its title names, most certain first.
 async function mentionsByLink(db: SupabaseClient, ids: string[]): Promise<Map<string, EntityMention[]>> {
   const { data, error } = await db
     .from("link_entities")
     .select("link_id, surface, p, entities(id, name, kind)")
     .in("link_id", ids)
+    .eq("found_in", "title")
     .order("p", { ascending: false });
   if (error) throw new Error(error.message);
   const byLink = new Map<string, EntityMention[]>();

@@ -107,6 +107,7 @@ ALLOWED = {
     ("relation-extract/index.ts", "KIND_RULES"): "which options each pair of entity kinds is offered (prompt schema)",
     ("property-extract/index.ts", "OTHER"): "sentinel option key of the Jev question",
     ("property-extract/index.ts", "NONE"): "sentinel option key of the Jev question",
+    ("property-extract/index.ts", "TITLE"): "link_entities.found_in value, checked by the database",
     ("property-extract/index.ts", "FACET_OPTIONS"): "a Jev question's options (prompt schema)",
     ("property-extract/index.ts", "LINK_COLUMNS"): "a PostgREST select shape, changed with the code that reads it",
     ("property-extract/descriptors.ts", "STOP_TAGS"): "compromise's part-of-speech tags that end a descriptor",

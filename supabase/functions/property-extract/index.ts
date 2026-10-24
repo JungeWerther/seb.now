@@ -25,6 +25,8 @@ import { descriptors } from "./descriptors.ts";
 
 const OTHER = "other";
 const NONE = "none";
+// The descriptors are read from the title, so only its mentions are described.
+const TITLE = "title";
 
 const FACET_OPTIONS = {
   domain: "A field, technology or subject it works in (AI, voice, robotics, hearing tech).",
@@ -37,13 +39,13 @@ const FACET_OPTIONS = {
 
 type Facet = keyof typeof FACET_OPTIONS;
 
-const LINK_COLUMNS = "id, title, url, link_entities(surface, entity_id, entities(name)), link_topics(topic_id, topics(name))";
+const LINK_COLUMNS = "id, title, url, link_entities(surface, entity_id, found_in, entities(name)), link_topics(topic_id, topics(name))";
 
 interface Link {
   id: string;
   title: string;
   url: string;
-  link_entities: { surface: string | null; entity_id: string; entities: { name: string } }[];
+  link_entities: { surface: string | null; entity_id: string; found_in: string; entities: { name: string } }[];
   link_topics: { topic_id: string; topics: { name: string } }[];
 }
 
@@ -80,8 +82,9 @@ async function topLevelTopics(db: SupabaseClient): Promise<Record<string, string
 }
 
 async function propertiesOf(jev: JevClient, link: Link, topLevel: Record<string, string>) {
-  const surfaces = link.link_entities.map((m) => m.surface ?? m.entities.name);
-  const entityIdOf = new Map(link.link_entities.map((m, i) => [surfaces[i], m.entity_id]));
+  const mentions = link.link_entities.filter((m) => m.found_in === TITLE);
+  const surfaces = mentions.map((m) => m.surface ?? m.entities.name);
+  const entityIdOf = new Map(mentions.map((m, i) => [surfaces[i], m.entity_id]));
   const found = descriptors(link.title, surfaces);
   if (!found.length) return { link_id: link.id, title: link.title, site: hostOf(link.url), descriptors: found, properties: [], inputTokens: 0 };
 
