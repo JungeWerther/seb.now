@@ -33,6 +33,12 @@ export const JEV = Object.freeze({
   TYPESAFE_KEY_SECRET: "typesafe-ai-token",
 });
 
+// account-merge: an access token is a JWT of a few hundred bytes; anything far
+// longer isn't one.
+export const ACCOUNT_MERGE = Object.freeze({
+  MAX_TOKEN_LENGTH: 4096,
+});
+
 // _shared/clients.ts.
 export const VAULT = Object.freeze({
   CACHED_SECRETS: 8,

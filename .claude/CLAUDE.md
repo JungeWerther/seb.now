@@ -796,7 +796,7 @@ version a user accepted, and when, is `public.account_consents` (own rows,
 insert-only). Signing in on a second device that already has an anonymous
 session folds that session into the account with `public.merge_account(from,
 into)` (service_role only, run by the `account-merge` Edge Function once it has
-checked both sessions' tokens): one transaction, driven by
+checked both sessions' tokens: `POST {"anonymous_token"}` with the account's bearer, `verify_jwt` on, the pairing rules in `_shared/account_merge.ts`): one transaction, driven by
 `public.account_columns`, one row per column that names a user with its
 strategy (`move`: repoint, the account's own row winning on each listed unique
 key; `drop`: the anonymous rows go, as federated actor keys and followers are

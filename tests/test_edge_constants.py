@@ -71,6 +71,7 @@ ALLOWED = {
     ("_shared/page.ts", "ELEMENT_NODE"): "DOM nodeType value",
     ("_shared/page.ts", "TEXT_NODE"): "DOM nodeType value",
     ("style-types/index.ts", "CORS"): "HTTP response headers",
+    ("account-merge/index.ts", "CORS"): "HTTP response headers",
     ("style-types/index.ts", "STATUS_BY_CODE"): "Postgres error codes to HTTP statuses (a protocol table)",
     ("style-types/index.ts", "TYPE_COLUMNS"): "a PostgREST select shape, changed with the code that reads it",
     ("style-types/index.ts", "STYLE_COLUMNS"): "a PostgREST select shape, changed with the code that reads it",
