@@ -9,13 +9,11 @@
 <body>
   <main class="wide">
     <h1>seb.now follow</h1>
-    <form id="form">
-      <label for="token">Intake token</label>
-      <input id="token" type="password" autocomplete="off" spellcheck="false">
-      <button id="save" class="primary" type="submit">Save and check</button>
-    </form>
-    <p id="status" class="status" role="status" aria-live="polite"></p>
-    <p class="hint">Kept in this browser only. Checking it sends an empty request, so nothing is staged.</p>
+    <p id="state" class="status" role="status" aria-live="polite"></p>
+    <button id="connect" class="primary" type="button">Connect seb.now</button>
+    <button id="disconnect" type="button" hidden>Disconnect this browser</button>
+    <p class="hint">Connect opens seb.now in this browser, which links the extension to your seb.now account there. A new account needs approving once; the page shows its pairing code.</p>
+    <a id="manage" href="https://seb.now/connect" target="_blank" rel="noopener">Manage connected devices</a>
   </main>
   <script src="options.js"></script>
 </body>

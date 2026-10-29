@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import NamedTuple, TypedDict
 
 from seb_now.auth import get_unauthenticated_client
+from seb_now.connect import write_connect
 from seb_now.consent import write_consent
 from seb_now.constants import (
     ARTICLE_ENTITY_CHIPS,
@@ -480,6 +481,9 @@ def main() -> None:
 
     consent_path = write_consent(OUTPUT_PATH.parent, supabase_url=supabase_url, supabase_anon_key=supabase_anon_key)
     print(f"wrote {consent_path}")
+
+    connect_path = write_connect(OUTPUT_PATH.parent, supabase_url=supabase_url, supabase_anon_key=supabase_anon_key)
+    print(f"wrote {connect_path}")
 
 
 if __name__ == "__main__":

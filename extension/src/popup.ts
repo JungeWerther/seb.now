@@ -1,14 +1,17 @@
 // The popup: Follow sends the page's signals to the inbox and opens Claude
-// with /follow; Open in Claude only opens it. Works the same in Chrome and
-// Firefox (desktop and Android), which both answer `chrome.*` with promises.
+// with /follow; Open in Claude only opens it; Connect links this browser to a
+// seb.now account first. Works the same in Chrome and Firefox (desktop and
+// Android), which both answer `chrome.*` with promises.
 
 import { claudeUrl, isWebPage, type Outcome, reported, sendSignals } from "./actions.ts";
 import { CONFIG } from "./config.ts";
+import { type Connection, forgetConnection, loadConnection, saveConnection, startConnect } from "./connection.ts";
 import { byId } from "./dom.ts";
 import { extractSignals, type Signals } from "./extract.ts";
 
 const status = byId("status", HTMLParagraphElement);
-const buttons = [byId("follow", HTMLButtonElement), byId("open", HTMLButtonElement)];
+const followButton = byId("follow", HTMLButtonElement);
+const buttons = [followButton, byId("open", HTMLButtonElement)];
 
 const show = (outcome: Outcome | "busy") => {
   for (const button of buttons) button.disabled = outcome === "busy";
@@ -39,11 +42,15 @@ async function readPage(tabId: number): Promise<Signals> {
   return result.result;
 }
 
-async function storedToken(): Promise<string | undefined> {
-  const stored = await chrome.storage.local.get(CONFIG.TOKEN_KEY);
-  const token = stored[CONFIG.TOKEN_KEY];
-  return typeof token === "string" && token ? token : undefined;
-}
+// What the intake's answer says about this device's connection, kept.
+const settle = (connection: Connection, outcome: Outcome) => {
+  const effects = {
+    gone: () => forgetConnection(),
+    pending: () => saveConnection({ ...connection, status: "pending", pairCode: outcome.pairCode ?? connection.pairCode }),
+    active: () => saveConnection({ ...connection, status: "active", pairCode: null }),
+  };
+  return outcome.connection ? effects[outcome.connection]() : Promise.resolve();
+};
 
 const openClaude = async (pageUrl: string) => {
   await chrome.tabs.create({ url: claudeUrl(pageUrl) });
@@ -51,11 +58,17 @@ const openClaude = async (pageUrl: string) => {
 };
 
 const follow = reported(show)(async () => {
+  const connection = await loadConnection();
+  if (!connection) {
+    await startConnect();
+    window.close();
+    return { ok: true, message: "Opening seb.now to connect…" };
+  }
   const tab = await targetTab();
-  const token = await storedToken();
-  if (!token) return { ok: false, message: "Add your intake token in the options first, or just open Claude." };
-  const outcome = await sendSignals(await readPage(tab.id), token);
+  const outcome = await sendSignals(await readPage(tab.id), connection.token);
+  await settle(connection, outcome);
   if (outcome.ok) await openClaude(tab.url);
+  else await render();
   return outcome;
 });
 
@@ -65,7 +78,18 @@ const open = reported(show)(async () => {
   return { ok: true, message: "Opened Claude." };
 });
 
-byId("follow", HTMLButtonElement).addEventListener("click", () => void follow());
+// The Follow button says what it will do: connect first, or follow.
+async function render() {
+  const connection = await loadConnection();
+  followButton.textContent = connection ? "Follow" : "Connect seb.now";
+  byId("connection", HTMLParagraphElement).textContent = !connection
+    ? "Not connected yet."
+    : connection.status === "pending"
+    ? `Waiting for approval, code ${connection.pairCode ?? "?"}.`
+    : "Connected.";
+}
+
+followButton.addEventListener("click", () => void follow());
 byId("open", HTMLButtonElement).addEventListener("click", () => void open());
 byId("options", HTMLAnchorElement).addEventListener("click", (event) => {
   event.preventDefault();
@@ -73,6 +97,7 @@ byId("options", HTMLAnchorElement).addEventListener("click", (event) => {
 });
 
 void (async () => {
+  await render();
   try {
     const tab = await targetTab();
     byId("page", HTMLParagraphElement).textContent = new URL(tab.url).host;

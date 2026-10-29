@@ -83,6 +83,8 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npx playwright install --with-deps chromium
+      # The e2e test renders seb.now/connect with site.py's own code.
+      - uses: astral-sh/setup-uv@v4
       - run: npm run e2e
       - run: npm run build && npm run package
       - uses: actions/upload-artifact@v4

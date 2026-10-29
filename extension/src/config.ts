@@ -9,8 +9,15 @@ export const CONFIG = Object.freeze({
   CLAUDE_NEW_CHAT_URL: "https://claude.ai/new",
   // The prompt: the /follow skill and the page.
   FOLLOW_COMMAND: "/follow",
-  // storage.local key of the intake's bearer token.
-  TOKEN_KEY: "intakeToken",
+  // seb.now, whose /connect page hands this extension its token.
+  SEB_NOW_ORIGIN: "https://seb.now",
+  CONNECT_PATH: "/connect",
+  // How long a Connect may take before its nonce stops being accepted.
+  NONCE_TTL_MS: 10 * 60_000,
+  // storage.local keys: the connection (token, status, pairing code) and the
+  // nonce of a Connect in progress.
+  CONNECTION_KEY: "connection",
+  NONCE_KEY: "connectNonce",
   // How long a send may take before the popup gives up on it.
   SEND_TIMEOUT_MS: 10_000,
   // Kept well under the intake's caps, which clean again.

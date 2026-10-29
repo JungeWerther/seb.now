@@ -12,7 +12,7 @@ const e2e = process.argv.includes("--e2e");
 await rm(dist, { recursive: true, force: true });
 await cp(`${root}static`, dist, { recursive: true });
 await build({
-  entryPoints: [`${root}src/popup.ts`, `${root}src/options.ts`],
+  entryPoints: [`${root}src/popup.ts`, `${root}src/options.ts`, `${root}src/connect.ts`],
   outdir: dist,
   bundle: true,
   format: "iife",

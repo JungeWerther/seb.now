@@ -109,6 +109,8 @@ POST_SLUG_PATTERN = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 # consent.py — where the OAuth consent page is written under dist/; must match
 # the Authorization Path set in Supabase (Authentication → OAuth Server).
 OAUTH_CONSENT_PATH = "oauth/consent"
+# connect.py — where the follow extension's Connect opens: seb.now/connect.
+CONNECT_PATH = "connect"
 
 # site.py / consent.py — supabase-js's self-contained UMD build (no imports of
 # its own), so the CSP can allow this one URL rather than a whole CDN origin.
