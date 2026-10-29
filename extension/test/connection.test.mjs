@@ -62,3 +62,21 @@ test("only a well-formed stored connection is read back", () => {
     assert.ok(!isConnection(value), JSON.stringify(value));
   }
 });
+
+test("Connect needs access to seb.now first, and stores nothing without it", async () => {
+  const { startConnect } = await import("../src/connection.ts");
+  const calls = [];
+  globalThis.chrome = {
+    storage: { local: { set: async (v) => calls.push(["set", v]) } },
+    tabs: { create: async (v) => calls.push(["open", v.url]) },
+  };
+  try {
+    await assert.rejects(startConnect(Promise.resolve(false)), /access to seb\.now/);
+    assert.deepEqual(calls, []);
+    await startConnect(Promise.resolve(true));
+    assert.equal(calls[0][0], "set");
+    assert.match(calls[1][1], /^https:\/\/seb\.now\/connect#nonce=[A-Za-z0-9_-]{32}$/);
+  } finally {
+    delete globalThis.chrome;
+  }
+});

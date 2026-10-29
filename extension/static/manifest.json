@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "seb.now follow",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Follow the page you're on in seb.now: connect your seb.now account, send the page's feed and profile links to your inbox, and open Claude with /follow.",
   "action": {
     "default_title": "Follow on seb.now",
@@ -22,6 +22,9 @@
     "activeTab",
     "scripting",
     "storage"
+  ],
+  "host_permissions": [
+    "https://seb.now/*"
   ],
   "content_scripts": [
     {
