@@ -244,11 +244,9 @@ export const MCP = Object.freeze({
 // follow-intake: pages the follow browser extension sends, staged in
 // public.follow_inbox for /follow (_shared/follow_intake.ts).
 export const FOLLOW_INTAKE = Object.freeze({
-  // Vault secret holding the extension's bearer token.
-  TOKEN_SECRET: "follow-intake-token",
   // Refused before parsing: the signals are a few kilobytes at most.
   MAX_BODY_BYTES: 65_536,
-  // Pages staged per RATE_WINDOW before further sends get 429.
+  // Pages one account stages per RATE_WINDOW before further sends get 429.
   MAX_PER_WINDOW: 120,
   RATE_WINDOW: "1 hour",
   // What one page may carry, after cleaning; extra items are dropped.

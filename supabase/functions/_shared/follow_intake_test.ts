@@ -1,23 +1,35 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { FOLLOW_INTAKE } from "./constants.ts";
-import { followIntake, type IntakeDeps } from "./follow_intake.ts";
+import { followIntake, type IntakeDeps, type TokenHolder } from "./follow_intake.ts";
 import type { Signals } from "./follow_signals.ts";
 
-const TOKEN = "s3cret-token-for-tests";
+const TOKEN = `sft_${"ab".repeat(32)}`;
+const PENDING = `sft_${"cd".repeat(32)}`;
+const REVOKED = `sft_${"ef".repeat(32)}`;
+const OWNER = "11111111-1111-4111-8111-111111111111";
+const HOLDERS: Record<string, TokenHolder> = {
+  [TOKEN]: { userId: OWNER, status: "active", pairCode: null },
+  [PENDING]: { userId: OWNER, status: "pending", pairCode: "K7Q-2MX" },
+  [REVOKED]: { userId: OWNER, status: "revoked", pairCode: null },
+};
 const ENDPOINT = "https://example.supabase.co/functions/v1/follow-intake";
 
 function intake(overrides: Partial<IntakeDeps> = {}) {
-  const staged: { pageUrl: string; signals: Signals }[] = [];
+  const staged: { owner: string; pageUrl: string; signals: Signals }[] = [];
+  const lookedUp: string[] = [];
   const handler = followIntake({
-    token: () => Promise.resolve(TOKEN),
-    stage: (pageUrl, signals) => {
-      staged.push({ pageUrl, signals });
+    holder: (token) => {
+      lookedUp.push(token);
+      return Promise.resolve(HOLDERS[token] ?? null);
+    },
+    stage: (owner, pageUrl, signals) => {
+      staged.push({ owner, pageUrl, signals });
       return Promise.resolve("00000000-0000-4000-8000-000000000001");
     },
     recent: () => Promise.resolve(0),
     ...overrides,
   });
-  return { handler, staged };
+  return { handler, staged, lookedUp };
 }
 
 const post = (body: BodyInit | null, headers: Record<string, string> = {}) =>
@@ -48,7 +60,8 @@ Deno.test("only POST is accepted, and refusals still carry CORS", async () => {
   assertEquals(res.headers.get("access-control-allow-origin"), "*");
 });
 
-Deno.test("a missing, malformed or wrong token is 401 and stages nothing", async () => {
+Deno.test("a missing, malformed, unknown or revoked token is 401 and stages nothing", async () => {
+  const unknown = `sft_${"00".repeat(32)}`;
   for (
     const authorization of [
       undefined,
@@ -56,8 +69,11 @@ Deno.test("a missing, malformed or wrong token is 401 and stages nothing", async
       "Bearer",
       `Basic ${TOKEN}`,
       `Bearer ${TOKEN}x`,
-      `Bearer ${TOKEN.slice(1)}`,
+      `Bearer ${TOKEN.toUpperCase()}`,
+      `Bearer ${TOKEN.slice(0, -1)}`,
       "Bearer wrong",
+      `Bearer ${unknown}`,
+      `Bearer ${REVOKED}`,
     ]
   ) {
     const { handler, staged } = intake();
@@ -66,6 +82,21 @@ Deno.test("a missing, malformed or wrong token is 401 and stages nothing", async
     assertEquals((await handler(req)).status, 401, String(authorization));
     assertEquals(staged.length, 0);
   }
+});
+
+Deno.test("a token without the issued shape is refused before any lookup", async () => {
+  const { handler, lookedUp } = intake();
+  await handler(post(JSON.stringify(page), { authorization: "Bearer ' or 1=1 --" }));
+  await handler(post(JSON.stringify(page), { authorization: `Bearer sft_${"zz".repeat(32)}` }));
+  assertEquals(lookedUp, []);
+});
+
+Deno.test("a token waiting for approval is 403 with its pairing code", async () => {
+  const { handler, staged } = intake();
+  const res = await handler(post(JSON.stringify(page), { authorization: `Bearer ${PENDING}` }));
+  assertEquals(res.status, 403);
+  assertEquals(await res.json(), { error: "waiting for approval", pair_code: "K7Q-2MX" });
+  assertEquals(staged.length, 0);
 });
 
 Deno.test("a body over the cap is 413, by header or by what arrives", async () => {
@@ -90,9 +121,14 @@ Deno.test("a page without a public https url is 422", async () => {
 });
 
 Deno.test("too many recent pages is 429, checked before the body is read", async () => {
-  const { handler, staged } = intake({ recent: () => Promise.resolve(FOLLOW_INTAKE.MAX_PER_WINDOW) });
+  const counted: string[] = [];
+  const { handler, staged } = intake({
+    recent: (owner) => (counted.push(owner), Promise.resolve(FOLLOW_INTAKE.MAX_PER_WINDOW)),
+  });
   assertEquals((await handler(post(JSON.stringify(page)))).status, 429);
   assertEquals(staged.length, 0);
+  // The limit is the sender's own.
+  assertEquals(counted, [OWNER]);
 });
 
 Deno.test("a valid page is staged with its signals cleaned", async () => {
@@ -105,6 +141,7 @@ Deno.test("a valid page is staged with its signals cleaned", async () => {
     status: "pending",
   });
   assertEquals(staged, [{
+    owner: OWNER,
     pageUrl: page.url,
     signals: {
       url: page.url,
