@@ -18,7 +18,7 @@ psycopg = pytest.importorskip("psycopg")
 from psycopg import errors, sql  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-MIGRATION = ROOT / "supabase" / "migrations" / "20261029120000_follow_inbox.sql"
+MIGRATION = ROOT / "supabase" / "migrations" / "20261029130000_follow_inbox.sql"
 PRODUCTION_SHAPE = Path(__file__).with_name("production_shape.sql")
 SERVER_URL = os.environ.get("TEST_DATABASE_URL", "")
 
