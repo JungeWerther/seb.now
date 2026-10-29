@@ -308,4 +308,3 @@ export const PLACE_RESOLVE = Object.freeze({
   // `entity_edits.batch` for merges it stages, followed by the date.
   MERGE_BATCH_PREFIX: "wikidata",
 });
-
