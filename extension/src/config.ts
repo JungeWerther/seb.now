@@ -11,6 +11,9 @@ export const CONFIG = Object.freeze({
   FOLLOW_COMMAND: "/follow",
   // seb.now, whose /connect page hands this extension its token.
   SEB_NOW_ORIGIN: "https://seb.now",
+  // Access to seb.now, for the content script on /connect. Chrome grants it at
+  // install; Firefox (Manifest V3) only once asked, from a click.
+  SEB_NOW_ACCESS: Object.freeze({ origins: ["https://seb.now/*"] }),
   CONNECT_PATH: "/connect",
   // How long a Connect may take before its nonce stops being accepted.
   NONCE_TTL_MS: 10 * 60_000,

@@ -10,8 +10,10 @@ in Chrome and Firefox, desktop and Android.
 - **Just open in Claude** only opens Claude with `/follow <page>`.
 
 It never sends the page's text, and it reads a page only when you press the
-button (`activeTab`). Its one site access is a content script on
-`seb.now/connect`; no background script.
+button (`activeTab`). Its one site access is seb.now, for a content script on
+`seb.now/connect`; no background script. Chrome grants that access at install;
+Firefox (Manifest V3) only when asked, so Connect asks for it first, as the
+first thing its click does (Firefox shows the prompt only then).
 
 ## Connecting
 
