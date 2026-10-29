@@ -58,6 +58,7 @@ ALLOWED = {
     ("query-parse/index.ts", "SORTS"): "feed_query's sort names with their Jev descriptions (prompt schema)",
     ("query-parse/index.ts", "ROLES"): "a Jev question's options (prompt schema)",
     ("query-parse/index.ts", "CORS"): "HTTP response headers",
+    ("_shared/follow_intake.ts", "CORS"): "HTTP response headers",
     ("_shared/names.ts", "PARTICLES"): "grammar of names (particles joining a name's words)",
     ("_shared/names.ts", "CONJUNCTIONS"): "grammar of names (words splitting two names)",
     ("_shared/page.ts", "DEAD_TAGS"): "HTML elements that never hold article text",
