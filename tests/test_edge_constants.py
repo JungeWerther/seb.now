@@ -99,6 +99,20 @@ ALLOWED = {
     ("event-extract/index.ts", "DAY_ROLES"): "a Jev question's options (prompt schema)",
     ("event-extract/index.ts", "KIND_OPTIONS"): "a Jev question's options (prompt schema)",
     ("event-extract/index.ts", "JSON_LD_KINDS"): "schema.org event types mapped to event kinds",
+    ("relation-extract/index.ts", "NONE"): "sentinel option key of the Jev question",
+    ("relation-extract/index.ts", "A_TO_B"): "option-key prefix the code parses back",
+    ("relation-extract/index.ts", "B_TO_A"): "option-key prefix the code parses back",
+    ("relation-extract/index.ts", "DIRECTED_RELATIONS"): "a Jev question's options (prompt schema)",
+    ("relation-extract/index.ts", "SYMMETRIC_RELATIONS"): "a Jev question's options (prompt schema)",
+    ("relation-extract/index.ts", "NONE_OPTION"): "a Jev question's options (prompt schema)",
+    ("relation-extract/index.ts", "STATUS_OPTIONS"): "a Jev question's options (prompt schema)",
+    ("relation-extract/index.ts", "KIND_RULES"): "which options each pair of entity kinds is offered (prompt schema)",
+    ("property-extract/index.ts", "OTHER"): "sentinel option key of the Jev question",
+    ("property-extract/index.ts", "NONE"): "sentinel option key of the Jev question",
+    ("property-extract/index.ts", "TITLE"): "link_entities.found_in value, checked by the database",
+    ("property-extract/index.ts", "FACET_OPTIONS"): "a Jev question's options (prompt schema)",
+    ("property-extract/index.ts", "LINK_COLUMNS"): "a PostgREST select shape, changed with the code that reads it",
+    ("property-extract/descriptors.ts", "STOP_TAGS"): "compromise's part-of-speech tags that end a descriptor",
 }
 
 
