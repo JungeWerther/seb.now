@@ -763,8 +763,10 @@ CI's `frontend` job runs ESLint (strict type-checked), `tsc --noEmit`, the build
 Postgres) next to #81's `db` and `page`. Order names live in `SORTS` (the function) and
 `SORT_LABELS` (the page) and must match `feed_query`'s check.
 
-**Query credits.** Every account (anonymous ones included) starts with
-`query_credit_limit()` = 1,000 credits, one per Jev read, in all, no reset. `public.query_credits
+**Query credits.** Every account starts with `query_credit_limit(user)`
+credits, one per Jev read, in all, no reset: `query_credit_limit_anonymous()`
+(1,000) for an anonymous session, `query_credit_limit_account()` (10,000) for a
+real account (see "Accounts"). `public.query_credits
 (user_id, used)` counts them (readers see only their own row; no client
 writes). `query-parse` calls `spend_query_credit()` as the caller (security
 definer, takes one only while `used` is under the limit, returns what's left or
@@ -779,6 +781,31 @@ start and each time the menu opens; `setupMenu` only wires `.bubble[data-overlay
 to overlays); at 0 it greys out and the page stops calling `query-parse`, so
 only its own reading is used. A new anonymous session starts at 1,000 again, so this
 caps one session's spend, not a determined caller's.
+
+**Accounts** (`20261029120000_accounts.sql`, QA: CI's `db` job,
+`tests/db/test_accounts.py`). Every visitor starts as an anonymous session; a
+real account is the same auth user with an email attached (`updateUser({email})`
+then the emailed code or link), so nothing moves on upgrade.
+`public.is_permanent(user default auth.uid())` reads `auth.users.is_anonymous`
+(not the JWT, which lags until refreshed). A real account unlocks: posting
+replies (the insert policy), setting or changing `profiles.handle` (the
+`profiles_handle_needs_account` trigger; handles set before this stay, and
+clearing one is always allowed), more query credits, and `public.style_picks`
+(Appearance picks per style type, synced across devices). Which privacy-policy
+version a user accepted, and when, is `public.account_consents` (own rows,
+insert-only). Signing in on a second device that already has an anonymous
+session folds that session into the account with `public.merge_account(from,
+into)` (service_role only, run by the `account-merge` Edge Function once it has
+checked both sessions' tokens): one transaction, driven by
+`public.account_columns`, one row per column that names a user with its
+strategy (`move`: repoint, the account's own row winning on each listed unique
+key; `drop`: the anonymous rows go, as federated actor keys and followers are
+tied to its id; `custom`: credits add up, the profile keeps its own fields and
+fills empty ones from the anonymous one). It refuses while
+`public.account_columns_missing` (every foreign key to `auth.users` or
+`profiles` not in that table) isn't empty, so **a new table with a user column
+needs its `account_columns` row** or merges stop. The anonymous user is deleted
+at the end.
 
 Client-fetched articles are built by
 cloning `<template id="article-template">`, which `site.py` renders with the
@@ -881,8 +908,8 @@ centred in the header with `--header-brand-gap` above and below it, and the
 menu icon is centred vertically. There's no tagline.
 
 **Replies.** `public.replies` (`link_id`, `author_id` → `profiles`,
-`body`, `created_at`): publicly readable; any signed-in user (anonymous
-sessions included, same as votes) can insert/delete only their own
+`body`, `created_at`): publicly readable; only a real account
+(`is_permanent()`, see "Accounts") can insert, anyone can delete their own
 (`auth.uid() = author_id`), and there's no update policy. The DB checks
 bound the body to 1–500 non-blank chars (the page's `REPLY_MAX_LENGTH`
 mirrors this) and reject control characters except newline/tab. Bodies
