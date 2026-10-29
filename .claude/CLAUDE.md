@@ -1266,7 +1266,7 @@ Either accept that as part of an "open algorithm" stance, or make
 per-voter rows private and expose only per-link totals via a view.
 
 **Following from the browser — `follow-intake` + `follow_inbox`**
-(`20261029120000_follow_inbox.sql`). The follow browser extension (`extension/`)
+(`20261029130000_follow_inbox.sql`). The follow browser extension (`extension/`)
 reads a page in the reader's own browser, where Cloudflare and sign-in walls
 don't stop it, and POSTs what feed discovery needs to the **`follow-intake`**
 Edge Function (`verify_jwt` off; its own bearer token, the Vault secret
