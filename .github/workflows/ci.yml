@@ -57,6 +57,47 @@ jobs:
         run: git diff --exit-code -- '../src/seb_now/templates/*.js' && test -z "$(git status --porcelain -- ../src/seb_now/templates)"
       - run: npm test
 
+  # The follow browser extension (extension/): one build for Chrome and Firefox,
+  # desktop and Android. Firefox's own linter checks the manifest; the e2e test
+  # drives the built popup in Chromium. The unpacked build is uploaded as an
+  # artifact, and on main, when AMO API credentials are set, a signed unlisted
+  # .xpi for Firefox (Android needs a signed one).
+  extension:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    env:
+      AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+      AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+      - run: npm run build && npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: seb-follow-extension
+          path: extension/artifacts/*.zip
+      - name: Sign for Firefox (unlisted)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.AMO_JWT_ISSUER != ''
+        run: npx web-ext sign --source-dir dist --artifacts-dir artifacts --channel unlisted --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET"
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.AMO_JWT_ISSUER != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: seb-follow-firefox
+          path: extension/artifacts/*.xpi
+
   # Migrations tested on Supabase's own Postgres image (pg_jsonschema, the
   # anon/authenticated roles), each in a fresh database shaped like production.
   db:
