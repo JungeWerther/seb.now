@@ -10,12 +10,22 @@ in Chrome and Firefox, desktop and Android.
 - **Just open in Claude** only opens Claude with `/follow <page>`.
 
 It never sends the page's text, and it reads a page only when you press the
-button (`activeTab`): no host permissions, no background script.
+button (`activeTab`). Its one site access is a content script on
+`seb.now/connect`; no background script.
+
+## Connecting
+
+The first Follow (or Connect in the options) opens `seb.now/connect#nonce=…` in
+the same browser. That page, as your seb.now session there, asks for a token for
+this device and posts it to the page; the content script (`src/connect.ts`)
+takes it only with the nonce this extension just made, only once and only within
+ten minutes. A real account, or one approved before, is connected at once. Any
+other shows a pairing code (`K7Q-2MX`) until it's approved with
+`select public.approve_follow_token('K7Q-2MX')`; approving allows the account for
+good. `seb.now/connect` opened without a nonce lists your devices, each
+revocable.
 
 ## Install
-
-The intake token lives in Supabase Vault as `follow-intake-token`; paste it in
-the extension's options ("Save and check" tells you whether it works).
 
 **Chrome (desktop).** Download `seb-follow-extension` from the latest CI run's
 artifacts, unzip it, open `chrome://extensions`, turn on Developer mode, then
@@ -41,7 +51,7 @@ npm ci
 npm run build       # dist/, the unpacked extension
 npm run lint        # ESLint, then Firefox's web-ext lint on dist/
 npm test            # the extractor on fixtures, the actions with a fake fetch
-npm run e2e         # the built popup in Chromium against a local page
+npm run e2e         # the built popup in Chromium: connect via the real seb.now/connect page (fake supabase-js), then follow a local page
 ```
 
 `src/extract.ts` runs inside the page through `scripting.executeScript`, which

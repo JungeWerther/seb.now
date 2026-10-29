@@ -4,7 +4,14 @@
 import { CONFIG } from "./config.ts";
 import type { Signals } from "./extract.ts";
 
-export type Outcome = { ok: true; message: string } | { ok: false; message: string };
+export interface Outcome {
+  ok: boolean;
+  message: string;
+  // What the intake's answer says about the connection: still good, waiting
+  // for approval (with its code), or gone.
+  connection?: "active" | "pending" | "gone";
+  pairCode?: string;
+}
 
 // A new Claude chat with `/follow <page>` typed in.
 export function claudeUrl(pageUrl: string): string {
@@ -18,8 +25,9 @@ export const isWebPage = (url: string | undefined): url is string => /^https?:\/
 
 // What each intake answer means to the reader, by status.
 const OUTCOME_BY_STATUS: Readonly<Record<number, Outcome>> = {
-  200: { ok: true, message: "Sent to your seb.now inbox." },
-  401: { ok: false, message: "The intake refused the token. Check it in the options." },
+  200: { ok: true, message: "Sent to your seb.now inbox.", connection: "active" },
+  401: { ok: false, message: "This device was disconnected. Connect again.", connection: "gone" },
+  403: { ok: false, message: "Waiting for approval.", connection: "pending" },
   413: { ok: false, message: "This page says too much to send." },
   422: { ok: false, message: "Only public https pages can be followed." },
   429: { ok: false, message: "Too many pages sent this hour. Try again later." },
@@ -28,39 +36,38 @@ const OUTCOME_BY_STATUS: Readonly<Record<number, Outcome>> = {
 export const outcomeOf = (status: number): Outcome =>
   OUTCOME_BY_STATUS[status] ?? { ok: false, message: `The intake answered ${String(status)}.` };
 
+// The pairing code a 403 names, if any.
+async function pairCodeOf(res: Response): Promise<string | undefined> {
+  try {
+    const body: unknown = await res.json();
+    const code = typeof body === "object" && body !== null ? (body as Record<string, unknown>).pair_code : undefined;
+    return typeof code === "string" ? code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // The page's signals sent to the intake.
 export async function sendSignals(
   signals: Signals,
   token: string,
   fetcher: typeof fetch = fetch,
 ): Promise<Outcome> {
+  let res: Response;
   try {
-    const res = await fetcher(CONFIG.INTAKE_URL, {
+    res = await fetcher(CONFIG.INTAKE_URL, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify(signals),
       signal: AbortSignal.timeout(CONFIG.SEND_TIMEOUT_MS),
     });
-    return outcomeOf(res.status);
   } catch {
     return { ok: false, message: "Couldn't reach seb.now. Check your connection." };
   }
-}
-
-// Whether `token` is the intake's: an empty page is refused for its url (422)
-// only after the token passed, so nothing is staged.
-export async function checkToken(token: string, fetcher: typeof fetch = fetch): Promise<Outcome> {
-  try {
-    const res = await fetcher(CONFIG.INTAKE_URL, {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: "{}",
-      signal: AbortSignal.timeout(CONFIG.SEND_TIMEOUT_MS),
-    });
-    return res.status === 422 ? { ok: true, message: "Token works." } : outcomeOf(res.status);
-  } catch {
-    return { ok: false, message: "Couldn't reach seb.now. Check your connection." };
-  }
+  const outcome = outcomeOf(res.status);
+  if (res.status !== 403) return outcome;
+  const pairCode = await pairCodeOf(res);
+  return pairCode ? { ...outcome, message: `Waiting for approval, code ${pairCode}.`, pairCode } : outcome;
 }
 
 // `run` wrapped so the reader always sees how it went: `show` gets a busy

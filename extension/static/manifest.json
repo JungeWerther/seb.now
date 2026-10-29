@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "seb.now follow",
-  "version": "0.1.0",
-  "description": "Follow the page you're on in seb.now: send its feed and identity links to your inbox and open Claude with /follow.",
+  "version": "0.2.0",
+  "description": "Follow the page you're on in seb.now: connect your seb.now account, send the page's feed and profile links to your inbox, and open Claude with /follow.",
   "action": {
     "default_title": "Follow on seb.now",
     "default_popup": "popup.html",
@@ -22,6 +22,17 @@
     "activeTab",
     "scripting",
     "storage"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://seb.now/connect*"
+      ],
+      "js": [
+        "connect.js"
+      ],
+      "run_at": "document_start"
+    }
   ],
   "options_ui": {
     "page": "options.html",

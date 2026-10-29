@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkToken, claudeUrl, isWebPage, outcomeOf, reported, sendSignals } from "../src/actions.ts";
+import { claudeUrl, isWebPage, outcomeOf, reported, sendSignals } from "../src/actions.ts";
 import { CONFIG } from "../src/config.ts";
 
 const signals = { url: "https://www.theguardian.com/profile/david-adler", feeds: [], rel_me: [], same_as: [], author_urls: [] };
 
-const recording = (status) => {
+const recording = (status, body = "{}") => {
   const calls = [];
   const fetcher = (url, init) => {
     calls.push({ url, init });
-    return Promise.resolve(new Response("{}", { status }));
+    return Promise.resolve(new Response(body, { status }));
   };
   return { calls, fetcher };
 };
@@ -30,7 +30,11 @@ test("isWebPage takes http(s) pages only", () => {
 
 test("sendSignals posts the signals as JSON with the bearer token", async () => {
   const { calls, fetcher } = recording(200);
-  assert.deepEqual(await sendSignals(signals, "tok", fetcher), { ok: true, message: "Sent to your seb.now inbox." });
+  assert.deepEqual(await sendSignals(signals, "tok", fetcher), {
+    ok: true,
+    message: "Sent to your seb.now inbox.",
+    connection: "active",
+  });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, CONFIG.INTAKE_URL);
   assert.equal(calls[0].init.method, "POST");
@@ -54,11 +58,23 @@ test("a network failure is an outcome, not a throw", async () => {
   assert.equal(outcome.ok, false);
 });
 
-test("checkToken: 422 on an empty page means the token passed", async () => {
-  const { calls, fetcher } = recording(422);
-  assert.equal((await checkToken("tok", fetcher)).ok, true);
-  assert.equal(calls[0].init.body, "{}");
-  assert.equal((await checkToken("tok", recording(401).fetcher)).ok, false);
+test("a 401 means this device's connection is gone", async () => {
+  const outcome = await sendSignals(signals, "tok", recording(401).fetcher);
+  assert.equal(outcome.connection, "gone");
+});
+
+test("a 403 means waiting for approval, with the code the intake names", async () => {
+  const body = JSON.stringify({ error: "waiting for approval", pair_code: "K7Q-2MX" });
+  const outcome = await sendSignals(signals, "tok", recording(403, body).fetcher);
+  assert.deepEqual(outcome, {
+    ok: false,
+    message: "Waiting for approval, code K7Q-2MX.",
+    connection: "pending",
+    pairCode: "K7Q-2MX",
+  });
+  const unreadable = await sendSignals(signals, "tok", recording(403, "not json").fetcher);
+  assert.equal(unreadable.connection, "pending");
+  assert.equal(unreadable.pairCode, undefined);
 });
 
 test("reported shows busy, then the outcome, and turns a throw into one", async () => {

@@ -1,37 +1,31 @@
-// The options page: the intake token, kept in this browser's local storage
-// only (never synced), and a check that it works.
+// The options page: this browser's connection to a seb.now account. Connect
+// opens seb.now/connect; Disconnect forgets the token here (seb.now/connect,
+// opened from Manage devices, revokes it everywhere).
 
-import { checkToken, type Outcome, reported } from "./actions.ts";
 import { CONFIG } from "./config.ts";
+import { forgetConnection, loadConnection, startConnect } from "./connection.ts";
 import { byId } from "./dom.ts";
 
-const input = byId("token", HTMLInputElement);
-const status = byId("status", HTMLParagraphElement);
-const save = byId("save", HTMLButtonElement);
+const state = byId("state", HTMLParagraphElement);
+const connectButton = byId("connect", HTMLButtonElement);
+const disconnectButton = byId("disconnect", HTMLButtonElement);
 
-const show = (outcome: Outcome | "busy") => {
-  save.disabled = outcome === "busy";
-  status.textContent = outcome === "busy" ? "Checking…" : outcome.message;
-  status.dataset.state = outcome === "busy" ? "busy" : outcome.ok ? "ok" : "error";
-};
+async function render() {
+  const connection = await loadConnection();
+  state.textContent = !connection
+    ? "Not connected."
+    : connection.status === "pending"
+    ? `Connected, waiting for approval. Code: ${connection.pairCode ?? "?"}`
+    : "Connected.";
+  state.dataset.state = connection?.status === "active" ? "ok" : connection ? "busy" : "error";
+  connectButton.textContent = connection ? "Connect again" : "Connect seb.now";
+  disconnectButton.hidden = !connection;
+}
 
-const saveToken = reported(show)(async () => {
-  const token = input.value.trim();
-  if (!token) {
-    await chrome.storage.local.remove(CONFIG.TOKEN_KEY);
-    return { ok: true, message: "Token removed." };
-  }
-  const outcome = await checkToken(token);
-  if (outcome.ok) await chrome.storage.local.set({ [CONFIG.TOKEN_KEY]: token });
-  return outcome.ok ? { ok: true, message: "Saved. The token works." } : outcome;
+connectButton.addEventListener("click", () => void startConnect());
+disconnectButton.addEventListener("click", () => void forgetConnection().then(render));
+byId("manage", HTMLAnchorElement).href = `${CONFIG.SEB_NOW_ORIGIN}${CONFIG.CONNECT_PATH}`;
+chrome.storage.onChanged.addListener((changes) => {
+  if (CONFIG.CONNECTION_KEY in changes) void render();
 });
-
-byId("form", HTMLFormElement).addEventListener("submit", (event) => {
-  event.preventDefault();
-  void saveToken();
-});
-
-void chrome.storage.local.get(CONFIG.TOKEN_KEY).then((stored) => {
-  const token = stored[CONFIG.TOKEN_KEY];
-  if (typeof token === "string") input.value = token;
-});
+void render();
