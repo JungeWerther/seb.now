@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>seb.now follow: options</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="wide">
+    <h1>seb.now follow</h1>
+    <form id="form">
+      <label for="token">Intake token</label>
+      <input id="token" type="password" autocomplete="off" spellcheck="false">
+      <button id="save" class="primary" type="submit">Save and check</button>
+    </form>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <p class="hint">Kept in this browser only. Checking it sends an empty request, so nothing is staged.</p>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>
