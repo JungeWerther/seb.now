@@ -1265,6 +1265,33 @@ topic profile is derivable by anyone from `votes` ⋈ `link_topics`.
 Either accept that as part of an "open algorithm" stance, or make
 per-voter rows private and expose only per-link totals via a view.
 
+**Following from the browser — `follow-intake` + `follow_inbox`**
+(`20261029120000_follow_inbox.sql`). The follow browser extension (`extension/`)
+reads a page in the reader's own browser, where Cloudflare and sign-in walls
+don't stop it, and POSTs what feed discovery needs to the **`follow-intake`**
+Edge Function (`verify_jwt` off; its own bearer token, the Vault secret
+`FOLLOW_INTAKE.TOKEN_SECRET`): the page's URL, title and site name, its feed
+links (`<link rel="alternate">`), identity links (`rel="me"`, JSON-LD `sameAs`,
+author pages). Never the page's text: a signed-in page can hold private mail,
+and free text read back by an agent is an injection vector. The server is the
+trust boundary, since anyone holding the token can imitate the extension:
+`_shared/follow_signals.ts` cleans every value declaratively (`record`, `list`,
+`url`, `text` cleaners; a URL must be https to a public host: no IP literals,
+local or single-label hosts, credentials, ports or hidden characters, http is
+upgraded, fragments dropped; text loses tags, angle brackets and control/format
+characters and is capped), and unknown fields are dropped. The handler is a
+stack of wrappers (`_shared/follow_intake.ts`: CORS, 500 guard, POST only,
+bearer compared by SHA-256 digest, rate limit `MAX_PER_WINDOW` per
+`RATE_WINDOW`, body cap, JSON) with its effects injected, so
+`follow_intake_test.ts` covers the whole chain without a database, and
+`follow_signals_test.ts` fuzzes the cleaners. Rows land in
+`public.follow_inbox` (service_role only) through `follow_inbox_put(page_url,
+signals)`, which refreshes a page still pending rather than adding a second
+row; `status` goes `pending` → `followed`/`dismissed` with `processed_at`.
+Nothing there is fetched or followed by itself: the `/follow` skill reads the
+inbox, checks the feeds and identity links (through pg_net), and adds sources
+once the reader confirms.
+
 **Hosting — DigitalOcean.** The site is meant to ship as a static
 site (no server framework — see the architecture discussion for why:
 Supabase's auto-generated REST API + `supabase-js` + RLS covers reads,
