@@ -18,6 +18,10 @@ const titles = (page) => page.$$eval("ul.articles li.article .article-row a", (a
 const { page, errors } = await openPage(browser, origin);
 await page.waitForTimeout(500);
 check("ranking failed: the newest links are listed", await titles(page), [NEWEST.title]);
+check("the fake keeps an error through .eq and .single", await page.evaluate(async () => {
+  const { data, error } = await window.supabase.createClient().rpc("ranked_feed").eq("link_id", "x").single();
+  return [data, error?.message];
+}), [null, "canceling statement due to statement timeout"]);
 
 await page.evaluate(() => { window.__calls.length = 0; });
 await page.fill("#search-input", "latest");

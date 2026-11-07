@@ -30,6 +30,9 @@ class Table(StrEnum):
     ENTITY_RELATION_SUMMARY = "entity_relation_summary"
     ENTITY_RELATIONS = "entity_relations"
     EVAL_SCRATCH = "eval_scratch"
+    FOLLOW_CURATORS = "follow_curators"
+    FOLLOW_INBOX = "follow_inbox"
+    FOLLOW_TOKENS = "follow_tokens"
     FOLLOWS = "follows"
     IDENTITY_WITNESSES = "identity_witnesses"
     INDEX_CHANGES = "index_changes"
@@ -221,6 +224,35 @@ class EvalScratchRow(TypedDict):
     request_id: int | None
     created_at: str | None
     response: Json | None
+
+
+class FollowCuratorsRow(TypedDict):
+    user_id: str
+    scope: str
+    added_at: str
+
+
+class FollowInboxRow(TypedDict):
+    id: str
+    page_url: str
+    signals: Json
+    status: str
+    created_at: str
+    processed_at: str | None
+    owner_id: str
+
+
+class FollowTokensRow(TypedDict):
+    id: str
+    user_id: str
+    token_hash: str
+    label: str
+    status: str
+    pair_code: str | None
+    created_at: str
+    approved_at: str | None
+    last_used_at: str | None
+    revoked_at: str | None
 
 
 class FollowsRow(TypedDict):
