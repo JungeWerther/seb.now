@@ -4,7 +4,7 @@
 
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
-export type EnrichStep = "topics" | "entities" | "page_entities" | "events";
+export type EnrichStep = "topics" | "entities" | "page_entities" | "relations" | "properties" | "events";
 
 // The next `max` links `step` hasn't run on, read with `columns` (which must
 // include `id`), in `links_to_enrich`'s order: newest first.

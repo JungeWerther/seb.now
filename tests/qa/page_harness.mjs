@@ -1,7 +1,8 @@
 // The built page in headless Chromium, with supabase-js swapped for a fake:
 // the pinned script's URL, SRI hash and CSP are pointed at a stand-in that
 // answers each table from `answers` (filtered by .eq and .in) and records
-// every write and rpc in window.__calls. `delays` holds how long, in ms, a
+// every write and rpc in window.__calls; a table answered with
+// `{ error: "…" }` fails with that message. `delays` holds how long, in ms, a
 // "<table>.<method>" query takes to answer (`{ "entities.in": 1500 }`). Needs uv (to build the page) and a
 // Chromium (CHROMIUM_PATH, else Playwright's own).
 import { execFileSync } from "node:child_process";
@@ -19,16 +20,23 @@ const fakeSupabase = (answers, delays) => `(() => {
   const answers = ${JSON.stringify(answers)};
   const delays = ${JSON.stringify(delays)};
   const WRITES = ["insert", "upsert", "update", "delete"];
+  // How a query step narrows the rows; an error answer passes through every step.
+  const narrowBy = {
+    eq: (rows, [column, value]) => rows.filter((row) => !(column in row) || row[column] === value),
+    in: (rows, [column, values]) => rows.filter((row) => !(column in row) || values.includes(row[column])),
+    single: (rows) => rows[0] ?? null,
+    maybeSingle: (rows) => rows[0] ?? null,
+  };
   const chain = (table, rows, delay = 0) => new Proxy(function () {}, {
     get(_t, prop) {
-      if (prop === "then") return (resolve) => setTimeout(() => resolve({ data: rows, error: null, count: 0 }), delay);
+      if (prop === "then") return (resolve) => setTimeout(() => resolve(rows?.error
+        ? { data: null, error: { message: rows.error }, count: 0 }
+        : { data: rows, error: null, count: 0 }), delay);
       return (...args) => {
         if (WRITES.includes(prop)) window.__calls.push({ table, op: prop, args });
         const wait = Math.max(delay, delays[table + "." + prop] ?? 0);
-        if (prop === "eq") return chain(table, rows.filter((row) => !(args[0] in row) || row[args[0]] === args[1]), wait);
-        if (prop === "in") return chain(table, rows.filter((row) => !(args[0] in row) || args[1].includes(row[args[0]])), wait);
-        if (prop === "single" || prop === "maybeSingle") return chain(table, rows[0] ?? null, wait);
-        return chain(table, rows, wait);
+        const narrow = rows?.error ? null : narrowBy[prop];
+        return chain(table, narrow ? narrow(rows, args) : rows, wait);
       };
     },
   });

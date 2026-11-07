@@ -37,33 +37,40 @@ interface FilterChip {
 }
 
 // A filter is the terms a link must pass plus the chips they write (and the
-// same terms for the local index, or null when any can't be read there).
+// same terms for the local index, or null when any can't be read there), and
+// whether the links the reader has seen go last ("events in paris, new").
 // Filters form a monoid: `unit` passes every link and writes nothing,
-// `concat` is conjunction (a link must pass both) and appends the logs in
-// order. It's the Writer monad's append; reading a query is a fold of concat
-// from unit.
+// `concat` is conjunction (a link must pass both), appends the logs in order
+// and asks for seen-last when either side does. It's the Writer monad's
+// append; reading a query is a fold of concat from unit.
 interface Filter {
   terms: FilterTerm[];
   local: LocalTerm[] | null;
   log: FilterChip[];
+  seenLast: boolean;
 }
 
 // Between a chip's kinds, when its senses are of several.
 const CHIP_KIND_SEPARATOR = " / ";
 
 const Filter = {
-  unit: (): Filter => ({ terms: [], local: [], log: [] }),
+  unit: (): Filter => ({ terms: [], local: [], log: [], seenLast: false }),
+  // Passes every link and lists the seen ones last. What a reader has seen
+  // isn't in the local index, so it has no local form.
+  seenLast: (): Filter => ({ terms: [], local: null, log: [], seenLast: true }),
   // One term with all its senses; `localSenses` is null when one of them
   // can't be read on the local index.
   term: (senses: FilterSense[], label: string, kinds: string[], localSenses: LocalSense[] | null): Filter => ({
     terms: [oneOrAny(senses)],
     local: localSenses && [oneOrAny(localSenses)],
     log: [{ kind: [...new Set(kinds)].join(CHIP_KIND_SEPARATOR), label }],
+    seenLast: false,
   }),
   concat: (a: Filter, b: Filter): Filter => ({
     terms: [...a.terms, ...b.terms],
     local: a.local && b.local && [...a.local, ...b.local],
     log: [...a.log, ...b.log],
+    seenLast: a.seenLast || b.seenLast,
   }),
 };
 
@@ -74,9 +81,9 @@ function oneOrAny<S>(senses: S[]): S | { any: S[] } {
 
 // The seams of a cache key: between a sense's field and its spelling, the
 // ids of one sense, a period's ends, an indexical and what it is read on,
-// the senses of a term, the terms of a filter, a filter and its cursor, and
-// the cursor's two halves.
-type KeyPart = "field" | "entity" | "period" | "reading" | "sense" | "term" | "page" | "cursor";
+// the senses of a term, the terms of a filter and its order, a filter and
+// its cursor, and the cursor's parts.
+type KeyPart = "field" | "entity" | "period" | "reading" | "sense" | "term" | "order" | "page" | "cursor";
 
 const separatorByKeyPart: Mapping<KeyPart, string> = {
   field: ":",
@@ -85,6 +92,7 @@ const separatorByKeyPart: Mapping<KeyPart, string> = {
   reading: "@",
   sense: "|",
   term: "&",
+  order: "#",
   page: "@",
   cursor: "|",
 };
@@ -115,16 +123,22 @@ function termKey(term: FilterTerm): string {
   return [...new Set(senses.map(senseKey))].sort().join(separatorByKeyPart.sense);
 }
 
+// The order a seen-last filter is listed in, in its key.
+const SEEN_LAST_ORDER = "seen-last";
+
 // The filter's cache key. Conjunction is commutative and idempotent, so
 // terms are deduplicated and sorted: "paris event" and "event paris" are the
 // same filter. The log is left out; it only decides what the chips say.
-function filterKey(filter: Pick<Filter, "terms">): string {
-  return [...new Set(filter.terms.map(termKey))].sort().join(separatorByKeyPart.term);
+function filterKey(filter: Pick<Filter, "terms" | "seenLast">): string {
+  const terms = [...new Set(filter.terms.map(termKey))].sort().join(separatorByKeyPart.term);
+  return filter.seenLast ? [terms, SEEN_LAST_ORDER].join(separatorByKeyPart.order) : terms;
 }
 
-// Where the next page starts: links strictly older than this one, by
-// (created_at, id), the order filter_links lists them in.
+// Where the next page starts: links after this one in the order filter_links
+// lists them, (seen, created_at desc, id desc); `seen` is false unless the
+// filter is seen-last.
 interface FilterCursor {
+  seen: boolean;
   createdAt: string;
   id: string;
 }
@@ -134,18 +148,23 @@ interface FilterRow {
   link_id: string;
   entity_ids: string[];
   created_at: string;
+  seen: boolean;
 }
 
 // The cursor after `rows`, or null when there are none.
 function nextFilterCursor(rows: readonly FilterRow[]): FilterCursor | null {
   const last = rows.at(-1);
-  return last ? { createdAt: last.created_at, id: last.link_id } : null;
+  return last ? { seen: last.seen, createdAt: last.created_at, id: last.link_id } : null;
 }
 
-// The key of one page of `filter`: its filter's key and where it starts.
-function filterPageKey(filter: Pick<Filter, "terms">, cursor: FilterCursor | null): string {
-  const key = filterKey(filter);
-  return cursor ? [key, [cursor.createdAt, cursor.id].join(separatorByKeyPart.cursor)].join(separatorByKeyPart.page) : key;
+// The key of one page of `filter`: its filter's key, the moment a seen-last
+// filter's seen links are counted at (`asOf`; other filters don't depend on
+// it, so their pages are shared across feeds) and where the page starts.
+function filterPageKey(filter: Pick<Filter, "terms" | "seenLast">, cursor: FilterCursor | null, asOf: string): string {
+  const key = filter.seenLast ? [filterKey(filter), asOf].join(separatorByKeyPart.page) : filterKey(filter);
+  return cursor
+    ? [key, [String(cursor.seen), cursor.createdAt, cursor.id].join(separatorByKeyPart.cursor)].join(separatorByKeyPart.page)
+    : key;
 }
 
 // How long a cached page is reused. Keyset pages don't shift when links are

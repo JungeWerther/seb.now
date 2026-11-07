@@ -13,6 +13,9 @@ type Json = str | int | float | bool | list[Json] | dict[str, Json] | None
 
 
 class Table(StrEnum):
+    ACCOUNT_COLUMNS = "account_columns"
+    ACCOUNT_COLUMNS_MISSING = "account_columns_missing"
+    ACCOUNT_CONSENTS = "account_consents"
     AP_ACTOR_KEYS = "ap_actor_keys"
     AP_FOLLOWERS = "ap_followers"
     AP_POSTS = "ap_posts"
@@ -27,6 +30,9 @@ class Table(StrEnum):
     ENTITY_RELATION_SUMMARY = "entity_relation_summary"
     ENTITY_RELATIONS = "entity_relations"
     EVAL_SCRATCH = "eval_scratch"
+    FOLLOW_CURATORS = "follow_curators"
+    FOLLOW_INBOX = "follow_inbox"
+    FOLLOW_TOKENS = "follow_tokens"
     FOLLOWS = "follows"
     IDENTITY_WITNESSES = "identity_witnesses"
     INDEX_CHANGES = "index_changes"
@@ -51,6 +57,7 @@ class Table(StrEnum):
     REMOTE_ACTORS = "remote_actors"
     REPLIES = "replies"
     SOURCES = "sources"
+    STYLE_PICKS = "style_picks"
     STYLE_PRIMITIVES = "style_primitives"
     TOPIC_OVERRIDES = "topic_overrides"
     TOPIC_PROPOSAL_ENDORSEMENTS = "topic_proposal_endorsements"
@@ -60,6 +67,24 @@ class Table(StrEnum):
     USER_TOPIC_PREFERENCES = "user_topic_preferences"
     VOTES = "votes"
     WORD_CASE_STATS = "word_case_stats"
+
+
+class AccountColumnsRow(TypedDict):
+    tbl: str
+    col: str
+    strategy: str
+    conflict_keys: list[str]
+
+
+class AccountColumnsMissingRow(TypedDict):
+    tbl: str | None
+    col: str | None
+
+
+class AccountConsentsRow(TypedDict):
+    user_id: str
+    policy_version: str
+    accepted_at: str
 
 
 class ApActorKeysRow(TypedDict):
@@ -199,6 +224,35 @@ class EvalScratchRow(TypedDict):
     request_id: int | None
     created_at: str | None
     response: Json | None
+
+
+class FollowCuratorsRow(TypedDict):
+    user_id: str
+    scope: str
+    added_at: str
+
+
+class FollowInboxRow(TypedDict):
+    id: str
+    page_url: str
+    signals: Json
+    status: str
+    created_at: str
+    processed_at: str | None
+    owner_id: str
+
+
+class FollowTokensRow(TypedDict):
+    id: str
+    user_id: str
+    token_hash: str
+    label: str
+    status: str
+    pair_code: str | None
+    created_at: str
+    approved_at: str | None
+    last_used_at: str | None
+    revoked_at: str | None
 
 
 class FollowsRow(TypedDict):
@@ -442,6 +496,13 @@ class SourcesRow(TypedDict):
     created_at: str
     entity_id: str | None
     handle: str | None
+
+
+class StylePicksRow(TypedDict):
+    user_id: str
+    type_path: str
+    style_id: str
+    picked_at: str
 
 
 class StylePrimitivesRow(TypedDict):

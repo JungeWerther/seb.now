@@ -42,6 +42,8 @@ WIRE_TYPES = {
     "text": "str",
     "varchar": "str",
     "uuid": "str",
+    "regclass": "str",
+    "name": "str",
     "ltree": "str",
     "date": "str",
     "time": "str",
@@ -49,6 +51,7 @@ WIRE_TYPES = {
     "timestamp": "str",
     "interval": "str",
     "tsvector": "str",
+    "bytea": "str",
     "json": "Json",
     "jsonb": "Json",
 }

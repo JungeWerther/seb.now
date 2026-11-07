@@ -33,6 +33,12 @@ export const JEV = Object.freeze({
   TYPESAFE_KEY_SECRET: "typesafe-ai-token",
 });
 
+// account-merge: an access token is a JWT of a few hundred bytes; anything far
+// longer isn't one.
+export const ACCOUNT_MERGE = Object.freeze({
+  MAX_TOKEN_LENGTH: 4096,
+});
+
 // _shared/clients.ts.
 export const VAULT = Object.freeze({
   CACHED_SECRETS: 8,
@@ -235,6 +241,22 @@ export const MCP = Object.freeze({
   USER_RESOURCE: "https://seb.now/mcp/user",
 });
 
+// follow-intake: pages the follow browser extension sends, staged in
+// public.follow_inbox for /follow (_shared/follow_intake.ts).
+export const FOLLOW_INTAKE = Object.freeze({
+  // Refused before parsing: the signals are a few kilobytes at most.
+  MAX_BODY_BYTES: 65_536,
+  // Pages one account stages per RATE_WINDOW before further sends get 429.
+  MAX_PER_WINDOW: 120,
+  RATE_WINDOW: "1 hour",
+  // What one page may carry, after cleaning; extra items are dropped.
+  MAX_URL_LENGTH: 2048,
+  MAX_TITLE_LENGTH: 300,
+  MAX_DESCRIPTION_LENGTH: 500,
+  MAX_FEEDS: 20,
+  MAX_IDENTITY_LINKS: 40,
+});
+
 // index-snapshot.
 export const INDEX_SNAPSHOT = Object.freeze({
   BUCKET: "index",
@@ -289,4 +311,28 @@ export const PLACE_RESOLVE = Object.freeze({
   CONTEXT_MENTIONS: 2,
   // `entity_edits.batch` for merges it stages, followed by the date.
   MERGE_BATCH_PREFIX: "wikidata",
+});
+
+// relation-extract: typed relations between the entities a link's title names.
+export const RELATION_EXTRACT = Object.freeze({
+  LINKS_PER_RUN: 40,
+  MAX_LINK_IDS: 50,
+  // Entities per link asked about, most certain first; every pair of them is one question.
+  MAX_ENTITIES_PER_LINK: 5,
+  MIN_RELATION_P: 0.5,
+  MAX_DESCRIPTION_CHARS: 300,
+  CONCURRENCY: 6,
+});
+
+// property-extract: what a title's words say about the entities it names.
+export const PROPERTY_EXTRACT = Object.freeze({
+  LINKS_PER_RUN: 100,
+  MAX_LINK_IDS: 300,
+  MIN_FACET_P: 0.5,
+  // A judgement ("viral", "rogue") needs more certainty than a fact.
+  MIN_EVALUATION_P: 0.75,
+  MIN_TOPIC_P: 0.5,
+  CONCURRENCY: 6,
+  // Words in a descriptor run before or after a name.
+  MAX_WORDS: 5,
 });

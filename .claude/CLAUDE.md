@@ -368,6 +368,24 @@ marks the link. `POST {"link_ids": [...], "dry_run": true}` reports without
 writing. Events aren't entities yet: a listing's headings are headlines, not
 clean names, so merging them into `entities` (kind `event`) is a later step.
 
+**Relations and properties — `relation-extract`, `property-extract`.** What a
+link's title says entities do to each other, and what it says they are. Both run
+on links `entity-extract` has done (title mentions only), on their own `pg_cron`
+jobs (`2-59/10 * * * *` and `8-59/10 * * * *`). `relation-extract` asks one Jev
+question per pair of a link's top `MAX_ENTITIES_PER_LINK` entities, choosing
+among the 13 relations (`acquires` … `located_in`, directed ones offered both
+ways round; `partners_with`/`competes_with` symmetric, stored subject < object)
+those the pair's kinds allow, or none; a second question gives each claim's
+`status` (stated, planned, called_off, disputed, ended). Claims land in
+`public.entity_relations` (one row per link, so `entity_relation_summary` folds
+them into a noisy-or `p` with first/last seen). `property-extract` finds the
+words a title describes an entity with ("British AI neocloud Nscale",
+`descriptors.ts`, compromise, no model call), asks Jev each word's facet (domain,
+origin, stage, type, evaluation), merges neighbours of one facet and maps a domain
+onto a topic; rows go to `public.entity_properties` (`entity_property_summary`).
+Both tables are public-read, service_role-write; `link_enrichment.relations_at` /
+`properties_at` mark the links done.
+
 **Reversible graph edits and where places are**
 (`20261017180000_entity_sense.sql`). Every judged change to the entity graph
 goes through `public.entity_edits` (service_role only): `drop_mention` (a
@@ -673,7 +691,14 @@ over and there are at least two filters, `applyFilter` swaps the search results
 for `public.filter_links(filters jsonb, max_results, page_offset)`
 (`20261016180000_filter_links.sql`, security invoker; `filters` is an array of
 `{"kind": "<ltree path>"}` / `{"entities": [ids]}`, a link must pass all of them,
-newest first, with the entities each filter matched as `entity_ids`). **Senses.** A typed term
+newest first, with the entities each filter matched as `entity_ids`). A filter
+query with a sort word ("events in paris, new") lists the links the reader has
+seen last, as the latest order does (see "Seen links";
+`20261020140000_filter_links_seen_last.sql`): `typedFilter` starts its fold from
+`Filter.seenLast()`, which has no local form (what a reader saw isn't in the
+index), so it asks `filter_links(…, seen_last, as_of, before_seen)`, which pages
+by `(seen, created_at, id)`; `filterKey` and `filterPageKey` carry the order and,
+for seen-last, the feed's `as_of`. QA: `tests/qa`, `npm run seen-filter`. **Senses.** A typed term
 stands for every sense it has at once (a superposition, in the MeTTa sense):
 `typedFilter` groups every kind, indexical and entity named by the same words
 into one filter, sent as `{"any": [sense, …]}` (a lone sense is sent bare), and
@@ -756,8 +781,10 @@ CI's `frontend` job runs ESLint (strict type-checked), `tsc --noEmit`, the build
 Postgres) next to #81's `db` and `page`. Order names live in `SORTS` (the function) and
 `SORT_LABELS` (the page) and must match `feed_query`'s check.
 
-**Query credits.** Every account (anonymous ones included) starts with
-`query_credit_limit()` = 1,000 credits, one per Jev read, in all, no reset. `public.query_credits
+**Query credits.** Every account starts with `query_credit_limit(user)`
+credits, one per Jev read, in all, no reset: `query_credit_limit_anonymous()`
+(1,000) for an anonymous session, `query_credit_limit_account()` (10,000) for a
+real account (see "Accounts"). `public.query_credits
 (user_id, used)` counts them (readers see only their own row; no client
 writes). `query-parse` calls `spend_query_credit()` as the caller (security
 definer, takes one only while `used` is under the limit, returns what's left or
@@ -772,6 +799,31 @@ start and each time the menu opens; `setupMenu` only wires `.bubble[data-overlay
 to overlays); at 0 it greys out and the page stops calling `query-parse`, so
 only its own reading is used. A new anonymous session starts at 1,000 again, so this
 caps one session's spend, not a determined caller's.
+
+**Accounts** (`20261029120000_accounts.sql`, QA: CI's `db` job,
+`tests/db/test_accounts.py`). Every visitor starts as an anonymous session; a
+real account is the same auth user with an email attached (`updateUser({email})`
+then the emailed code or link), so nothing moves on upgrade.
+`public.is_permanent(user default auth.uid())` reads `auth.users.is_anonymous`
+(not the JWT, which lags until refreshed). A real account unlocks: posting
+replies (the insert policy), setting or changing `profiles.handle` (the
+`profiles_handle_needs_account` trigger; handles set before this stay, and
+clearing one is always allowed), more query credits, and `public.style_picks`
+(Appearance picks per style type, synced across devices). Which privacy-policy
+version a user accepted, and when, is `public.account_consents` (own rows,
+insert-only). Signing in on a second device that already has an anonymous
+session folds that session into the account with `public.merge_account(from,
+into)` (service_role only, run by the `account-merge` Edge Function once it has
+checked both sessions' tokens: `POST {"anonymous_token"}` with the account's bearer, `verify_jwt` on, the pairing rules in `_shared/account_merge.ts`): one transaction, driven by
+`public.account_columns`, one row per column that names a user with its
+strategy (`move`: repoint, the account's own row winning on each listed unique
+key; `drop`: the anonymous rows go, as federated actor keys and followers are
+tied to its id; `custom`: credits add up, the profile keeps its own fields and
+fills empty ones from the anonymous one). It refuses while
+`public.account_columns_missing` (every foreign key to `auth.users` or
+`profiles` not in that table) isn't empty, so **a new table with a user column
+needs its `account_columns` row** or merges stop. The anonymous user is deleted
+at the end.
 
 Client-fetched articles are built by
 cloning `<template id="article-template">`, which `site.py` renders with the
@@ -874,8 +926,8 @@ centred in the header with `--header-brand-gap` above and below it, and the
 menu icon is centred vertically. There's no tagline.
 
 **Replies.** `public.replies` (`link_id`, `author_id` → `profiles`,
-`body`, `created_at`): publicly readable; any signed-in user (anonymous
-sessions included, same as votes) can insert/delete only their own
+`body`, `created_at`): publicly readable; only a real account
+(`is_permanent()`, see "Accounts") can insert, anyone can delete their own
 (`auth.uid() = author_id`), and there's no update policy. The DB checks
 bound the body to 1–500 non-blank chars (the page's `REPLY_MAX_LENGTH`
 mirrors this) and reject control characters except newline/tab. Bodies
@@ -1252,6 +1304,44 @@ sessions in this repo get its tools.
 topic profile is derivable by anyone from `votes` ⋈ `link_topics`.
 Either accept that as part of an "open algorithm" stance, or make
 per-voter rows private and expose only per-link totals via a view.
+
+**Following from the browser — `follow-intake`, `follow_inbox`, `follow_tokens`**
+(`20261029130000_follow_inbox.sql`, `20261029140000_follow_tokens.sql`). The
+follow browser extension (`extension/`) reads a page in the reader's own browser,
+where Cloudflare and sign-in walls don't stop it, and POSTs what feed discovery
+needs to the **`follow-intake`** Edge Function (`verify_jwt` off): the page's URL,
+title and site name, its feed links (`<link rel="alternate">`), identity links
+(`rel="me"`, JSON-LD `sameAs`, author pages). Never the page's text: a signed-in
+page can hold private mail, and free text read back by an agent is an injection
+vector. **Tokens are per account and device**: the extension's Connect opens
+`seb.now/connect#nonce=…` (`connect.py`, a standalone page like the consent page),
+which, as that browser's own session (anonymous or real), calls
+`request_follow_token(label)` and hands the token to the extension's content
+script with `postMessage` (nonce-checked). Only the token's SHA-256 is stored
+(`follow_tokens.token_hash`); `my_follow_tokens()` / `revoke_follow_token(id)`
+are the reader's own. A real account, or one in `follow_curators` ("known
+users"), gets an active token at once (`may_follow`); any other waits `pending`
+with a pairing code, which `select public.approve_follow_token('K7Q-2MX')`
+(service_role) approves, adding the account to `follow_curators` and activating
+its pending tokens. All three user columns are in `account_columns`, so a merged
+anonymous account brings its devices, pages and standing. The intake looks the
+bearer up with `follow_token_owner(token)` (shape-checked first; unknown or
+revoked 401, pending 403 with the code). The server is the trust boundary:
+`_shared/follow_signals.ts` cleans every value declaratively (`record`, `list`,
+`url`, `text` cleaners; a URL must be https to a public host: no IP literals,
+local or single-label hosts, credentials, ports or hidden characters, http is
+upgraded, fragments dropped; text loses tags, angle brackets and control/format
+characters and is capped), and unknown fields are dropped. The handler is a stack
+of wrappers (`_shared/follow_intake.ts`: CORS, 500 guard, POST only, token
+holder, per-account rate limit `MAX_PER_WINDOW` per `RATE_WINDOW`, body cap,
+JSON) with its effects injected, so `follow_intake_test.ts` covers the whole
+chain without a database, and `follow_signals_test.ts` fuzzes the cleaners. Rows
+land in `public.follow_inbox` (service_role only, `owner_id` the sender) through
+`follow_inbox_put(owner, page_url, signals)`, which refreshes a page still
+pending for that account; `status` goes `pending` → `followed`/`dismissed` with
+`processed_at`. Nothing there is fetched or followed by itself: the `/follow`
+skill reads the inbox, checks the feeds and identity links (through pg_net), and
+adds sources once the reader confirms.
 
 **Hosting — DigitalOcean.** The site is meant to ship as a static
 site (no server framework — see the architecture discussion for why:
