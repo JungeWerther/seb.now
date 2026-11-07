@@ -2247,10 +2247,6 @@
       return li;
     }
 
-    function cursorOf(li) {
-      return { createdAt: li.dataset.createdAt, id: li.dataset.linkId };
-    }
-
     // Keyset on (created_at, id): one ingest upsert stamps all its rows with
     // the same created_at, so id breaks the tie.
     function keyset(op, cursor) {
@@ -2619,17 +2615,14 @@
       if (initialQuery) return runQuery(initialQuery);
       // The build pre-renders the newest links for a fast first paint; the
       // ranked feed replaces them once its first page arrives. If ranking
-      // fails, keep them and carry on newest-first.
-      const prerendered = [...articleList.querySelectorAll("li.article")];
+      // fails, the newest links replace them instead: the build is only as
+      // fresh as the last deploy.
       resetFeed("");
       const generation = feed.generation;
-      return loadMore({ replace: true }).then(async (ok) => {
-        if (ok !== false || generation !== feed.generation || prerendered.length === 0) return;
+      return loadMore({ replace: true }).then((ok) => {
+        if (ok !== false || generation !== feed.generation) return;
         feed.chronological = true;
-        feed.cursor = cursorOf(prerendered.at(-1));
-        for (const li of prerendered) feed.seen.add(li.dataset.linkId);
-        await hydrateArticles(prerendered);
-        if (!feed.done && sentinelNearViewport()) loadMore();
+        return loadMore({ replace: true });
       });
     }
 

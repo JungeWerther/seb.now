@@ -1,7 +1,8 @@
 // The built page in headless Chromium, with supabase-js swapped for a fake:
 // the pinned script's URL, SRI hash and CSP are pointed at a stand-in that
 // answers each table from `answers` (filtered by .eq and .in) and records
-// every write and rpc in window.__calls. `delays` holds how long, in ms, a
+// every write and rpc in window.__calls; a table answered with
+// `{ error: "…" }` fails with that message. `delays` holds how long, in ms, a
 // "<table>.<method>" query takes to answer (`{ "entities.in": 1500 }`). Needs uv (to build the page) and a
 // Chromium (CHROMIUM_PATH, else Playwright's own).
 import { execFileSync } from "node:child_process";
@@ -21,7 +22,9 @@ const fakeSupabase = (answers, delays) => `(() => {
   const WRITES = ["insert", "upsert", "update", "delete"];
   const chain = (table, rows, delay = 0) => new Proxy(function () {}, {
     get(_t, prop) {
-      if (prop === "then") return (resolve) => setTimeout(() => resolve({ data: rows, error: null, count: 0 }), delay);
+      if (prop === "then") return (resolve) => setTimeout(() => resolve(rows?.error
+        ? { data: null, error: { message: rows.error }, count: 0 }
+        : { data: rows, error: null, count: 0 }), delay);
       return (...args) => {
         if (WRITES.includes(prop)) window.__calls.push({ table, op: prop, args });
         const wait = Math.max(delay, delays[table + "." + prop] ?? 0);
