@@ -1,0 +1,24 @@
+{
+  "name": "seb-now-follow-extension",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint . && web-ext lint --source-dir dist --self-hosted",
+    "test": "node --test test/*.test.mjs",
+    "e2e": "node scripts/build.mjs --e2e && node --test test/e2e/*.e2e.mjs",
+    "package": "web-ext build --source-dir dist --artifacts-dir artifacts --overwrite-dest"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/chrome": "^0.3.7",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.13.0",
+    "linkedom": "^0.18.14",
+    "playwright": "^1.64.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "web-ext": "^10.8.0"
+  }
+}

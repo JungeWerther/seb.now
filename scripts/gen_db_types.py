@@ -51,6 +51,7 @@ WIRE_TYPES = {
     "timestamp": "str",
     "interval": "str",
     "tsvector": "str",
+    "bytea": "str",
     "json": "Json",
     "jsonb": "Json",
 }

@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="__CONTENT_SECURITY_POLICY__">
+  <meta name="referrer" content="no-referrer">
+  <title>Connect the follow extension — seb.now</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #ffffff;
+      --fg: #1a1a1a;
+      --post-bg: #f6f6f6;
+      --positive: #4c9a6a;
+      --positive-soft: #e1f3e6;
+      --muted: #707070;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #161616; --fg: #e8e8e8; --post-bg: #000000; --positive: #7fc999; --positive-soft: #203a29; --muted: #a0a0a0; }
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 480px;
+      margin: 3rem auto;
+      padding: 0 1rem;
+      line-height: 1.5;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    a.back { color: var(--positive); text-decoration: none; font-size: 0.9rem; }
+    h1 { font-size: 1.5rem; margin: 1.5rem 0 0.5rem; }
+    .card { background: var(--post-bg); border-radius: 14px; padding: 1rem 1.2rem; margin-top: 1rem; }
+    #pair-code { font: 700 2rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.15em; margin: 0.5rem 0; }
+    .fine { color: var(--muted); font-size: 0.85rem; }
+    #devices { list-style: none; padding: 0; margin: 0; }
+    #devices li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.5rem 0; }
+    #devices li + li { border-top: 1px solid rgba(128, 128, 128, 0.25); }
+    button {
+      font: inherit;
+      padding: 0.4rem 1rem;
+      border-radius: 999px;
+      cursor: pointer;
+      border: 1px solid rgba(128, 128, 128, 0.5);
+      background: transparent;
+      color: inherit;
+    }
+    button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--positive-soft); }
+    button:disabled { opacity: 0.5; cursor: default; }
+    #status:empty { display: none; }
+    /* Hidden until the page script has checked it isn't framed (see consent.html). */
+    html:not(.unframed) body { display: none !important; }
+  </style>
+</head>
+<body>
+  <a class="back" href="/">&larr; seb.now</a>
+  <h1>Connect the follow extension</h1>
+  <p id="status">Loading…</p>
+  <div id="pairing" class="card" hidden>
+    <p>This account needs approving once before it can send pages. The pairing code:</p>
+    <p id="pair-code"></p>
+    <p class="fine">Waiting for approval. This page updates by itself; you can also close it, the extension is connected either way.</p>
+  </div>
+  <div id="manage" class="card" hidden>
+    <p>Devices connected to this account:</p>
+    <ul id="devices"></ul>
+    <p class="fine">Revoking a device stops it sending pages at once.</p>
+  </div>
+  <template id="device-template">
+    <li><span><strong class="label"></strong><br><span class="fine state"></span></span><button type="button">Revoke</button></li>
+  </template>
+  <script type="module">
+    if (window.top !== window.self) throw new Error("seb.now doesn't run inside a frame");
+    document.documentElement.classList.add("unframed");
+    const supabaseReady = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = __SUPABASE_JS_URL__;
+      script.integrity = __SUPABASE_JS_INTEGRITY__;
+      script.crossOrigin = "anonymous";
+      script.addEventListener("load", () => resolve(window.supabase));
+      script.addEventListener("error", () => reject(new Error("supabase-js failed to load")));
+      document.head.append(script);
+    }).then(({ createClient }) => createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__));
+
+    // The extension's one-time nonce, read once and dropped from the address so
+    // it isn't kept in history.
+    const nonce = new URLSearchParams(location.hash.slice(1)).get("nonce");
+    if (location.hash) history.replaceState(null, "", location.pathname);
+    const NONCE_SHAPE = /^[A-Za-z0-9_-]{22,64}$/;
+    const HANDOVER_WAIT_MS = 4000;
+    const APPROVAL_POLL_MS = 5000;
+    const status = document.getElementById("status");
+
+    function show(text) {
+      status.textContent = text;
+    }
+
+    // A label for this device, from the browser's own description of itself.
+    function deviceLabel() {
+      const agent = navigator.userAgent;
+      const browser = [["Edg/", "Edge"], ["Firefox/", "Firefox"], ["Chrome/", "Chrome"], ["Safari/", "Safari"]]
+        .find(([mark]) => agent.includes(mark))?.[1] ?? "Browser";
+      const system = [["Android", "Android"], ["iPhone", "iPhone"], ["iPad", "iPad"], ["Windows", "Windows"], ["Mac OS", "Mac"], ["Linux", "Linux"]]
+        .find(([mark]) => agent.includes(mark))?.[1];
+      return system ? `${browser} on ${system}` : browser;
+    }
+
+    // Same account as the feed: this browser's session, anonymous unless
+    // it has been upgraded.
+    async function ensureSession(client) {
+      const { data: { session } } = await client.auth.getSession();
+      if (session) return session;
+      const { data, error } = await client.auth.signInAnonymously();
+      if (error) {
+        console.error("anonymous sign-in failed", error);
+        return null;
+      }
+      return data.session;
+    }
+
+    // Posts the token to this window, where only the extension's content
+    // script (on this page, checking the nonce) takes it, and waits for its
+    // answer.
+    function handOver(token) {
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => finish(false), HANDOVER_WAIT_MS);
+        function finish(answered) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMessage);
+          resolve(answered);
+        }
+        function onMessage(event) {
+          const ok = event.source === window && event.origin === location.origin &&
+            event.data?.type === "seb-follow-connected" && event.data.nonce === nonce;
+          if (ok) finish(true);
+        }
+        window.addEventListener("message", onMessage);
+        window.postMessage({ type: "seb-follow-token", nonce, ...token }, location.origin);
+      });
+    }
+
+    async function waitForApproval(client, tokenId) {
+      const { data } = await client.rpc("my_follow_tokens");
+      const mine = (data ?? []).find((row) => row.token_id === tokenId);
+      if (mine?.status === "active") {
+        document.getElementById("pairing").hidden = true;
+        show("Approved. The extension can send pages now; you can close this tab.");
+        return;
+      }
+      setTimeout(() => waitForApproval(client, tokenId), APPROVAL_POLL_MS);
+    }
+
+    async function connect(client) {
+      const { data, error } = await client.rpc("request_follow_token", { label: deviceLabel() });
+      const issued = data?.[0];
+      if (error || !issued) {
+        show(`Couldn't connect: ${error?.message ?? "no token was issued"}.`);
+        return;
+      }
+      const handed = await handOver({ token: issued.token, status: issued.status, pairCode: issued.pair_code });
+      if (!handed) {
+        // Nobody took it, so it shouldn't stay valid.
+        await client.rpc("revoke_follow_token", { token_id: issued.token_id });
+        show("The extension didn't answer. Is it installed in this browser? Press Connect in it again.");
+        return;
+      }
+      if (issued.status === "active") {
+        show("Connected. You can close this tab.");
+        return;
+      }
+      show("Connected, waiting for approval.");
+      document.getElementById("pair-code").textContent = issued.pair_code;
+      document.getElementById("pairing").hidden = false;
+      waitForApproval(client, issued.token_id);
+    }
+
+    async function manage(client) {
+      const { data, error } = await client.rpc("my_follow_tokens");
+      if (error) {
+        show(`Couldn't list your devices: ${error.message}.`);
+        return;
+      }
+      if (!data?.length) {
+        show("No devices are connected. Press Connect in the seb.now follow extension to add one.");
+        return;
+      }
+      show("");
+      const list = document.getElementById("devices");
+      const template = document.getElementById("device-template");
+      list.replaceChildren(...data.map((row) => {
+        const item = template.content.firstElementChild.cloneNode(true);
+        item.querySelector(".label").textContent = row.label;
+        item.querySelector(".state").textContent = row.status === "pending"
+          ? `waiting for approval, code ${row.pair_code}`
+          : row.last_used_at ? `last used ${new Date(row.last_used_at).toLocaleString()}` : "not used yet";
+        const button = item.querySelector("button");
+        button.addEventListener("click", async () => {
+          button.disabled = true;
+          const { error: revokeError } = await client.rpc("revoke_follow_token", { token_id: row.token_id });
+          if (revokeError) {
+            button.disabled = false;
+            show(`Couldn't revoke it: ${revokeError.message}.`);
+          } else {
+            item.remove();
+          }
+        });
+        return item;
+      }));
+      document.getElementById("manage").hidden = false;
+    }
+
+    async function start() {
+      const client = await supabaseReady;
+      const session = await ensureSession(client);
+      if (!session) {
+        show("Couldn't sign you in. Try again in a moment.");
+        return;
+      }
+      if (nonce !== null && NONCE_SHAPE.test(nonce)) await connect(client);
+      else await manage(client);
+    }
+
+    start().catch((error) => show(`Something went wrong: ${error.message}`));
+  </script>
+</body>
+</html>

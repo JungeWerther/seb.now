@@ -418,7 +418,6 @@
  "setupFeed \"0px 0px ${}px 0px\"",
  "setupFeed \"auxclick\"",
  "setupFeed \"click\"",
- "setupFeed \"li.article\"",
  "setupFeed.onLinkOpened \".article-row a\"",
  "setupFeed.onLinkOpened \".article-row a, .cover-link\"",
  "setupFeed.onLinkOpened \"_blank\"",

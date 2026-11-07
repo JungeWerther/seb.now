@@ -395,7 +395,11 @@ def test_render_includes_menu_bubbles_and_their_overlays() -> None:
     assert 'id="menu-btn"' in html
     start = html.index('<ul id="menu-bubbles">')
     menu = html[start : html.index("</ul>", start)]
-    for overlay, label in (("taste-overlay", "My Algorithm"), ("profile-overlay", "My Profile")):
+    for overlay, label in (
+        ("taste-overlay", "My Algorithm"),
+        ("profile-overlay", "My Profile"),
+        ("appearance-overlay", "Appearance"),
+    ):
         assert f'data-overlay="{overlay}"' in menu
         assert label in menu
         assert f'<dialog id="{overlay}" class="overlay"' in html

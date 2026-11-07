@@ -12,6 +12,7 @@ refused, so a schema can only pick from what this module knows how to read.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from enum import StrEnum
 from functools import cache
@@ -19,7 +20,14 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, create_model
 
-from seb_now.constants import DEFS_PREFIX, ENUM_TOKEN_STRICT, JsonType, SchemaKeyword
+from seb_now.constants import (
+    CSS_TOKEN_PREFIX,
+    DEFS_PREFIX,
+    ENUM_TOKEN_STRICT,
+    STYLE_TOKEN_NAME_PATTERN,
+    JsonType,
+    SchemaKeyword,
+)
 
 
 class UnsupportedSchema(ValueError):
@@ -95,3 +103,15 @@ def _model(name: str, canonical_schema: str) -> type[Style]:
 def style_model(name: str, schema: Mapping[str, Any]) -> type[Style]:
     """The model of the style type `name` whose stored schema is `schema`, built once per schema."""
     return _model(name, json.dumps(schema, sort_keys=True))
+
+
+def css_property(token: str) -> str:
+    """The CSS custom property a token sets: `column_width` is `--column-width`."""
+    if not re.fullmatch(STYLE_TOKEN_NAME_PATTERN, token):
+        raise UnsupportedSchema(f"{token!r} isn't a token name")
+    return CSS_TOKEN_PREFIX + token.replace("_", "-")
+
+
+def css_declarations(style: Style) -> str:
+    """A validated style's tokens as custom property declarations, one per token."""
+    return " ".join(f"{css_property(token)}: {value};" for token, value in style.model_dump(mode="json").items())

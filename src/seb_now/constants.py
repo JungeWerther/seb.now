@@ -45,6 +45,13 @@ DEFS_PREFIX = "#/$defs/"
 # styles.py — an enum token's field is lax inside the strict model, so a
 # keyword's plain string reads as its StrEnum member (strict wants a member)
 ENUM_TOKEN_STRICT = False
+# styles.py — a token `column_width` is the CSS custom property `--column-width`
+CSS_TOKEN_PREFIX = "--"
+# styles.py — a token name the CSS may carry: the same rule as the meta-schema's
+# propertyNames, checked again before a name is written into the page's <style>
+STYLE_TOKEN_NAME_PATTERN = r"^[a-z][a-z0-9_]{0,31}$"
+# site.py — the legacy entities.kind every style has
+STYLE_ENTITY_KIND = "style"
 
 # site.py — topic chips shown per article, highest-p first
 ARTICLE_TOPIC_CHIPS = 2
@@ -102,6 +109,8 @@ POST_SLUG_PATTERN = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 # consent.py — where the OAuth consent page is written under dist/; must match
 # the Authorization Path set in Supabase (Authentication → OAuth Server).
 OAUTH_CONSENT_PATH = "oauth/consent"
+# connect.py — where the follow extension's Connect opens: seb.now/connect.
+CONNECT_PATH = "connect"
 
 # site.py / consent.py — supabase-js's self-contained UMD build (no imports of
 # its own), so the CSP can allow this one URL rather than a whole CDN origin.
