@@ -13,6 +13,9 @@ type Json = str | int | float | bool | list[Json] | dict[str, Json] | None
 
 
 class Table(StrEnum):
+    ACCOUNT_COLUMNS = "account_columns"
+    ACCOUNT_COLUMNS_MISSING = "account_columns_missing"
+    ACCOUNT_CONSENTS = "account_consents"
     AP_ACTOR_KEYS = "ap_actor_keys"
     AP_FOLLOWERS = "ap_followers"
     AP_POSTS = "ap_posts"
@@ -51,6 +54,7 @@ class Table(StrEnum):
     REMOTE_ACTORS = "remote_actors"
     REPLIES = "replies"
     SOURCES = "sources"
+    STYLE_PICKS = "style_picks"
     STYLE_PRIMITIVES = "style_primitives"
     TOPIC_OVERRIDES = "topic_overrides"
     TOPIC_PROPOSAL_ENDORSEMENTS = "topic_proposal_endorsements"
@@ -60,6 +64,24 @@ class Table(StrEnum):
     USER_TOPIC_PREFERENCES = "user_topic_preferences"
     VOTES = "votes"
     WORD_CASE_STATS = "word_case_stats"
+
+
+class AccountColumnsRow(TypedDict):
+    tbl: str
+    col: str
+    strategy: str
+    conflict_keys: list[str]
+
+
+class AccountColumnsMissingRow(TypedDict):
+    tbl: str | None
+    col: str | None
+
+
+class AccountConsentsRow(TypedDict):
+    user_id: str
+    policy_version: str
+    accepted_at: str
 
 
 class ApActorKeysRow(TypedDict):
@@ -442,6 +464,13 @@ class SourcesRow(TypedDict):
     created_at: str
     entity_id: str | None
     handle: str | None
+
+
+class StylePicksRow(TypedDict):
+    user_id: str
+    type_path: str
+    style_id: str
+    picked_at: str
 
 
 class StylePrimitivesRow(TypedDict):

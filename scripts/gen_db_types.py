@@ -42,6 +42,8 @@ WIRE_TYPES = {
     "text": "str",
     "varchar": "str",
     "uuid": "str",
+    "regclass": "str",
+    "name": "str",
     "ltree": "str",
     "date": "str",
     "time": "str",
