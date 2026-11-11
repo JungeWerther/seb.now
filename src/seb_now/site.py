@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from functools import reduce
 from html import escape
+from itertools import accumulate
 from pathlib import Path
 from typing import NamedTuple, TypedDict
 
@@ -33,6 +34,7 @@ from seb_now.consent import write_consent
 from seb_now.constants import (
     ARTICLE_ENTITY_CHIPS,
     ARTICLE_TOPIC_CHIPS,
+    EAGER_COVERS,
     FAVICON_URL_TEMPLATE,
     FEED_PAGE_SIZE,
     FEED_SKELETON_ROWS,
@@ -318,7 +320,18 @@ def build_articles(feed: Iterable[FeedRow], domain_source_types: Mapping[str, So
     return [article for row in feed if (article := _article(row, domain_source_types))]
 
 
-def _render_article(article: Article) -> str:
+def _cover_loading(cover_rank: int) -> str:
+    """How a cover loads, by how many covers come before it in the page: the
+    first is fetched at high priority, the next few eagerly (the browser's
+    default, so no attribute), the rest only near the viewport."""
+    if cover_rank == 0:
+        return 'fetchpriority="high"'
+    return "" if cover_rank < EAGER_COVERS else 'loading="lazy"'
+
+
+def _render_article(article: Article, cover_rank: int = EAGER_COVERS) -> str:
+    """One feed row. `cover_rank` is how many covers precede it in the page;
+    the default (the client's template) loads lazily."""
     link_id = escape(article.id)
     url = escape(article.url)
     host = favicon_host(article.url)
@@ -328,7 +341,7 @@ def _render_article(article: Article) -> str:
     )
     cover = (
         f'<a class="cover-link" href="{url}" target="_blank" rel="noopener noreferrer" tabindex="-1">'
-        f'<img class="cover" src="{escape(article.image_url)}" alt="" loading="lazy"></a>'
+        f'<img class="cover" src="{escape(article.image_url)}" alt="" {_cover_loading(cover_rank)}></a>'
         if article.image_url is not None
         else ""
     )
@@ -362,8 +375,10 @@ def _render_article(article: Article) -> str:
         f'<div class="card-body">'
         f'<div class="meta">'
         f"{domain}"
+        f'<a class="permalink" href="/p/{link_id}">'
         f'<time class="posted" datetime="{escape(article.created_at)}">'
         f"{escape(posted_label(article.created_at, datetime.now(UTC).date()))}</time>"
+        f"</a>"
         f"{topics}"
         f"</div>"
         f'<div class="post-swipe">'
@@ -386,10 +401,14 @@ def _render_article(article: Article) -> str:
         f"</div>"
         f'<div class="post-footer">'
         f"{entities}"
-        f'<span class="score">'
+        f'<button type="button" class="vote-down" aria-label="Not interested">'
+        f"{_lucide(TRASH_ICON, SCORE_ICON_SIZE)}"
+        f"</button>"
+        f'<button type="button" class="score" aria-pressed="false">'
+        f'<span class="visually-hidden">Upvote, score </span>'
         f"{_lucide(THUMBS_UP_ICON, SCORE_ICON_SIZE)}"
         f'<span class="score-value">0</span>'
-        f"</span>"
+        f"</button>"
         f'<span class="reply-count" hidden></span>'
         f'<button type="button" class="reply-btn" aria-label="Reply">'
         f"{_lucide(MESSAGE_ICON, REPLY_ICON_SIZE)}"
@@ -430,7 +449,9 @@ def compiled_script(path: Path) -> str:
 def render(
     articles: Sequence[Article], *, supabase_url: str = "", supabase_anon_key: str = "", style_css: str = ""
 ) -> str:
-    items = "".join(f"\n{_render_article(article)}" for article in articles)
+    # Each row's cover rank: how many of the rows before it have a cover.
+    cover_ranks = accumulate((article.image_url is not None for article in articles), initial=0)
+    items = "".join(f"\n{_render_article(article, rank)}" for article, rank in zip(articles, cover_ranks, strict=False))
     list_html = (
         f'    <ul class="articles">{items}\n    </ul>\n'
         f'    <ul class="link-list" id="feed-skeletons" aria-hidden="true" hidden>{_render_skeletons()}\n    </ul>\n'

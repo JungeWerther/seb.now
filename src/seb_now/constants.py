@@ -127,3 +127,6 @@ GOOGLE_FONTS_FILE_ORIGIN = "https://fonts.gstatic.com"
 SWIPE_ICON_SIZE = 18
 SCORE_ICON_SIZE = 13
 REPLY_ICON_SIZE = 16
+# The feed's first covers are its likely Largest Contentful Paint, so the build
+# loads this many eagerly (the first with fetchpriority="high") and the rest lazily.
+EAGER_COVERS = 2

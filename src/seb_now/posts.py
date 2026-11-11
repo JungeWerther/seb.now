@@ -84,6 +84,7 @@ def render_post(post: Post) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <meta http-equiv="Content-Security-Policy" content="{escape(POST_CSP)}">
   <title>{escape(post.title)} — seb.now</title>
   <meta name="description" content="{escape(post.description)}">
