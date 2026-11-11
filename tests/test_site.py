@@ -152,7 +152,7 @@ def test_render_shows_clickable_cover_image_below_title_when_present() -> None:
 
     assert (
         '<a class="cover-link" href="https://example.com/a" target="_blank" rel="noopener noreferrer" '
-        'tabindex="-1"><img class="cover" src="https://example.com/cover.jpg" alt="" loading="lazy"></a>'
+        'tabindex="-1"><img class="cover" src="https://example.com/cover.jpg" alt="" fetchpriority="high"></a>'
     ) in html
     assert _article_list(html).count('class="cover"') == 1
     title_index = html.index(">Has cover</a>")
@@ -269,7 +269,7 @@ def test_render_links_entity_chips_bottom_left_of_the_footer_and_omits_them_when
 
     assert (
         '<div class="post-footer"><span class="entities"><a class="entity" href="/e/e1">OpenAI</a>'
-        '<a class="entity" href="/e/e2">&lt;b&gt;Sam&lt;/b&gt;</a></span><span class="score">'
+        '<a class="entity" href="/e/e2">&lt;b&gt;Sam&lt;/b&gt;</a></span><button type="button" class="vote-down"'
     ) in articles
     assert articles.count('<span class="entities">') == 1
 
@@ -317,7 +317,9 @@ def test_link_page_focuses_a_tapped_post_above_its_related_links() -> None:
     html = render([])
 
     focus = html[
-        html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))
+        html.index('<section id="focus" tabindex="-1" hidden>') : html.index(
+            "</section>", html.index('<section id="focus"')
+        )
     ]
     for list_id in ("focus-entities", "focus-topics"):
         assert f'id="{list_id}"' in focus
@@ -715,7 +717,9 @@ def test_entity_page_lists_every_link_mentioning_it_and_chips_open_it() -> None:
     html = render([])
 
     focus = html[
-        html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))
+        html.index('<section id="focus" tabindex="-1" hidden>') : html.index(
+            "</section>", html.index('<section id="focus"')
+        )
     ]
     assert '<div id="focus-entity" hidden>' in focus
     assert 'id="focus-entity-name"' in focus and 'id="focus-entity-meta"' in focus
@@ -737,7 +741,9 @@ def test_topic_page_lists_its_links_with_a_find_sources_button_and_chips_open_it
     html = render([])
 
     focus = html[
-        html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))
+        html.index('<section id="focus" tabindex="-1" hidden>') : html.index(
+            "</section>", html.index('<section id="focus"')
+        )
     ]
     assert '<div id="focus-topic" hidden>' in focus
     head = focus[focus.index('<div id="focus-head">') :]
@@ -758,7 +764,9 @@ def test_kind_page_lists_links_its_subkinds_and_top_entities_and_kinds_link_ther
     html = render([])
 
     focus = html[
-        html.index('<section id="focus" hidden>') : html.index("</section>", html.index('<section id="focus"'))
+        html.index('<section id="focus" tabindex="-1" hidden>') : html.index(
+            "</section>", html.index('<section id="focus"')
+        )
     ]
     assert '<div id="focus-kind" hidden>' in focus
     assert 'id="focus-kinds-title"' in focus and 'id="focus-kinds"' in focus
@@ -886,3 +894,58 @@ def test_compiled_scripts_that_could_close_the_page_script_are_refused(tmp_path:
 
     with pytest.raises(ValueError):
         site.compiled_script(path)
+
+
+def test_render_loads_the_first_covers_eagerly_and_the_rest_lazily() -> None:
+    """The first cover is the likely LCP image: fetched at high priority, the
+    next EAGER_COVERS - 1 at the default (eager), the rest only near the
+    viewport. Rows without a cover don't count, and the client's template is lazy."""
+    from seb_now.constants import EAGER_COVERS
+
+    def article(n: int, *, cover: bool) -> Article:
+        return Article(
+            id=f"a{n}",
+            title=f"Post {n}",
+            url=f"https://example.com/{n}",
+            domain="example.com",
+            source_type=SourceType.DIRECT_LINK,
+            image_url=f"https://example.com/{n}.jpg" if cover else None,
+        )
+
+    articles = [article(0, cover=False), *(article(n, cover=True) for n in range(1, EAGER_COVERS + 3))]
+    html = render(articles)
+    page, template = html.split('<template id="article-template">')
+
+    def cover(n: int) -> str:
+        return page.split(f'src="https://example.com/{n}.jpg" alt="" ', 1)[1].split(">", 1)[0]
+
+    assert cover(1) == 'fetchpriority="high"'
+    assert [cover(n) for n in range(2, EAGER_COVERS + 1)] == [""] * (EAGER_COVERS - 1)
+    assert [cover(n) for n in range(EAGER_COVERS + 1, EAGER_COVERS + 3)] == ['loading="lazy"'] * 2
+    assert page.count('fetchpriority="high"') == 1
+    assert 'class="cover" src="" alt="" loading="lazy"' in template
+
+
+def test_render_gives_every_row_vote_buttons_and_a_permalink_for_keyboards() -> None:
+    """Swiping isn't the only way to vote or open a post (WCAG 2.5.1): the score
+    toggles an upvote, the bin downvotes, and the date links to the post's page."""
+    html = _article_list(
+        render(
+            [
+                Article(
+                    id="a1",
+                    title="T",
+                    url="https://example.com/a",
+                    domain="example.com",
+                    source_type=SourceType.DIRECT_LINK,
+                )
+            ]
+        )
+    )
+
+    assert '<a class="permalink" href="/p/a1"><time class="posted"' in html
+    assert '<button type="button" class="vote-down" aria-label="Not interested">' in html
+    assert (
+        '<button type="button" class="score" aria-pressed="false"><span class="visually-hidden">Upvote, score </span>'
+        in html
+    )

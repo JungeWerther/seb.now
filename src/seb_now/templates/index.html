@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <meta http-equiv="Content-Security-Policy" content="__CONTENT_SECURITY_POLICY__">
   <title>seb.now</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -223,7 +224,8 @@
       text-overflow: ellipsis;
     }
     #search-input:focus {
-      outline: none;
+      /* Transparent, not none: forced-colors mode still draws it. */
+      outline: 2px solid transparent;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18), 0 0 0 3px var(--positive-soft);
     }
     #search-input::placeholder { color: gray; }
@@ -328,9 +330,13 @@
       flex: 1;
       min-width: 0;
       max-height: 30vh;
+      /* Grows with what's typed, up to max-height; autoGrow does it in
+         browsers without field-sizing. */
+      field-sizing: content;
       resize: none;
       border: none;
-      outline: none;
+      /* Transparent, not none: forced-colors mode still draws it. */
+      outline: 2px solid transparent;
       background: transparent;
       color: inherit;
       font: inherit;
@@ -451,9 +457,15 @@
       color: var(--fg);
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
       overflow-y: auto;
+      /* Scrolling inside an overlay never chains to the feed behind it. */
+      overscroll-behavior: contain;
     }
     dialog.overlay[open] { animation: overlay-in 0.18s ease; }
+    /* A scroll container (overflow: hidden), so that overscroll-behavior also
+       holds a scroll gesture made over the backdrop. */
     dialog.overlay::backdrop {
+      overflow: hidden;
+      overscroll-behavior: contain;
       background: rgba(0, 0, 0, 0.35);
       backdrop-filter: blur(4px);
       -webkit-backdrop-filter: blur(4px);
@@ -492,7 +504,7 @@
       background: transparent;
       color: inherit;
     }
-    #handle-input:focus { outline: none; border-color: var(--positive); box-shadow: 0 0 0 3px var(--positive-soft); }
+    #handle-input:focus { outline: 2px solid transparent; border-color: var(--positive); box-shadow: 0 0 0 3px var(--positive-soft); }
     #handle-save {
       font: inherit;
       padding: 0.45rem 1rem;
@@ -649,7 +661,17 @@
       position: relative;
       overflow: hidden;
     }
+    /* Rows past the first screen skip rendering until they near the
+       viewport; `auto` keeps each row's last rendered height once it has
+       been drawn, so the scrollbar doesn't jump. */
+    ul.articles li.article:nth-child(n + 4) {
+      content-visibility: auto;
+      contain-intrinsic-size: auto 15rem;
+    }
+    /* content-visibility: auto paint-contains the row, which would clip a
+       card swung past its edges. */
     li.article.dragging { overflow: visible; z-index: 5; }
+    ul.articles li.article.dragging { content-visibility: visible; }
     li.article.dragging .post-swipe { overflow: visible; }
     li.article.dragging .post { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18); will-change: transform; }
     .post-swipe {
@@ -826,16 +848,41 @@
       .skeleton .bone { animation: none; }
     }
     .swipe-content .reply-count { font-size: 0.75rem; color: gray; font-variant-numeric: tabular-nums; }
-    .post-footer .score {
+    /* Text for screen readers only. */
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    /* The score is the upvote button and the bin beside it the downvote: the
+       same votes as swiping, for keyboards, switches and voice control. Both
+       are at least 24px tall (WCAG 2.5.8). */
+    .post-footer .score,
+    .post-footer .vote-down {
       display: flex;
       flex: none;
       align-items: center;
       gap: 0.2rem;
-      margin-right: 0.35rem;
+      min-width: 1.5rem;
+      min-height: 1.5rem;
+      justify-content: center;
+      padding: 0 0.3rem;
+      border: none;
+      border-radius: 999px;
+      background: none;
+      font: inherit;
       font-size: 0.75rem;
       font-variant-numeric: tabular-nums;
       color: gray;
+      cursor: pointer;
     }
+    .post-footer .score { margin-right: 0.15rem; }
+    .post-footer .score:hover,
+    .post-footer .vote-down:hover { color: var(--fg); }
+    .post-footer .vote-down:hover { color: var(--negative); }
     .post-footer .score.positive { color: var(--positive); }
     .post-footer .score.negative { color: var(--negative); }
     .swipe-content .reply-btn {
@@ -866,6 +913,9 @@
     html.focus-bg body,
     html.focus-bg .swipe-content { background: transparent; }
     #focus { color: #e8e8e8; padding-bottom: 1.25rem; }
+    /* It takes focus only so the keyboard continues from the page just
+       opened; the ring would outline the whole band. */
+    #focus:focus { outline: none; }
     #focus[hidden] { display: none; }
     #focus-head { display: flex; align-items: center; margin-bottom: 0.5rem; }
     #focus-back {
@@ -993,10 +1043,17 @@
     }
     /* A domain line with a source links to the source's page. */
     .swipe-content a.domain[href]:hover { text-decoration: underline; }
-    /* Stays in the flow when empty: it's what pushes the topic chips right. */
-    .swipe-content .posted {
+    /* Stays in the flow when empty: it's what pushes the topic chips right.
+       It links to the post's own page, so the keyboard can open it too. */
+    .swipe-content .permalink {
       flex: 1 0 auto;
       margin-left: -0.25rem;
+      line-height: var(--domain-line-height);
+      color: inherit;
+      text-decoration: none;
+    }
+    .swipe-content .permalink:hover .posted:not(:empty) { text-decoration: underline; }
+    .swipe-content .posted {
       font-family: var(--brand-font);
       font-size: 0.72rem;
       font-weight: 300;
@@ -1117,8 +1174,8 @@
       </h1>
     </div>
   </header>
-  <div id="toast-container"></div>
-  <dialog id="taste-overlay" class="overlay" aria-labelledby="taste-title">
+  <div id="toast-container" role="status"></div>
+  <dialog id="taste-overlay" class="overlay" closedby="any" aria-labelledby="taste-title">
     <div class="overlay-head">
       <p class="overlay-title" id="taste-title">My Algorithm</p>
       <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
@@ -1133,7 +1190,7 @@
     <button id="taste-reset">Reset all to default</button>
     <template id="taste-clear-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></template>
   </dialog>
-  <dialog id="inbox-overlay" class="overlay" aria-labelledby="inbox-title">
+  <dialog id="inbox-overlay" class="overlay" closedby="any" aria-labelledby="inbox-title">
     <div class="overlay-head">
       <p class="overlay-title" id="inbox-title">Inbox</p>
       <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
@@ -1141,7 +1198,7 @@
     <p id="inbox-status"></p>
     <ol id="inbox-list"></ol>
   </dialog>
-  <dialog id="profile-overlay" class="overlay" aria-labelledby="profile-title">
+  <dialog id="profile-overlay" class="overlay" closedby="any" aria-labelledby="profile-title">
     <div class="overlay-head">
       <p class="overlay-title" id="profile-title">My Profile</p>
       <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
@@ -1154,7 +1211,7 @@
     <p id="profile-hint">Lowercase letters, numbers and _. It's also your fediverse account, <span id="profile-fediverse-name"></span>: your comments are posted there too, and a comment on a link shares that link.</p>
     <p id="profile-status"></p>
   </dialog>
-  <dialog id="appearance-overlay" class="overlay" aria-labelledby="appearance-title">
+  <dialog id="appearance-overlay" class="overlay" closedby="any" aria-labelledby="appearance-title">
     <div class="overlay-head">
       <p class="overlay-title" id="appearance-title">Appearance</p>
       <button class="overlay-close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
@@ -1163,8 +1220,9 @@
     <p id="appearance-status"></p>
     <ol id="appearance-list"></ol>
   </dialog>
+  <main>
   <p id="search-empty">No matching articles.</p>
-  <section id="focus" hidden>
+  <section id="focus" tabindex="-1" hidden>
     <div id="focus-head">
       <button type="button" id="focus-back" aria-label="Back to the feed"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>Feed</button>
       <a id="find-sources" target="_blank" rel="noopener noreferrer" title="Ask Claude to find new sources covering this" hidden><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>Find sources</a>
@@ -1194,6 +1252,7 @@
     <p class="link-section-title" id="focus-related-title">Related</p>
   </section>
   <!--ARTICLES-->
+  </main>
   <div id="search-dock">
     <div id="dock-inner">
     <div id="dock-actions">
@@ -1609,6 +1668,73 @@
       if (error) console.error("undo failed", error);
     }
 
+    // A row's upvote is its .upvoted class and its score button's pressed state.
+    const UPVOTED_CLASS = "upvoted";
+    const VOTE_PRESSED_ATTR = "aria-pressed";
+    const VOTE_UP_SELECTOR = ".score";
+    const VOTE_DOWN_SELECTOR = ".vote-down";
+    const POST_SELECTOR = ".post";
+    const DRAGGING_CLASS = "dragging";
+    const FLASH_POSITIVE_CLASS = "flash-positive";
+    const ANIMATION_END_EVENT = "animationend";
+    const ROW_COLLAPSE_TRANSITION = "max-height 0.2s ease-in, opacity 0.2s ease-in";
+    const POST_FADE_TRANSITION = "opacity 0.2s ease-in";
+    const PX = "px";
+    const NO_HEIGHT = "0px";
+    const INVISIBLE = "0";
+
+    function setUpvoted(li, upvoted) {
+      li.classList.toggle(UPVOTED_CLASS, upvoted);
+      li.querySelector(VOTE_UP_SELECTOR)?.setAttribute(VOTE_PRESSED_ATTR, String(upvoted));
+    }
+
+    // An upvote from a swipe or the score button: the post flashes, the score
+    // reloads.
+    async function upvote(li, session, linkId) {
+      setUpvoted(li, true);
+      const content = li.querySelector(POST_SELECTOR);
+      content.classList.add(FLASH_POSITIVE_CLASS);
+      content.addEventListener(ANIMATION_END_EVENT, () => content.classList.remove(FLASH_POSITIVE_CLASS), { once: true });
+      await castVote(session, linkId, 1);
+      const scores = await loadScores([linkId]);
+      renderScore(li, scores[linkId] || 0);
+    }
+
+    async function clearUpvote(li, session, linkId) {
+      setUpvoted(li, false);
+      await removeVote(session, linkId);
+      const scores = await loadScores([linkId]);
+      renderScore(li, scores[linkId] || 0);
+    }
+
+    // A downvote hides the row (folding it shut) and offers an undo; a swipe
+    // has already flown the post off, the bin button fades it.
+    async function downvote(li, session, linkId) {
+      await castVote(session, linkId, -1);
+      li.classList.remove(DRAGGING_CLASS);
+      li.style.transition = ROW_COLLAPSE_TRANSITION;
+      li.style.maxHeight = li.offsetHeight + PX;
+      requestAnimationFrame(() => {
+        li.style.maxHeight = NO_HEIGHT;
+        li.style.opacity = INVISIBLE;
+      });
+      showUndoToast(li, session, linkId);
+    }
+
+    // The footer's buttons cast the same votes as swiping; the score button
+    // toggles the upvote.
+    function setupVoteButtons(li, session) {
+      const linkId = li.dataset.linkId;
+      li.querySelector(VOTE_UP_SELECTOR).addEventListener(CLICK_EVENT, () =>
+        (li.classList.contains(UPVOTED_CLASS) ? clearUpvote : upvote)(li, session, linkId));
+      li.querySelector(VOTE_DOWN_SELECTOR).addEventListener(CLICK_EVENT, () => {
+        const content = li.querySelector(POST_SELECTOR);
+        content.style.transition = POST_FADE_TRANSITION;
+        content.style.opacity = INVISIBLE;
+        downvote(li, session, linkId);
+      });
+    }
+
     const TOAST_DURATION_MS = 3000;
 
     function showToast(message) {
@@ -1651,7 +1777,7 @@
         li.style.transition = "max-height 0.2s ease-out, opacity 0.2s ease-out";
         li.style.maxHeight = "";
         li.style.opacity = "";
-        li.classList.remove("upvoted");
+        setUpvoted(li, false);
         const content = li.querySelector(".post");
         content.style.transition = "transform 0.2s ease-out, opacity 0.2s ease-out";
         content.style.transform = "";
@@ -1904,26 +2030,13 @@
         if (x >= SWIPE_COMMIT_THRESHOLD_PX) {
           // right = upvote
           reset();
-          li.classList.add("upvoted");
-          content.classList.add("flash-positive");
-          content.addEventListener("animationend", () => content.classList.remove("flash-positive"), { once: true });
-          await castVote(session, linkId, 1);
-          const scores = await loadScores([linkId]);
-          renderScore(li, scores[linkId] || 0);
+          await upvote(li, session, linkId);
         } else if (x <= -SWIPE_COMMIT_THRESHOLD_PX) {
           // left = downvote + hide: carry on along the arc and off-screen
           content.style.transition = `transform ${SWIPE_FLY_MS}ms ease-in, opacity ${SWIPE_FLY_MS}ms ease-in`;
           content.style.transform = `translate(${-window.innerWidth}px, ${SWIPE_PIVOT_DISTANCE_PX * (1 - Math.cos(maxAngle))}px) rotate(${-maxAngle}rad)`;
           content.style.opacity = "0";
-          await castVote(session, linkId, -1);
-          li.classList.remove("dragging");
-          li.style.transition = "max-height 0.2s ease-in, opacity 0.2s ease-in";
-          li.style.maxHeight = li.offsetHeight + "px";
-          requestAnimationFrame(() => {
-            li.style.maxHeight = "0px";
-            li.style.opacity = "0";
-          });
-          showUndoToast(li, session, linkId);
+          await downvote(li, session, linkId);
         } else {
           reset();
         }
@@ -1969,7 +2082,10 @@
       if (items.length === 0) return;
       // Swiping works straight away; a vote cast before the session exists
       // waits for it.
-      for (const li of items) setupSwipe(li, pendingSession);
+      for (const li of items) {
+        setupSwipe(li, pendingSession);
+        setupVoteButtons(li, pendingSession);
+      }
       loadReplies(items);
 
       const session = await pendingSession;
@@ -1983,7 +2099,7 @@
             li.remove();
             continue;
           }
-          if (value === 1) li.classList.add("upvoted");
+          if (value === 1) setUpvoted(li, true);
           visible.push(li);
         }
       }
@@ -2198,6 +2314,9 @@
     // document until inserted, so its placeholder images never load.
     // `shared` names the entities and topics to highlight.
     const NOTHING_SHARED = { entities: new Set(), topics: new Set() };
+    // A row's date links to its post's own page.
+    const PERMALINK_SELECTOR = ".permalink";
+    const LINK_PATH_PREFIX = "/p/";
     function renderArticle(row, shared = NOTHING_SHARED) {
       if (!isHttpUrl(row.url)) return null;
       linkRows.set(row.id, row);
@@ -2216,6 +2335,7 @@
       const source = (row.link_entities || []).find((le) => le.found_in === SOURCE_FOUND_IN && le.entities);
       if (source) setEntityHref(domain, source.entities.id);
       else domain.removeAttribute("href");
+      li.querySelector(PERMALINK_SELECTOR).href = LINK_PATH_PREFIX + row.id;
       const posted = li.querySelector(".posted");
       posted.dateTime = row.created_at;
       posted.textContent = postedLabel(row.created_at);
@@ -2645,6 +2765,7 @@
     const FOCUS_MOVE_MS = 420;
     const FOCUS_FADE_MS = 600;
     const focusSection = document.getElementById("focus");
+    const searchInput = document.getElementById("search-input");
     const focusMain = document.getElementById("focus-main");
     const focusStatus = document.getElementById("focus-status");
     const focusEntityHead = document.getElementById("focus-entity");
@@ -2752,6 +2873,10 @@
       document.documentElement.classList.add("focused", "focus-bg");
       focusSection.hidden = false;
       focusStatus.textContent = "";
+      // Focus follows the view, so a keyboard or screen reader carries on in
+      // the page just opened; not while typing in the search box, which can
+      // open a kind's page itself.
+      if (document.activeElement !== searchInput) focusSection.focus({ preventScroll: true });
     }
 
     // `from` is the article tapped, which moves up into place; without it
@@ -3185,11 +3310,14 @@
     // Back to the feed: the one saved on the way in, where it was scrolled to,
     // with the focused post flying back into its place; `restore: false`
     // leaves the list to the caller (a search replacing it anyway).
+    const ARTICLE_TITLE_SELECTOR = ".article-row a";
+
     function leaveFocus({ restore = true } = {}) {
       focusGeneration++;
       const root = document.documentElement;
       const card = focusMain.firstElementChild;
       const start = card?.getBoundingClientRect();
+      const hadFocus = focusSection.contains(document.activeElement);
       root.classList.remove("focused");
       focusSection.hidden = true;
       focusMain.replaceChildren();
@@ -3212,7 +3340,11 @@
       updateSkeletons();
       articleList.replaceChildren(...saved.items);
       window.scrollTo({ top: saved.scrollY, behavior: "instant" });
-      if (card && saved.items.includes(card)) flyFrom(card, start);
+      if (card && saved.items.includes(card)) {
+        flyFrom(card, start);
+        // Back where the reader left the feed: on the card they opened.
+        if (hadFocus) card.querySelector(ARTICLE_TITLE_SELECTOR)?.focus({ preventScroll: true });
+      }
       updateSearchEmpty();
       if (!feed.done && sentinelNearViewport()) loadMore();
     }
@@ -3227,6 +3359,10 @@
       leaveFocus();
     }
 
+    const ARTICLE_SELECTOR = "li.article";
+    const OPEN_ACTION = "open";
+    const isModifiedClick = (event) => event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
+
     function setupLinkPage() {
       // focusLink and leaveFocus set the scroll position themselves.
       history.scrollRestoration = "manual";
@@ -3235,6 +3371,18 @@
         if (isFocused()) updateFocusBand();
       }).observe(focusSection);
       document.addEventListener("click", (event) => {
+        // The date is the card's own link, for keyboards; a plain click opens
+        // the page in place like a tap on the card, and on the focused card
+        // itself does nothing.
+        const permalink = event.target.closest(PERMALINK_SELECTOR);
+        if (permalink && !isModifiedClick(event)) {
+          event.preventDefault();
+          const card = permalink.closest(ARTICLE_SELECTOR);
+          if (!articleList.contains(card)) return;
+          noteNextAction(OPEN_ACTION, card.dataset.linkId);
+          focusLink(card.dataset.linkId, { from: card });
+          return;
+        }
         // An anchor without an href (a domain line with no source) is plain
         // text, so it opens the card like the rest of it.
         if (event.target.closest("a[href], button, input, textarea")) return;
@@ -3317,6 +3465,18 @@
       else if (orderFromPath()) focusOrder(orderFromPath(), { push: false, saveFeed: false });
     }
 
+    // Fields that size to their contents in CSS need no script for it.
+    const FIELD_SIZING_NATIVE = CSS.supports("field-sizing", "content");
+
+    // The Enter that confirms an IME composition (Japanese, Chinese, Korean
+    // input) is not a submit. Safari has reported isComposing false on it,
+    // but its keyCode is still 229 there.
+    const IME_PROCESS_KEY_CODE = 229;
+    const isComposing = (event) => event.isComposing || event.keyCode === IME_PROCESS_KEY_CODE;
+
+    // Browsers without <dialog closedby> get light dismiss from script.
+    const DIALOG_LIGHT_DISMISS_FALLBACK = !("closedBy" in HTMLDialogElement.prototype);
+
     function setupMenu() {
       const btn = document.getElementById("menu-btn");
       const bubbles = document.getElementById("menu-bubbles");
@@ -3355,8 +3515,16 @@
 
       for (const overlay of document.querySelectorAll("dialog.overlay")) {
         overlay.querySelector(".overlay-close").addEventListener("click", () => overlay.close());
+        // closedby="any" closes on a backdrop tap natively; elsewhere a tap
+        // the dialog itself receives is on the backdrop only when it lands
+        // outside the dialog's box (a tap on its padding targets it too).
+        if (!DIALOG_LIGHT_DISMISS_FALLBACK) continue;
         overlay.addEventListener("click", (event) => {
-          if (event.target === overlay) overlay.close();
+          if (event.target !== overlay) return;
+          const box = overlay.getBoundingClientRect();
+          const inside = box.left <= event.clientX && event.clientX <= box.right
+            && box.top <= event.clientY && event.clientY <= box.bottom;
+          if (!inside) overlay.close();
         });
       }
     }
@@ -3577,6 +3745,7 @@
           slider.style.setProperty("--pct", `${value}%`);
           slider.setAttribute("aria-valuenow", String(value));
           score.textContent = `score ${(value / 100).toFixed(2)}`;
+          slider.setAttribute(ARIA_VALUETEXT, score.textContent);
         };
         const showCustom = (isCustom) => {
           custom.hidden = !isCustom;
@@ -3625,6 +3794,9 @@
         list.append(row);
       }
     }
+
+    // A slider is read out as the score it shows ("score 0.62"), not 0-100.
+    const ARIA_VALUETEXT = "aria-valuetext";
 
     function setupTaste() {
       const overlay = document.getElementById("taste-overlay");
@@ -3694,7 +3866,7 @@
       input.addEventListener("input", () => showFediverseName(input.value.trim().toLowerCase()));
       saveBtn.addEventListener("click", save);
       input.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") save();
+        if (event.key === "Enter" && !isComposing(event)) save();
       });
     }
 
@@ -4072,6 +4244,7 @@
       let sending = false;
 
       function autoGrow() {
+        if (FIELD_SIZING_NATIVE) return;
         input.style.height = "auto";
         input.style.height = `${input.scrollHeight}px`;
       }
@@ -5391,7 +5564,7 @@
         timer = setTimeout(search, /\s$/.test(input.value) ? 0 : QUERY_PARSE_PAUSE_MS);
       });
       input.addEventListener("keydown", (e) => {
-        if (e.key !== "Enter") return;
+        if (e.key !== "Enter" || isComposing(e)) return;
         const kind = typedKind(input.value);
         if (!kind) {
           // Read again with every word finished: it replaces a reading of the
