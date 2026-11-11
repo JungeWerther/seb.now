@@ -4,6 +4,7 @@
 // date as the card's own link with focus following the view, overlays that a
 // tap on their own padding doesn't close, IME-safe Enter, a reply box that
 // sizes itself in CSS, and rows past the first screen skipped until near it.
+// Run: CHROMIUM_PATH=… node audit_page.mjs (from tests/qa, after npm i).
 import { checker, openPage as open, servePage } from "./page_harness.mjs";
 
 const ids = [1, 2, 3, 4, 5, 6].map((n) => `${n}`.repeat(8) + "-1111-1111-1111-111111111111");
