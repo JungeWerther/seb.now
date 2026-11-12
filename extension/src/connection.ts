@@ -74,8 +74,16 @@ export const saveConnection = (connection: Connection) =>
 
 export const forgetConnection = () => chrome.storage.local.remove(CONFIG.CONNECTION_KEY);
 
-// Starts a Connect: a fresh nonce kept for the content script, and seb.now/connect opened.
-export async function startConnect(): Promise<void> {
+// Asks for access to seb.now. Firefox only shows the prompt when this is the
+// first thing a click does, so a click handler calls it before any await and
+// hands the promise on. Already granted, it resolves true without a prompt.
+export const requestSebNowAccess = (): Promise<boolean> =>
+  chrome.permissions.request({ origins: [...CONFIG.SEB_NOW_ACCESS.origins] });
+
+// Starts a Connect: with access to seb.now (or the content script would never
+// run there), a fresh nonce kept for it, and seb.now/connect opened.
+export async function startConnect(access: Promise<boolean>): Promise<void> {
+  if (!(await access)) throw new Error("Connecting needs access to seb.now. Allow it and try again.");
   const nonce = newNonce();
   await chrome.storage.local.set({ [CONFIG.NONCE_KEY]: { nonce, at: Date.now() } satisfies PendingConnect });
   await chrome.tabs.create({ url: connectUrl(nonce) });

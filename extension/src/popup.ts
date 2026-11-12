@@ -5,7 +5,14 @@
 
 import { claudeUrl, isWebPage, type Outcome, reported, sendSignals } from "./actions.ts";
 import { CONFIG } from "./config.ts";
-import { type Connection, forgetConnection, loadConnection, saveConnection, startConnect } from "./connection.ts";
+import {
+  type Connection,
+  forgetConnection,
+  loadConnection,
+  requestSebNowAccess,
+  saveConnection,
+  startConnect,
+} from "./connection.ts";
 import { byId } from "./dom.ts";
 import { extractSignals, type Signals } from "./extract.ts";
 
@@ -57,10 +64,12 @@ const openClaude = async (pageUrl: string) => {
   window.close();
 };
 
-const follow = reported(show)(async () => {
+// `access` is asked for at the click itself (see requestSebNowAccess) and
+// only waited on when there is no connection yet.
+const follow = reported(show)(async (access: Promise<boolean>) => {
   const connection = await loadConnection();
   if (!connection) {
-    await startConnect();
+    await startConnect(access);
     window.close();
     return { ok: true, message: "Opening seb.now to connect…" };
   }
@@ -89,7 +98,10 @@ async function render() {
     : "Connected.";
 }
 
-followButton.addEventListener("click", () => void follow());
+followButton.addEventListener("click", () => {
+  const access = requestSebNowAccess();
+  void follow(access);
+});
 byId("open", HTMLButtonElement).addEventListener("click", () => void open());
 byId("options", HTMLAnchorElement).addEventListener("click", (event) => {
   event.preventDefault();
