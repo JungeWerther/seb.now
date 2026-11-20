@@ -1,23 +1,10 @@
+/* Colours come from the site's theme (theme.css, linked first). */
 :root {
   color-scheme: light dark;
-  --bg: #ffffff;
-  --fg: #1b1b1b;
-  --muted: #666666;
-  --accent: #2e7d32;
-  --accent-fg: #ffffff;
-  --border: #d0d0d0;
-  --error: #b3261e;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #161616;
-    --fg: #ececec;
-    --muted: #a0a0a0;
-    --accent: #66bb6a;
-    --accent-fg: #0b0b0b;
-    --border: #3a3a3a;
-    --error: #f2b8b5;
-  }
+  --accent: var(--positive);
+  --accent-fg: var(--bg);
+  --border: var(--ink);
+  --error: var(--alert);
 }
 * { box-sizing: border-box; }
 body {
@@ -47,5 +34,5 @@ form { display: flex; flex-direction: column; gap: 8px; }
 .status[data-state="ok"] { color: var(--accent); }
 .hint { margin: 0; color: var(--muted); font-size: 13px; }
 a { color: var(--accent); }
-/* Buttons are blocks (block.css): extruded down-right, corners joined diagonally. */
+/* Buttons are blocks (theme.css): extruded down-right, corners joined diagonally. */
 button { box-shadow: var(--extrusion); --depth: calc(var(--block-depth) / 2); }

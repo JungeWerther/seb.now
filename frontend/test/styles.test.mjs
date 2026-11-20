@@ -5,8 +5,8 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const read = (name) => readFileSync(new URL(`../../src/seb_now/templates/${name}`, import.meta.url), "utf8");
-const { styleDeclarations, styleProperties } = vm.runInNewContext(
-  `${read("prelude.js")}\n${read("styles.js")}\n;({ styleDeclarations, styleProperties })`,
+const { styleDeclarations, styleProperties, builtinDeclarations } = vm.runInNewContext(
+  `${read("prelude.js")}\n${read("styles.js")}\n;({ styleDeclarations, styleProperties, builtinDeclarations })`,
 );
 
 const plain = (x) => JSON.parse(JSON.stringify(x));
@@ -82,4 +82,38 @@ test("a pattern the engine can't read matches nothing", () => {
 
 test("a type's properties, to clear them", () => {
   assert.deepEqual(plain(styleProperties(SCHEMA)), ["--column-width", "--dock-width", "--font", "--weight", "--density"]);
+});
+
+const PALETTE = {
+  type: "object",
+  additionalProperties: false,
+  required: ["color_accent", "color_accent_dark"],
+  properties: { color_accent: { $ref: "#/$defs/color" }, color_accent_dark: { $ref: "#/$defs/color" } },
+  $defs: { color: { type: "string", pattern: "^#[0-9a-f]{6}([0-9a-f]{2})?$" } },
+};
+const row = (kind_path, name, style, schema) => ({ kind_path, name, style, kinds: schema ? { schema } : null });
+
+test("built-in styles apply one per type, the first by name, as the build picks them", () => {
+  const rows = [
+    row("entity.style.palette", "zz palette", { color_accent: "#000000", color_accent_dark: "#000000" }, PALETTE),
+    row("entity.style.layout", "seb.now layout", { ...STYLE }, SCHEMA),
+    row("entity.style.palette", "seb.now palette", { color_accent: "#75352e", color_accent_dark: "#c1846e" }, PALETTE),
+  ];
+  assert.deepEqual(plain(builtinDeclarations(rows)), [
+    ["--column-width", "640px"],
+    ["--dock-width", "30rem"],
+    ["--font", '"Inter", sans-serif'],
+    ["--weight", "1.5"],
+    ["--density", "roomy"],
+    ["--color-accent", "#75352e"],
+    ["--color-accent-dark", "#c1846e"],
+  ]);
+});
+
+test("a built-in style without a schema, or with values its type refuses, sets nothing", () => {
+  assert.deepEqual(plain(builtinDeclarations([row("entity.style.palette", "a", { color_accent: "#000000" }, null)])), []);
+  assert.deepEqual(
+    plain(builtinDeclarations([row("entity.style.palette", "a", { color_accent: "url(x)", color_accent_dark: "red" }, PALETTE)])),
+    [],
+  );
 });

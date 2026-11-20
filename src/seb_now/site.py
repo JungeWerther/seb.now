@@ -29,7 +29,6 @@ from pathlib import Path
 from typing import NamedTuple, TypedDict
 
 from seb_now.auth import get_unauthenticated_client
-from seb_now.block import with_block_css
 from seb_now.connect import write_connect
 from seb_now.consent import write_consent
 from seb_now.constants import (
@@ -58,6 +57,7 @@ from seb_now.rows import select, validated
 from seb_now.sanitize import page_csp, safe_http_url, script_json
 from seb_now.source_type import classify_source, display_domain, favicon_host
 from seb_now.styles import css_declarations, style_model
+from seb_now.theme import style_tokens, with_theme_css
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 TEMPLATE_PATH = TEMPLATES_DIR / "index.html"
@@ -84,7 +84,6 @@ FIND_ENTITY_SOURCES_PROMPT_PLACEHOLDER = "__FIND_ENTITY_SOURCES_PROMPT__"
 SUPABASE_JS_URL_PLACEHOLDER = "__SUPABASE_JS_URL__"
 SUPABASE_JS_INTEGRITY_PLACEHOLDER = "__SUPABASE_JS_INTEGRITY__"
 CSP_PLACEHOLDER = "__CONTENT_SECURITY_POLICY__"
-STYLE_TOKENS_PLACEHOLDER = "/*__STYLE_TOKENS__*/"
 PRELUDE_JS_PLACEHOLDER = "__PRELUDE_JS__"
 FILTER_JS_PLACEHOLDER = "__FILTER_JS__"
 SENSES_JS_PLACEHOLDER = "__SENSES_JS__"
@@ -444,10 +443,8 @@ def compiled_script(path: Path) -> str:
     return code
 
 
-@with_block_css
-def render(
-    articles: Sequence[Article], *, supabase_url: str = "", supabase_anon_key: str = "", style_css: str = ""
-) -> str:
+@with_theme_css
+def render(articles: Sequence[Article], *, supabase_url: str = "", supabase_anon_key: str = "") -> str:
     # Each row's cover rank: how many of the rows before it have a cover.
     cover_ranks = accumulate((article.image_url is not None for article in articles), initial=0)
     items = "".join(f"\n{_render_article(article, rank)}" for article, rank in zip(articles, cover_ranks, strict=False))
@@ -459,7 +456,6 @@ def render(
     )
     substitutions = {
         ARTICLES_PLACEHOLDER: list_html,
-        STYLE_TOKENS_PLACEHOLDER: style_css,
         PRELUDE_JS_PLACEHOLDER: compiled_script(PRELUDE_JS_PATH),
         FILTER_JS_PLACEHOLDER: compiled_script(FILTER_JS_PATH),
         SENSES_JS_PLACEHOLDER: compiled_script(SENSES_JS_PATH),
@@ -485,12 +481,13 @@ def main() -> None:
     supabase_url = os.environ["SUPABASE_URL"]
     supabase_anon_key = os.environ["SUPABASE_ANON_KEY"]
     articles = build_articles(load_feed(), load_domain_source_types())
-    html = render(
-        articles,
-        supabase_url=supabase_url,
-        supabase_anon_key=supabase_anon_key,
-        style_css=style_tokens_css(load_builtin_styles()),
-    )
+    # Every page carries the built-in styles' values after the theme's defaults.
+    with style_tokens(style_tokens_css(load_builtin_styles())):
+        write_pages(articles, supabase_url=supabase_url, supabase_anon_key=supabase_anon_key)
+
+
+def write_pages(articles: Sequence[Article], *, supabase_url: str, supabase_anon_key: str) -> None:
+    html = render(articles, supabase_url=supabase_url, supabase_anon_key=supabase_anon_key)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(html)
     print(f"wrote {OUTPUT_PATH}")

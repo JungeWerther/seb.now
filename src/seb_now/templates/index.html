@@ -12,13 +12,6 @@
   <style>
     :root {
       color-scheme: light dark;
-      --bg: #ffffff;
-      --fg: #1a1a1a;
-      --post-bg: #f6f6f6;
-      --positive: #4c9a6a;
-      --positive-soft: #e1f3e6;
-      --negative: #c96a6a;
-      --negative-soft: #f8e6e6;
       --sheen: rgba(255, 255, 255, 0.5);
       /* The header's icon glyph is centred vertically in the header, one
          gutter from its left edge, and shares its centre with the feed's
@@ -48,17 +41,9 @@
       --column-width: 720px;
       --dock-width: 480px;
     }
-    /*__BLOCK_CSS__*/
-    /*__STYLE_TOKENS__*/
+    /*__THEME_CSS__*/
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #161616;
-        --fg: #e8e8e8;
-        --post-bg: #000000;
-        --positive: #7fc999;
-        --positive-soft: #203a29;
-        --negative: #e0a0a0;
-        --negative-soft: #3a2323;
         --sheen: rgba(255, 255, 255, 0.07);
       }
     }
@@ -352,7 +337,7 @@
     }
     #reply-send:disabled { opacity: 0.4; cursor: default; }
     #reply-remaining { font-size: 0.7rem; color: gray; align-self: center; }
-    #reply-remaining.over { color: var(--negative); }
+    #reply-remaining.over { color: var(--alert); }
     #search-empty {
       display: none;
       color: gray;
@@ -892,7 +877,7 @@
     }
     html.focus-bg body,
     html.focus-bg .swipe-content { background: transparent; }
-    #focus { color: #e8e8e8; padding-bottom: 1.25rem; }
+    #focus { color: var(--text-on-dark); padding-bottom: 1.25rem; }
     /* It takes focus only so the keyboard continues from the page just
        opened; the ring would outline the whole band. */
     #focus:focus { outline: none; }
@@ -958,7 +943,7 @@
     #focus-entity-meta, #focus-topic-meta, #focus-kind-meta { margin: 0; font-size: 0.8rem; color: gray; }
     #focus-entity-meta a, #focus-topic-meta a, #focus-kind-meta a { color: inherit; }
     #focus-entity-meta a:hover, #focus-topic-meta a:hover, #focus-kind-meta a:hover { color: var(--fg); }
-    #focus-topic-description, #focus-kind-description { margin: 0.5rem 0 0; font-size: 0.85rem; color: #b8b8b8; max-width: 40rem; }
+    #focus-topic-description, #focus-kind-description { margin: 0.5rem 0 0; font-size: 0.85rem; color: color-mix(in srgb, var(--text-on-dark) 75%, transparent); max-width: 40rem; }
     #focus-topic-description:empty, #focus-kind-description:empty { display: none; }
     /* On a topic's or an entity's page, top right opposite ← Feed and
        styled like it. */
@@ -1070,8 +1055,8 @@
     }
     .toast {
       pointer-events: auto;
-      background: #2d2d2d;
-      color: #f2f2f2;
+      background: var(--fg);
+      color: var(--bg);
       padding: 0.6rem 1rem;
       border-radius: var(--block-radius);
       display: flex;
@@ -1084,7 +1069,7 @@
     .toast .undo {
       background: none;
       border: none;
-      color: #8ab4f8;
+      color: var(--positive-soft);
       font: inherit;
       font-weight: 600;
       cursor: pointer;
@@ -1098,7 +1083,7 @@
       from { transform: translateY(0); opacity: 1; }
       to { transform: translateY(120%); opacity: 0; }
     }
-    /* Blocks (block.css): square, outlined, and extruded down-right with the
+    /* Blocks (theme.css): square, outlined, and extruded down-right with the
        corners joined diagonally. Zero specificity, so a state rule only
        swaps --ink (hover, focus, shared, pressed) or --depth. */
     :where(#search-input, #reply-composer, .dock-action, .bubble, dialog.overlay, .toast,
@@ -4095,6 +4080,59 @@
       Object.values(styleChoices).forEach((choice) => withStoredChoice(choice, ({ schema, style }) => applyStyle(schema, style)));
     }
 
+    // Built-in styles (no owner) are the site's own values. They live in the
+    // database so they change without a deploy: the build writes the values it
+    // saw, and the page applies the current ones on a sheet of its own, under
+    // the inline Appearance picks (so Default falls back to them). The last
+    // ones seen are kept in localStorage, so the first paint already has them.
+    const BUILTIN_STYLES_KEY = "seb-now-builtin-styles";
+    const OWNER_COLUMN = "owner_id";
+    const ROOT_RULE = ":root {}";
+    const BUILTIN_STYLES_FAILED = "failed to load the built-in styles";
+
+    // One `:root` rule on an adopted sheet, or null where constructable sheets
+    // aren't supported (the build's values then stand).
+    const builtinRule = (() => {
+      try {
+        const sheet = new CSSStyleSheet();
+        sheet.insertRule(ROOT_RULE);
+        document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+        return sheet.cssRules[0];
+      } catch {
+        return null;
+      }
+    })();
+
+    function applyBuiltinStyles(rows) {
+      if (!builtinRule) return;
+      [...builtinRule.style].forEach((property) => builtinRule.style.removeProperty(property));
+      builtinDeclarations(rows).forEach(([property, value]) => builtinRule.style.setProperty(property, value));
+    }
+
+    function storedBuiltinStyles() {
+      try {
+        const rows = JSON.parse(localStorage.getItem(BUILTIN_STYLES_KEY));
+        return Array.isArray(rows) ? rows : [];
+      } catch {
+        return [];
+      }
+    }
+
+    async function refreshBuiltinStyles() {
+      const { data, error } = await (await supabaseReady)
+        .from(ENTITIES_TABLE).select(STYLE_SELECT).eq(KIND_COLUMN, STYLE_KIND).is(OWNER_COLUMN, null);
+      if (error) {
+        console.error(BUILTIN_STYLES_FAILED, error);
+        return;
+      }
+      applyBuiltinStyles(data);
+      try {
+        localStorage.setItem(BUILTIN_STYLES_KEY, JSON.stringify(data));
+      } catch {
+        // Storage off (private window): they're fetched again next visit.
+      }
+    }
+
     // Picks `row` for its type, or the type's default when `row` is null.
     function chooseStyle(type, row) {
       styleChoicesRevision++;
@@ -5730,7 +5768,9 @@
       replyInput.addEventListener("blur", () => setTimeout(reposition, 350));
     }
 
+    applyBuiltinStyles(storedBuiltinStyles());
     applyStoredStyles();
+    refreshBuiltinStyles();
     refreshStoredStyles();
     setupFeed(savedSearchQuery().trim());
     setupVisitReturns();

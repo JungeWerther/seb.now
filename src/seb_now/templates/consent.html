@@ -11,17 +11,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap" rel="stylesheet">
   <style>
-    /*__BLOCK_CSS__*/
+    /*__THEME_CSS__*/
     :root {
       color-scheme: light dark;
-      --bg: #ffffff;
-      --fg: #1a1a1a;
-      --post-bg: #f6f6f6;
-      --positive: #4c9a6a;
-      --positive-soft: #e1f3e6;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root { --bg: #161616; --fg: #e8e8e8; --post-bg: #000000; --positive: #7fc999; --positive-soft: #203a29; }
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -51,7 +43,7 @@
     .actions button:focus-visible { outline: 2px solid var(--positive); outline-offset: 3px; --ink: var(--positive); }
     .actions button:disabled { opacity: 0.5; cursor: default; }
     #status:empty { display: none; }
-    /* Blocks (block.css): square, outlined, extruded. */
+    /* Blocks (theme.css): square, outlined, extruded. */
     :where(#request, .actions button) { border: var(--block-edge); box-shadow: var(--extrusion); }
     :where(.actions button) { --depth: calc(var(--block-depth) / 2); }
     /* Hidden until the page script has checked it isn't framed: a <meta> CSP
