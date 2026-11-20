@@ -101,8 +101,9 @@ create policy "crawlers send no visits" on public.link_visits
 create policy "crawlers cast no votes" on public.votes
   as restrictive for insert to anon, authenticated with check (not public.request_is_crawler());
 
+-- Owner-executed (it reads auth.users and auth.sessions, which service_role
+-- can't), so it is revoked from every client role.
 create view public.crawler_accounts
-with (security_invoker = true)
 as
 select u.id as user_id, first_session.user_agent, first_session.created_at as first_seen_at
 from auth.users u
@@ -145,7 +146,6 @@ $$;
 
 -- The crawler accounts holding nothing but disposable rows.
 create view public.purgeable_crawler_accounts
-with (security_invoker = true)
 as
 select c.user_id, c.user_agent, c.first_seen_at
 from public.crawler_accounts c
@@ -159,7 +159,11 @@ grant select on public.purgeable_crawler_accounts to service_role;
 
 -- Deletes them (their profile, impressions, visits and credits cascade) and
 -- says how many. Refuses while account_columns misses a user column, since
--- then "holds nothing else" can't be told.
+-- then "holds nothing else" can't be told. The candidates' user and profile
+-- rows are locked first, which waits out any insert still referencing them
+-- (its foreign-key check holds a key-share lock) and blocks new ones; the
+-- delete's own statement then rechecks them on a fresh snapshot, so a vote
+-- committed meanwhile keeps its account.
 create function public.purge_crawler_accounts()
 returns integer
 language plpgsql
@@ -173,6 +177,14 @@ begin
   perform public.refuse(
     exists (select from public.account_columns_missing),
     'account_columns is missing a column that references a user');
+  perform from auth.users u
+  where u.id in (select p.user_id from public.purgeable_crawler_accounts p)
+  order by u.id
+  for update;
+  perform from public.profiles pr
+  where pr.id in (select p.user_id from public.purgeable_crawler_accounts p)
+  order by pr.id
+  for update;
   with gone as (
     delete from auth.users u
     using public.purgeable_crawler_accounts p

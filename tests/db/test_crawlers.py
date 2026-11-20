@@ -6,6 +6,8 @@ names such a server (CI's `db` job); skipped elsewhere.
 
 import json
 import os
+import threading
+import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -89,8 +91,19 @@ def crawler(conn: "psycopg.Connection", user_agent: str | None) -> object:
     return row[0]
 
 
+@contextmanager
+def as_service_role(conn: "psycopg.Connection") -> Iterator[None]:
+    conn.execute("set local role service_role")
+    try:
+        yield
+    finally:
+        if conn.info.transaction_status != psycopg.pq.TransactionStatus.INERROR:
+            conn.execute("reset role")
+
+
 def purgeable(conn: "psycopg.Connection") -> set[object]:
-    return {row[0] for row in conn.execute("select user_id from public.purgeable_crawler_accounts")}
+    with as_service_role(conn):
+        return {row[0] for row in conn.execute("select user_id from public.purgeable_crawler_accounts")}
 
 
 @pytest.mark.parametrize("user_agent", [GOOGLEBOT, OAI_SEARCHBOT, "Mozilla/5.0 (compatible; AhrefsBot/7.0)"])
@@ -154,14 +167,47 @@ def test_purging_deletes_exactly_the_purgeable_accounts_and_their_rows(db: "psyc
     kept = user(db, GOOGLEBOT)
     db.execute("insert into votes (link_id, voter_id, value) values (gen_random_uuid(), %s, -1)", (kept,))
     reader = user(db, FIREFOX)
-    db.execute("set local role service_role")
-    row = db.execute("select public.purge_crawler_accounts()").fetchone()
-    db.execute("reset role")
+    with as_service_role(db):
+        row = db.execute("select public.purge_crawler_accounts()").fetchone()
     assert row == (1,)
     remaining = {r[0] for r in db.execute("select id from auth.users")}
     assert bot not in remaining
     assert {kept, reader} <= remaining
     assert db.execute("select count(*) from link_impressions where viewer_id = %s", (bot,)).fetchone() == (0,)
+
+
+def test_service_role_reads_crawler_accounts_without_access_to_auth(db: "psycopg.Connection") -> None:
+    bot = user(db, GOOGLEBOT)
+    db.execute("revoke all on auth.users, auth.sessions from service_role")
+    with as_service_role(db):
+        rows = db.execute("select user_id, user_agent from public.crawler_accounts").fetchall()
+    assert (bot, GOOGLEBOT) in rows
+
+
+def test_a_vote_committed_while_the_purge_waits_keeps_its_account(url: str) -> None:
+    with psycopg.connect(url, autocommit=True) as setup:
+        bot = user(setup, GOOGLEBOT)
+    try:
+        with psycopg.connect(url) as voter, psycopg.connect(url) as purger:
+            voter.execute("insert into votes (link_id, voter_id, value) values (gen_random_uuid(), %s, 1)", (bot,))
+            purger.execute("set statement_timeout = '10s'")
+            purger.execute("set role service_role")
+
+            # The purge would block on the vote's key-share lock; commit the vote
+            # from another thread once the purge is waiting.
+            def commit_later() -> None:
+                time.sleep(0.5)
+                voter.commit()
+
+            threading.Thread(target=commit_later).start()
+            row = purger.execute("select public.purge_crawler_accounts()").fetchone()
+            purger.commit()
+        assert row == (0,)
+        with psycopg.connect(url) as check:
+            assert check.execute("select count(*) from auth.users where id = %s", (bot,)).fetchone() == (1,)
+    finally:
+        with psycopg.connect(url, autocommit=True) as cleanup:
+            cleanup.execute("delete from auth.users where id = %s", (bot,))
 
 
 def test_readers_cannot_purge_crawler_accounts(db: "psycopg.Connection") -> None:
