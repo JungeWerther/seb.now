@@ -20,6 +20,8 @@ class Table(StrEnum):
     AP_FOLLOWERS = "ap_followers"
     AP_POSTS = "ap_posts"
     APP_SETTINGS = "app_settings"
+    CRAWLER_ACCOUNTS = "crawler_accounts"
+    CRAWLER_AGENTS = "crawler_agents"
     DOMAIN_SOURCE_TYPES = "domain_source_types"
     ENTITIES = "entities"
     ENTITY_EDITS = "entity_edits"
@@ -52,6 +54,7 @@ class Table(StrEnum):
     NACE_ACTIVITIES = "nace_activities"
     NOTIFICATIONS = "notifications"
     PROFILES = "profiles"
+    PURGEABLE_CRAWLER_ACCOUNTS = "purgeable_crawler_accounts"
     QUERY_CREDITS = "query_credits"
     QUERY_READINGS = "query_readings"
     REMOTE_ACTORS = "remote_actors"
@@ -74,6 +77,7 @@ class AccountColumnsRow(TypedDict):
     col: str
     strategy: str
     conflict_keys: list[str]
+    disposable: bool
 
 
 class AccountColumnsMissingRow(TypedDict):
@@ -111,6 +115,19 @@ class ApPostsRow(TypedDict):
 class AppSettingsRow(TypedDict):
     key: str
     value: str
+
+
+class CrawlerAccountsRow(TypedDict):
+    user_id: str | None
+    user_agent: str | None
+    first_seen_at: str | None
+
+
+class CrawlerAgentsRow(TypedDict):
+    token: str
+    operator: str
+    purpose: str
+    created_at: str
 
 
 class DomainSourceTypesRow(TypedDict):
@@ -453,6 +470,12 @@ class ProfilesRow(TypedDict):
     handle: str | None
     display_name: str | None
     created_at: str
+
+
+class PurgeableCrawlerAccountsRow(TypedDict):
+    user_id: str | None
+    user_agent: str | None
+    first_seen_at: str | None
 
 
 class QueryCreditsRow(TypedDict):
