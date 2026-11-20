@@ -488,13 +488,13 @@
     #handle-save:disabled { opacity: 0.5; cursor: default; }
     #profile-hint { font-size: 0.8rem; color: gray; margin: 0.5rem 0 0; }
     #profile-status { font-size: 0.8rem; color: gray; min-height: 1.2em; margin: 0.4rem 0 0; }
-    /* Unread notifications: a red dot on the menu icon and on the Inbox bubble. */
+    /* Unread notifications: a dot on the menu icon and on the Inbox bubble. */
     #menu-btn { position: relative; }
     .unread-dot {
       width: 0.55rem;
       height: 0.55rem;
       border-radius: var(--block-radius);
-      background: var(--negative);
+      background: var(--alert);
       box-shadow: 0 0 0 2px var(--bg);
     }
     .unread-dot[hidden] { display: none; }
@@ -543,8 +543,8 @@
     .taste-up { color: var(--positive); }
     .taste-down { color: var(--negative); }
     /* A hand-rolled slider (not <input type=range>, which some mobile
-       browsers let the page's scrolling steal mid-drag). The track is green
-       up to the thumb and red after it, so the split is the topic's score.
+       browsers let the page's scrolling steal mid-drag). The track is the accent
+       up to the thumb and muted after it, so the split is the topic's score.
        The hit area is taller than the track; pan-y leaves vertical swipes to
        scroll the list. */
     .taste-control { grid-column: 1 / -1; display: flex; align-items: center; gap: 0.5rem; }
@@ -1104,7 +1104,7 @@
        The slot gives up its right edge to the extrusion, since the row clips. */
     .swipe-content .post { border: var(--block-edge); }
     .post-swipe { box-shadow: var(--extrusion); margin-right: var(--block-depth); margin-bottom: var(--block-depth); }
-    /* A picked style's button is a green block, extrusion included. */
+    /* A picked style's button is an accent block, extrusion included. */
     #appearance-list button[aria-pressed="true"] { --ink: var(--positive); }
     /* The focused post's black band: blocks there are drawn in the dark ink. */
     #focus { --ink: var(--block-ink-dark); }
@@ -1169,7 +1169,7 @@
   × (1 + everyone's upvotes)
   / (2 + everyone's up + down votes)
   × 0.5 ^ (age in hours / 24)</code></pre>
-    <p class="taste-lead">Green topics are more likely to appear in your feed</p>
+    <p class="taste-lead">Topics with a longer coloured bar are more likely to appear in your feed</p>
     <p id="taste-status"></p>
     <ol id="taste-list"></ol>
     <button id="taste-reset">Reset all to default</button>
