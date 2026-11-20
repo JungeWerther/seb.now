@@ -22,6 +22,13 @@ def test_it_opens_with_the_title_and_points_agents_at_the_mcp_server() -> None:
     assert "- [Latest](/o/latest): " in text
 
 
+def test_it_says_the_mcp_server_can_be_explored_over_plain_http() -> None:
+    text = render_llms_txt([])
+    assert '"method":"tools/list"' in text
+    assert '"method":"tools/call"' in text
+    assert "no `initialize` handshake" in text
+
+
 def test_without_links_there_is_no_links_section() -> None:
     assert f"## {LLMS_TXT_LINKS_HEADING}" not in render_llms_txt([])
 
