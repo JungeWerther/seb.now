@@ -18,7 +18,10 @@ psycopg = pytest.importorskip("psycopg")
 from psycopg import sql  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-MIGRATION = ROOT / "supabase" / "migrations" / "20261020120000_style_types.sql"
+MIGRATIONS = tuple(
+    ROOT / "supabase" / "migrations" / name
+    for name in ("20261020120000_style_types.sql", "20261120120000_block_style_type.sql")
+)
 PRODUCTION_SHAPE = Path(__file__).with_name("production_shape.sql")
 SERVER_URL = os.environ.get("TEST_DATABASE_URL", "")
 
@@ -39,8 +42,9 @@ def url() -> Iterator[str]:
             conn.execute(PRODUCTION_SHAPE.read_text())
         # A session of its own, as CI's migrate job has: nothing it needs is
         # loaded yet.
-        with psycopg.connect(url) as conn:
-            conn.execute(MIGRATION.read_text())
+        for migration in MIGRATIONS:
+            with psycopg.connect(url) as conn:
+                conn.execute(migration.read_text())
         yield url
     finally:
         with psycopg.connect(SERVER_URL, autocommit=True) as server:
@@ -116,6 +120,19 @@ def test_seeded_layout_is_a_compiled_type_with_its_style(db: "psycopg.Connection
         "style",
         {"column_width": "720px", "dock_width": "480px"},
     )
+
+
+def test_seeded_block_is_a_compiled_type_with_its_style(db: "psycopg.Connection") -> None:
+    schema = db.execute("select schema from kinds where path = 'entity.style.block'").fetchone()[0]
+    assert set(schema["required"]) == {"block_depth", "block_line", "block_radius", "block_ink", "block_ink_dark"}
+    assert schema["additionalProperties"] is False
+    assert db.execute("select style from entities where kind_path = 'entity.style.block'").fetchone()[0] == {
+        "block_depth": "5px",
+        "block_line": "2px",
+        "block_radius": "0",
+        "block_ink": "#111111",
+        "block_ink_dark": "#e8e8e8",
+    }
 
 
 def test_a_reader_adds_a_type_and_a_style_of_it(db: "psycopg.Connection", users: tuple[uuid.UUID, uuid.UUID]) -> None:
