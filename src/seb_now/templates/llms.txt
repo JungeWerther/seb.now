@@ -1,0 +1,17 @@
+# seb.now
+
+> An open link feed: posts from followed YouTube channels, Mastodon accounts, web and event feeds, and Hacker News, tagged with the topics they're about and the entities they mention, ranked by readers' votes.
+
+Agents read the feed through the MCP server rather than this page. Every post, topic, entity, kind and sort order has its own page.
+
+## Agents
+
+- [MCP server](/mcp): read-only tools: get_feed, search_links, list_topics, get_links_by_topic, get_link, list_topic_proposals
+- [Signed-in MCP server](/mcp/user): OAuth; ranks the feed by your votes, and can vote, propose topics and suggest a link's topic
+
+## Browse
+
+- [Latest](/o/latest): every post, newest first
+- [Top](/o/top): most upvoted
+- [Discussed](/o/discussed): most replied to
+- [Sources](/k/entity.source): every followed channel, account and feed

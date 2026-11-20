@@ -52,6 +52,7 @@ from seb_now.constants import (
     SourceType,
 )
 from seb_now.db_types import Json, Table
+from seb_now.llms import write_llms_txt
 from seb_now.posts import load_posts, write_posts
 from seb_now.rows import select, validated
 from seb_now.sanitize import page_csp, safe_http_url, script_json
@@ -82,6 +83,7 @@ FIND_SOURCES_PROMPT_PLACEHOLDER = "__FIND_SOURCES_PROMPT__"
 FIND_ENTITY_SOURCES_PROMPT_PLACEHOLDER = "__FIND_ENTITY_SOURCES_PROMPT__"
 SUPABASE_JS_URL_PLACEHOLDER = "__SUPABASE_JS_URL__"
 SUPABASE_JS_INTEGRITY_PLACEHOLDER = "__SUPABASE_JS_INTEGRITY__"
+CRAWLER_AGENT_TOKENS_PLACEHOLDER = "__CRAWLER_AGENT_TOKENS__"
 CSP_PLACEHOLDER = "__CONTENT_SECURITY_POLICY__"
 STYLE_TOKENS_PLACEHOLDER = "/*__STYLE_TOKENS__*/"
 PRELUDE_JS_PLACEHOLDER = "__PRELUDE_JS__"
@@ -137,6 +139,10 @@ class FeedRow(TypedDict):
     created_at: str
     link_topics: list[LinkTopicLabel]
     link_entities: list[LinkEntityLabel]
+
+
+class CrawlerAgentRow(TypedDict):
+    token: str
 
 
 class DomainSourceTypeRow(TypedDict):
@@ -241,6 +247,13 @@ def load_domain_source_types() -> dict[str, SourceType]:
         get_unauthenticated_client().table(Table.DOMAIN_SOURCE_TYPES).select(select(DomainSourceTypeRow)).execute()
     )
     return {row["domain"]: SourceType(row["source_type"]) for row in validated(DomainSourceTypeRow, response.data)}
+
+
+def load_crawler_tokens() -> list[str]:
+    """User-agent tokens of crawlers (20261120120000_crawlers.sql), which the page
+    script checks before its anonymous sign-in, so a crawler makes no account."""
+    response = get_unauthenticated_client().table(Table.CRAWLER_AGENTS).select(select(CrawlerAgentRow)).execute()
+    return sorted(row["token"] for row in validated(CrawlerAgentRow, response.data))
 
 
 def load_builtin_styles() -> list[StyleRow]:
@@ -447,7 +460,12 @@ def compiled_script(path: Path) -> str:
 
 
 def render(
-    articles: Sequence[Article], *, supabase_url: str = "", supabase_anon_key: str = "", style_css: str = ""
+    articles: Sequence[Article],
+    *,
+    supabase_url: str = "",
+    supabase_anon_key: str = "",
+    style_css: str = "",
+    crawler_tokens: Sequence[str] = (),
 ) -> str:
     # Each row's cover rank: how many of the rows before it have a cover.
     cover_ranks = accumulate((article.image_url is not None for article in articles), initial=0)
@@ -476,6 +494,7 @@ def render(
         FIND_ENTITY_SOURCES_PROMPT_PLACEHOLDER: script_json(FIND_ENTITY_SOURCES_PROMPT),
         SUPABASE_JS_URL_PLACEHOLDER: script_json(SUPABASE_JS_URL),
         SUPABASE_JS_INTEGRITY_PLACEHOLDER: script_json(SUPABASE_JS_INTEGRITY),
+        CRAWLER_AGENT_TOKENS_PLACEHOLDER: script_json(list(crawler_tokens)),
     }
     # The CSP hashes the finished script, so it's filled in last.
     html = reduce(lambda page, sub: page.replace(*sub), substitutions.items(), TEMPLATE_PATH.read_text())
@@ -491,10 +510,14 @@ def main() -> None:
         supabase_url=supabase_url,
         supabase_anon_key=supabase_anon_key,
         style_css=style_tokens_css(load_builtin_styles()),
+        crawler_tokens=load_crawler_tokens(),
     )
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(html)
     print(f"wrote {OUTPUT_PATH}")
+
+    llms_path = write_llms_txt(OUTPUT_PATH.parent, articles)
+    print(f"wrote {llms_path}")
 
     posts = load_posts()
     write_posts(posts, OUTPUT_PATH.parent)

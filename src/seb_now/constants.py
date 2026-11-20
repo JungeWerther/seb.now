@@ -95,6 +95,14 @@ FIND_ENTITY_SOURCES_PROMPT = (
     "For each source give its YouTube channel id (UC…), its Mastodon handle as "
     "handle@instance, or its feed URL, plus one line on why it fits."
 )
+# llms.py — written under dist/ so it is served at seb.now/llms.txt (the
+# llmstxt.org convention): templates/llms.txt, then the pre-rendered links
+# under this heading.
+LLMS_TXT_PATH = "llms.txt"
+LLMS_TXT_LINKS_HEADING = "Latest links"
+# Separates a link's domain from its topics in its line.
+LLMS_TXT_NOTE_SEPARATOR = " · "
+
 # site.py — value of every field in the #article-template markup, which the
 # page script overwrites per link
 TEMPLATE_ARTICLE_BLANK = ""
