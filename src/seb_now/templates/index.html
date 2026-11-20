@@ -552,7 +552,7 @@
       background: var(--post-bg);
       cursor: pointer;
     }
-    #appearance-list button[aria-pressed="true"] { --ink: var(--positive); background: var(--positive-soft); }
+    #appearance-list button[aria-pressed="true"] { border-color: var(--positive); background: var(--positive-soft); }
     #inbox-list .inbox-body { margin: 0.25rem 0 0; font-size: 0.9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
     #taste-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
     .taste-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.3rem 0.75rem; font-size: 0.85rem; }
@@ -1120,6 +1120,8 @@
        The slot gives up its right edge to the extrusion, since the row clips. */
     .swipe-content .post { border: var(--block-edge); }
     .post-swipe { box-shadow: var(--extrusion); margin-right: var(--block-depth); margin-bottom: var(--block-depth); }
+    /* A picked style's button is a green block, extrusion included. */
+    #appearance-list button[aria-pressed="true"] { --ink: var(--positive); }
     /* The focused post's black band: blocks there are drawn in the dark ink. */
     #focus { --ink: var(--block-ink-dark); }
     /* Hidden until the page script has checked it isn't framed: a <meta> CSP
