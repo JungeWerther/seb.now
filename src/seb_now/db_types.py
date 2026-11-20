@@ -54,7 +54,6 @@ class Table(StrEnum):
     NACE_ACTIVITIES = "nace_activities"
     NOTIFICATIONS = "notifications"
     PROFILES = "profiles"
-    PURGEABLE_CRAWLER_ACCOUNTS = "purgeable_crawler_accounts"
     QUERY_CREDITS = "query_credits"
     QUERY_READINGS = "query_readings"
     REMOTE_ACTORS = "remote_actors"
@@ -77,7 +76,6 @@ class AccountColumnsRow(TypedDict):
     col: str
     strategy: str
     conflict_keys: list[str]
-    disposable: bool
 
 
 class AccountColumnsMissingRow(TypedDict):
@@ -470,12 +468,6 @@ class ProfilesRow(TypedDict):
     handle: str | None
     display_name: str | None
     created_at: str
-
-
-class PurgeableCrawlerAccountsRow(TypedDict):
-    user_id: str | None
-    user_agent: str | None
-    first_seen_at: str | None
 
 
 class QueryCreditsRow(TypedDict):

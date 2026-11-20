@@ -953,13 +953,11 @@ own `user-agent` from PostgREST's `request.headers`, and restrictive insert
 policies on `link_impressions`, `link_visits` and `votes` refuse a crawler's
 rows on top of each table's own policy. The page skips its anonymous sign-in for
 a crawler (the tokens are injected at build time), so it reads the same feed as
-anyone logged out and makes no account. `public.crawler_accounts` (service_role)
-are the anonymous accounts whose first session was a crawler;
-`public.purgeable_crawler_accounts` those holding nothing outside the columns
-`account_columns.disposable` marks (profile, impressions, visits, credits), and
-`select public.purge_crawler_accounts()` (service_role, by hand) deletes them,
-refusing while `account_columns_missing` isn't empty. A crawler is a new row in
-`crawler_agents`.
+anyone logged out and makes no account. `public.crawler_accounts` (service_role,
+owner-executed since it reads `auth.users`/`auth.sessions`) are the anonymous
+accounts whose first session was a crawler; their rows are kept, so stats leave
+them out by joining against it rather than deleting anything. A crawler is a
+new row in `crawler_agents`.
 
 **Visits and how readers come back.** `public.link_visits` is one row per
 click on a row's title or cover (private to the visitor by RLS; the page also
