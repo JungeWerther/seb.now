@@ -18,7 +18,7 @@ from psycopg import errors, sql  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS = [
-    ROOT / "supabase" / "migrations" / name for name in ("20261029120000_accounts.sql", "20261120120000_crawlers.sql")
+    ROOT / "supabase" / "migrations" / name for name in ("20261029120000_accounts.sql", "20261120150000_crawlers.sql")
 ]
 SHAPES = [Path(__file__).with_name(name) for name in ("accounts_shape.sql", "crawlers_shape.sql")]
 SERVER_URL = os.environ.get("TEST_DATABASE_URL", "")

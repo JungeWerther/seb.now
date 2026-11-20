@@ -942,7 +942,7 @@ bar for a reply composer in the same dock; replies are loaded
 client-side and listed under the post. No moderation or rate limiting
 yet — anyone with an anonymous session can post.
 
-**Crawlers read, they don't send signals** (`20261120120000_crawlers.sql`, QA:
+**Crawlers read, they don't send signals** (`20261120150000_crawlers.sql`, QA:
 CI's `db` job, `tests/db/test_crawlers.py`). `public.crawler_agents` (public-read,
 service_role-write) lists named crawlers by a lowercase user-agent token
 (Googlebot, OAI-SearchBot, ClaudeBot, AhrefsBot, HeadlessChrome…), matched
