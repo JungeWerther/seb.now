@@ -43,6 +43,11 @@ def test_a_url_cannot_end_its_link_early() -> None:
     assert "(https://example.com/a_%28b%29%20c)" in text
 
 
+def test_non_ascii_whitespace_is_encoded_as_its_utf8_bytes() -> None:
+    text = render_llms_txt([article(url="https://example.com/a\u2003b")])
+    assert "(https://example.com/a%E2%80%83b)" in text
+
+
 def test_it_is_written_where_the_site_serves_it(tmp_path: Path) -> None:
     path = write_llms_txt(tmp_path, [article()])
     assert path == tmp_path / LLMS_TXT_PATH

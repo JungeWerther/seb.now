@@ -6,7 +6,7 @@ site-relative since the static build doesn't know its origin; the build adds
 the same newest links the page pre-renders, so a crawler reads what a visitor
 sees. Titles come from arbitrary sites, so they're flattened to one line and
 their brackets escaped, and URLs have the characters that would end a markdown
-link percent-encoded.
+link percent-encoded (as UTF-8 bytes, like any URL).
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import quote
 
 from seb_now.constants import LLMS_TXT_LINKS_HEADING, LLMS_TXT_NOTE_SEPARATOR, LLMS_TXT_PATH
 
@@ -55,7 +56,7 @@ def link_text(text: str) -> str:
 
 
 def link_url(url: str) -> str:
-    return LINK_URL_SPECIALS.sub(lambda m: f"%{ord(m.group()):02X}", url)
+    return LINK_URL_SPECIALS.sub(lambda m: quote(m.group(), safe=""), url)
 
 
 def link_line(article: Linkable) -> str:
