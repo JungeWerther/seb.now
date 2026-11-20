@@ -5,13 +5,14 @@
    diagonals, so it reads as a solid slab rather than a box with a shadow.
 
    Tokens of the block style type (entity.style.block); the build overrides
-   them from its built-in style and a reader's Appearance pick. */
+   them from its built-in style and a reader's Appearance pick. Blue ink:
+   a deeper pastel on light pages, a light one on dark (navy) pages. */
 :root {
   --block-depth: 5px;
   --block-line: 2px;
   --block-radius: 0;
-  --block-ink: #111111;
-  --block-ink-dark: #e8e8e8;
+  --block-ink: #7fa8f5;
+  --block-ink-dark: #a9c8ff;
   --ink: var(--block-ink);
 }
 @media (prefers-color-scheme: dark) {
