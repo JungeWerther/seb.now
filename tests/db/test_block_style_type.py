@@ -13,7 +13,11 @@ from psycopg import sql  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS = tuple(
     ROOT / "supabase" / "migrations" / name
-    for name in ("20261020120000_style_types.sql", "20261120120000_block_style_type.sql")
+    for name in (
+        "20261020120000_style_types.sql",
+        "20261120120000_block_style_type.sql",
+        "20261120230000_block_style_pastel_blue.sql",
+    )
 )
 PRODUCTION_SHAPE = Path(__file__).with_name("production_shape.sql")
 SERVER_URL = os.environ.get("TEST_DATABASE_URL", "")
@@ -54,8 +58,8 @@ def test_the_built_in_block_style_is_the_sites_defaults(db: "psycopg.Connection"
             "block_depth": "5px",
             "block_line": "2px",
             "block_radius": "0",
-            "block_ink": "#111111",
-            "block_ink_dark": "#e8e8e8",
+            "block_ink": "#7fa8f5",
+            "block_ink_dark": "#a9c8ff",
         },
     )
 
