@@ -946,6 +946,6 @@ def test_render_gives_every_row_vote_buttons_and_a_permalink_for_keyboards() -> 
     assert '<a class="permalink" href="/p/a1"><time class="posted"' in html
     assert '<button type="button" class="vote-down" aria-label="Not interested">' in html
     assert (
-        '<button type="button" class="score" aria-pressed="false"><span class="visually-hidden">Upvote, score </span>'
+        '<button type="button" class="score" aria-pressed="false"><span class="visually-hidden">Bookmark, score </span>'
         in html
     )

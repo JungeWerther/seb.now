@@ -95,10 +95,7 @@ TRASH_ICON = (
     '<path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>'
     '<line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>'
 )
-THUMBS_UP_ICON = (
-    '<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 '
-    '1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/>'
-)
+BOOKMARK_ICON = '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>'
 MESSAGE_ICON = '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>'
 
 
@@ -388,8 +385,8 @@ def _render_article(article: Article, cover_rank: int = EAGER_COVERS) -> str:
         f"<span>Not interested</span>"
         f"</span>"
         f'<span class="tint tint-up">'
-        f"{_lucide(THUMBS_UP_ICON, SWIPE_ICON_SIZE)}"
-        f"<span>Upvote</span>"
+        f"{_lucide(BOOKMARK_ICON, SWIPE_ICON_SIZE)}"
+        f"<span>Bookmark</span>"
         f"</span>"
         f"</div>"
         f'<div class="post">'
@@ -405,8 +402,8 @@ def _render_article(article: Article, cover_rank: int = EAGER_COVERS) -> str:
         f"{_lucide(TRASH_ICON, SCORE_ICON_SIZE)}"
         f"</button>"
         f'<button type="button" class="score" aria-pressed="false">'
-        f'<span class="visually-hidden">Upvote, score </span>'
-        f"{_lucide(THUMBS_UP_ICON, SCORE_ICON_SIZE)}"
+        f'<span class="visually-hidden">Bookmark, score </span>'
+        f"{_lucide(BOOKMARK_ICON, SCORE_ICON_SIZE)}"
         f'<span class="score-value">0</span>'
         f"</button>"
         f'<span class="reply-count" hidden></span>'

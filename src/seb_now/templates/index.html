@@ -880,6 +880,8 @@
       cursor: pointer;
     }
     .post-footer .score { margin-right: 0.15rem; }
+    /* A bookmarked post's bookmark is filled. */
+    .post-footer .score[aria-pressed="true"] svg { fill: currentColor; }
     .post-footer .score:hover,
     .post-footer .vote-down:hover { color: var(--fg); }
     .post-footer .vote-down:hover { color: var(--negative); }
