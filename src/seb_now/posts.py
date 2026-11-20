@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from seb_now.auth import get_unauthenticated_client
+from seb_now.block import with_block_css
 from seb_now.db_types import Table
 from seb_now.rows import select, validated
 from seb_now.sanitize import content_security_policy, is_safe_slug, render_markdown, safe_http_url
@@ -76,6 +77,7 @@ def load_posts() -> list[Post]:
     return [post for link in validated(PostRow, response.data) if (post := post_from_link(link))]
 
 
+@with_block_css
 def render_post(post: Post) -> str:
     og_image_tag = f'<meta property="og:image" content="{escape(post.image)}">' if post.image else ""
     cover_tag = f'<img class="cover" src="{escape(post.image)}" alt="" loading="lazy">' if post.image else ""
@@ -97,6 +99,7 @@ def render_post(post: Post) -> str:
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap" rel="stylesheet">
   <style>
+    /*__BLOCK_CSS__*/
     :root {{
       color-scheme: light dark;
       --bg: #ffffff;
@@ -121,15 +124,18 @@ def render_post(post: Post) -> str:
       width: 100%;
       max-height: 220px;
       object-fit: cover;
-      border-radius: 14px;
+      border-radius: var(--block-radius);
       display: block;
       margin: 1rem 0;
     }}
     .byline {{ color: gray; font-size: 0.85rem; margin: 0.3rem 0 2rem; }}
     h1 {{ margin-bottom: 0.3rem; font-family: 'Bricolage Grotesque', sans-serif; }}
-    article img {{ max-width: 100%; border-radius: 6px; }}
-    article pre {{ overflow-x: auto; padding: 0.8rem; background: rgba(128, 128, 128, 0.12); border-radius: 6px; }}
+    article img {{ max-width: 100%; border-radius: var(--block-radius); }}
+    article pre {{ overflow-x: auto; padding: 0.8rem; background: rgba(128, 128, 128, 0.12); border-radius: var(--block-radius); }}
     article code {{ font-size: 0.9em; }}
+    /* Blocks (block.css): square, outlined, extruded. */
+    :where(.cover, article pre) {{ border: var(--block-edge); box-shadow: var(--extrusion); }}
+    :where(article pre) {{ --depth: calc(var(--block-depth) / 2); }}
   </style>
 </head>
 <body>

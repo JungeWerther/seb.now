@@ -35,7 +35,7 @@ const votes = (page) => page.evaluate(() => window.__calls.filter((c) => c.table
   await page.waitForTimeout(200);
   check("pressing it again clears the upvote", (await votes(page)).at(-1), ["delete", null]);
   check("and it is no longer pressed", await up.getAttribute("aria-pressed"), "false");
-  check("its name says what it does", (await up.textContent()).trim().startsWith("Upvote, score"), true);
+  check("its name says what it does", (await up.textContent()).trim().startsWith("Bookmark, score"), true);
 
   const second = page.locator("ul.articles li.article").nth(1);
   await second.locator(".vote-down").click();

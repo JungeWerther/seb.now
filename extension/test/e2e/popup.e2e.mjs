@@ -137,6 +137,8 @@ test("Follow without a connection opens seb.now/connect, which hands over a pend
   connectPage = await opening;
   // A tab the extension opens starts loading before Playwright's routing
   // reaches it, so load it again, nonce and all, through the route.
+  // The new tab can report its address before the fragment is on it.
+  await connectPage.waitForURL(/#nonce=[A-Za-z0-9_-]{32}$/, { waitUntil: "commit", timeout: 15_000 });
   const opened = connectPage.url();
   assert.match(opened, /#nonce=[A-Za-z0-9_-]{32}$/);
   await connectPage.goto("about:blank");
