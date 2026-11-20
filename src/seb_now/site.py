@@ -250,7 +250,7 @@ def load_domain_source_types() -> dict[str, SourceType]:
 
 
 def load_crawler_tokens() -> list[str]:
-    """User-agent tokens of crawlers (20261120120000_crawlers.sql), which the page
+    """User-agent tokens of crawlers (20261120150000_crawlers.sql), which the page
     script checks before its anonymous sign-in, so a crawler makes no account."""
     response = get_unauthenticated_client().table(Table.CRAWLER_AGENTS).select(select(CrawlerAgentRow)).execute()
     return sorted(row["token"] for row in validated(CrawlerAgentRow, response.data))
