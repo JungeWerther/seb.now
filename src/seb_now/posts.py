@@ -120,7 +120,7 @@ def render_post(post: Post) -> str:
       display: block;
       margin: 1rem 0;
     }}
-    .byline {{ color: gray; font-size: 0.85rem; margin: 0.3rem 0 2rem; }}
+    .byline {{ color: var(--muted); font-size: 0.85rem; margin: 0.3rem 0 2rem; }}
     h1 {{ margin-bottom: 0.3rem; font-family: 'Bricolage Grotesque', sans-serif; }}
     article img {{ max-width: 100%; border-radius: var(--block-radius); }}
     article pre {{ overflow-x: auto; padding: 0.8rem; background: rgba(128, 128, 128, 0.12); border-radius: var(--block-radius); }}
