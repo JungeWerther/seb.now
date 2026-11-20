@@ -8,6 +8,7 @@
   <meta name="referrer" content="no-referrer">
   <title>Connect the follow extension — seb.now</title>
   <style>
+    /*__BLOCK_CSS__*/
     :root {
       color-scheme: light dark;
       --bg: #ffffff;
@@ -31,7 +32,7 @@
     }
     a.back { color: var(--positive); text-decoration: none; font-size: 0.9rem; }
     h1 { font-size: 1.5rem; margin: 1.5rem 0 0.5rem; }
-    .card { background: var(--post-bg); border-radius: 14px; padding: 1rem 1.2rem; margin-top: 1rem; }
+    .card { background: var(--post-bg); border-radius: var(--block-radius); padding: 1rem 1.2rem; margin-top: 1rem; }
     #pair-code { font: 700 2rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.15em; margin: 0.5rem 0; }
     .fine { color: var(--muted); font-size: 0.85rem; }
     #devices { list-style: none; padding: 0; margin: 0; }
@@ -40,15 +41,17 @@
     button {
       font: inherit;
       padding: 0.4rem 1rem;
-      border-radius: 999px;
+      border-radius: var(--block-radius);
       cursor: pointer;
-      border: 1px solid rgba(128, 128, 128, 0.5);
       background: transparent;
       color: inherit;
     }
-    button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--positive-soft); }
+    button:focus-visible { outline: 2px solid transparent; --ink: var(--positive); }
     button:disabled { opacity: 0.5; cursor: default; }
     #status:empty { display: none; }
+    /* Blocks (block.css): square, outlined, extruded. */
+    :where(.card, button) { border: var(--block-edge); box-shadow: var(--extrusion); }
+    :where(button) { --depth: calc(var(--block-depth) / 2); }
     /* Hidden until the page script has checked it isn't framed (see consent.html). */
     html:not(.unframed) body { display: none !important; }
   </style>
