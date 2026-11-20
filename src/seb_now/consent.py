@@ -9,12 +9,14 @@ from __future__ import annotations
 from html import escape
 from pathlib import Path
 
+from seb_now.block import with_block_css
 from seb_now.constants import OAUTH_CONSENT_PATH, SUPABASE_JS_INTEGRITY, SUPABASE_JS_URL
 from seb_now.sanitize import page_csp, script_json
 
 TEMPLATE_PATH = Path(__file__).parent / "templates" / "consent.html"
 
 
+@with_block_css
 def render_consent(*, supabase_url: str = "", supabase_anon_key: str = "") -> str:
     html = TEMPLATE_PATH.read_text()
     html = html.replace("__SUPABASE_URL__", script_json(supabase_url))

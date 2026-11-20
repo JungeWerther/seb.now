@@ -33,13 +33,13 @@ h1 { font-size: 17px; margin: 0; }
 button, input {
   font: inherit;
   min-height: 44px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
+  border-radius: var(--block-radius);
+  border: var(--block-edge);
   padding: 0 14px;
   background: transparent;
   color: var(--fg);
 }
-button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
+button.primary { background: var(--accent); color: var(--accent-fg); --ink: var(--accent); font-weight: 600; }
 button:disabled { opacity: 0.5; }
 form { display: flex; flex-direction: column; gap: 8px; }
 .status { margin: 0; min-height: 1.4em; }
@@ -47,3 +47,5 @@ form { display: flex; flex-direction: column; gap: 8px; }
 .status[data-state="ok"] { color: var(--accent); }
 .hint { margin: 0; color: var(--muted); font-size: 13px; }
 a { color: var(--accent); }
+/* Buttons are blocks (block.css): extruded down-right, corners joined diagonally. */
+button { box-shadow: var(--extrusion); --depth: calc(var(--block-depth) / 2); }

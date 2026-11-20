@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import NamedTuple, TypedDict
 
 from seb_now.auth import get_unauthenticated_client
+from seb_now.block import with_block_css
 from seb_now.connect import write_connect
 from seb_now.consent import write_consent
 from seb_now.constants import (
@@ -443,6 +444,7 @@ def compiled_script(path: Path) -> str:
     return code
 
 
+@with_block_css
 def render(
     articles: Sequence[Article], *, supabase_url: str = "", supabase_anon_key: str = "", style_css: str = ""
 ) -> str:

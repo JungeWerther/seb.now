@@ -11,6 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap" rel="stylesheet">
   <style>
+    /*__BLOCK_CSS__*/
     :root {
       color-scheme: light dark;
       --bg: #ffffff;
@@ -34,23 +35,25 @@
     a.back { color: var(--positive); text-decoration: none; font-size: 0.9rem; }
     a.back:hover { text-decoration: underline; }
     h1 { font-family: "Bricolage Grotesque", sans-serif; font-size: 1.5rem; margin: 1.5rem 0 0.5rem; }
-    #request { background: var(--post-bg); border-radius: 14px; padding: 1rem 1.2rem; margin-top: 1rem; }
+    #request { background: var(--post-bg); border-radius: var(--block-radius); padding: 1rem 1.2rem; margin-top: 1rem; }
     #request ul { padding-left: 1.2rem; margin: 0.5rem 0 1rem; }
     .fine { color: gray; font-size: 0.85rem; }
     .actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
     .actions button {
       font: inherit;
       padding: 0.5rem 1.2rem;
-      border-radius: 999px;
+      border-radius: var(--block-radius);
       cursor: pointer;
-      border: 1px solid rgba(128, 128, 128, 0.5);
       background: transparent;
       color: inherit;
     }
-    #approve { border-color: var(--positive); background: var(--positive); color: var(--bg); font-weight: 600; }
-    .actions button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--positive-soft); }
+    #approve { --ink: var(--positive); background: var(--positive); color: var(--bg); font-weight: 600; }
+    .actions button:focus-visible { outline: 2px solid var(--positive); outline-offset: 3px; --ink: var(--positive); }
     .actions button:disabled { opacity: 0.5; cursor: default; }
     #status:empty { display: none; }
+    /* Blocks (block.css): square, outlined, extruded. */
+    :where(#request, .actions button) { border: var(--block-edge); box-shadow: var(--extrusion); }
+    :where(.actions button) { --depth: calc(var(--block-depth) / 2); }
     /* Hidden until the page script has checked it isn't framed: a <meta> CSP
        can't set frame-ancestors and the static host can't send headers, so
        this is the clickjacking defence. */
