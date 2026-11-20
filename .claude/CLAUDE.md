@@ -942,6 +942,23 @@ bar for a reply composer in the same dock; replies are loaded
 client-side and listed under the post. No moderation or rate limiting
 yet — anyone with an anonymous session can post.
 
+**Crawlers read, they don't send signals** (`20261120150000_crawlers.sql`, QA:
+CI's `db` job, `tests/db/test_crawlers.py`). `public.crawler_agents` (public-read,
+service_role-write) lists named crawlers by a lowercase user-agent token
+(Googlebot, OAI-SearchBot, ClaudeBot, AhrefsBot, HeadlessChrome…), matched
+anywhere in the user agent by `public.is_crawler(user_agent)`; never a generic
+client (`node`, `curl`, `Deno`), since the Edge Functions and scripts write
+through PostgREST with those. `public.request_is_crawler()` reads the request's
+own `user-agent` from PostgREST's `request.headers`, and restrictive insert
+policies on `link_impressions`, `link_visits` and `votes` refuse a crawler's
+rows on top of each table's own policy. The page skips its anonymous sign-in for
+a crawler (the tokens are injected at build time), so it reads the same feed as
+anyone logged out and makes no account. `public.crawler_accounts` (service_role,
+owner-executed since it reads `auth.users`/`auth.sessions`) are the anonymous
+accounts whose first session was a crawler; their rows are kept, so stats leave
+them out by joining against it rather than deleting anything. A crawler is a
+new row in `crawler_agents`.
+
 **Visits and how readers come back.** `public.link_visits` is one row per
 click on a row's title or cover (private to the visitor by RLS; the page also
 greys visited links from it). The click is sent as a `keepalive` POST with a
