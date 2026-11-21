@@ -133,3 +133,15 @@ def test_other_pages_get_icons_but_no_worker_or_manifest() -> None:
         assert "manifest" not in page
         assert "worker-src" not in page
         assert "<!--__ICON_LINKS__-->" not in page
+
+
+def test_the_installed_app_draws_edge_to_edge_clear_of_the_system_bars() -> None:
+    # Without viewport-fit=cover the standalone app leaves a blank strip under
+    # the page where the system's navigation bar sits.
+    template = INDEX_TEMPLATE_PATH.read_text()
+    assert 'content="width=device-width, initial-scale=1, viewport-fit=cover"' in template
+    # Everything fixed to an edge keeps clear of the bars by the safe-area insets.
+    assert "--safe-top: env(safe-area-inset-top" in template
+    assert "--safe-bottom: env(safe-area-inset-bottom" in template
+    for rule in re.findall(r"\n    (header|#search-dock|#toast-container) \{(.*?)\n    \}", template, re.S):
+        assert "var(--safe-" in rule[1], rule[0]
