@@ -213,6 +213,10 @@ export const STYLE_TYPES = Object.freeze({
   MAX_LABEL_LENGTH: 40,
   MAX_DESCRIPTION_LENGTH: 500,
   MAX_STYLE_NAME_LENGTH: 60,
+  // Refused before the database's own schema check: no type has more tokens,
+  // and no primitive (a font list is the longest) a longer value.
+  MAX_TOKENS: 64,
+  MAX_TOKEN_VALUE_LENGTH: 120,
 });
 
 // activitypub.

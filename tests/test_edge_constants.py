@@ -83,6 +83,7 @@ ALLOWED = {
     ("mcp/index.ts", "PROPOSAL_STATUSES"): "topic_proposals.status values, checked by the database",
     ("mcp/index.ts", "PROPOSAL_SELECT"): "a PostgREST select shape, changed with the code that reads it",
     ("mcp/index.ts", "LINK_SELECT"): "a PostgREST select shape, changed with the code that reads it",
+    ("mcp/index.ts", "STYLE_SELECT"): "a PostgREST select shape, changed with the code that reads it",
     ("mcp/index.ts", "PROTECTED_RESOURCE_METADATA_URL"): "derived from ENV.SUPABASE_URL",
     ("mcp/index.ts", "AUTHORIZATION_SERVER"): "derived from ENV.SUPABASE_URL",
     ("mcp/index.ts", "CORS_HEADERS"): "HTTP response headers",
