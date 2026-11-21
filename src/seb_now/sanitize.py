@@ -23,6 +23,7 @@ from seb_now.constants import (
     GOOGLE_FONTS_STYLESHEET_ORIGIN,
     POST_SLUG_PATTERN,
     SAFE_URL_SCHEMES,
+    SELF_SOURCE,
     SUPABASE_JS_URL,
 )
 
@@ -55,16 +56,26 @@ def script_hash(script: str) -> str:
     return f"'sha256-{base64.b64encode(digest).decode()}'"
 
 
-def content_security_policy(*, script_src: list[str], connect_src: list[str]) -> str:
+def content_security_policy(
+    *,
+    script_src: list[str],
+    connect_src: list[str],
+    worker_src: list[str] | None = None,
+    manifest_src: list[str] | None = None,
+) -> str:
+    """The policy; `worker_src`/`manifest_src` are only stated for a page that
+    registers a service worker or links a manifest (else `default-src` refuses both)."""
+    optional = {"worker-src": worker_src, "manifest-src": manifest_src}
     directives = {
         "default-src": ["'none'"],
         "script-src": script_src or ["'none'"],
         "connect-src": connect_src or ["'none'"],
-        "img-src": ["https:", "data:"],
+        "img-src": [SELF_SOURCE, "https:", "data:"],
         "style-src": ["'unsafe-inline'", GOOGLE_FONTS_STYLESHEET_ORIGIN],
         "font-src": [GOOGLE_FONTS_FILE_ORIGIN],
         "base-uri": ["'none'"],
         "form-action": ["'none'"],
+        **{name: sources for name, sources in optional.items() if sources},
     }
     return "; ".join(f"{name} {' '.join(sources)}" for name, sources in directives.items())
 
@@ -76,9 +87,14 @@ def _origin(url: str) -> str:
 
 # Only the page's own inline script (by hash) and the one supabase-js file may
 # run script, so markup that slips past escaping still can't execute.
-def page_csp(html: str, supabase_url: str) -> str:
+# An installable page (the index) may also load its own service worker and
+# manifest, from its own origin only.
+def page_csp(html: str, supabase_url: str, *, installable: bool = False) -> str:
     scripts = PAGE_SCRIPT_PATTERN.findall(html)
+    own_origin = [SELF_SOURCE] if installable else None
     return content_security_policy(
         script_src=[*(script_hash(script) for script in scripts), SUPABASE_JS_URL],
         connect_src=[_origin(supabase_url)] if supabase_url else [],
+        worker_src=own_origin,
+        manifest_src=own_origin,
     )

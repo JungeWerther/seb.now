@@ -43,6 +43,7 @@ from seb_now.constants import (
     FIND_SOURCES_URL_TEMPLATE,
     REPLY_ICON_SIZE,
     SCORE_ICON_SIZE,
+    SERVICE_WORKER_PATH,
     SOURCE_FOUND_IN,
     STYLE_ENTITY_KIND,
     SUPABASE_JS_INTEGRITY,
@@ -54,6 +55,7 @@ from seb_now.constants import (
 from seb_now.db_types import Json, Table
 from seb_now.llms import write_llms_txt
 from seb_now.posts import load_posts, write_posts
+from seb_now.pwa import with_app_head, write_pwa
 from seb_now.rows import select, validated
 from seb_now.sanitize import page_csp, safe_http_url, script_json
 from seb_now.source_type import classify_source, display_domain, favicon_host
@@ -86,6 +88,7 @@ SUPABASE_JS_URL_PLACEHOLDER = "__SUPABASE_JS_URL__"
 SUPABASE_JS_INTEGRITY_PLACEHOLDER = "__SUPABASE_JS_INTEGRITY__"
 CRAWLER_AGENT_TOKENS_PLACEHOLDER = "__CRAWLER_AGENT_TOKENS__"
 CSP_PLACEHOLDER = "__CONTENT_SECURITY_POLICY__"
+SERVICE_WORKER_URL_PLACEHOLDER = "__SERVICE_WORKER_URL__"
 PRELUDE_JS_PLACEHOLDER = "__PRELUDE_JS__"
 FILTER_JS_PLACEHOLDER = "__FILTER_JS__"
 SENSES_JS_PLACEHOLDER = "__SENSES_JS__"
@@ -456,6 +459,7 @@ def compiled_script(path: Path) -> str:
     return code
 
 
+@with_app_head
 @with_theme_css
 def render(
     articles: Sequence[Article],
@@ -491,10 +495,11 @@ def render(
         SUPABASE_JS_URL_PLACEHOLDER: script_json(SUPABASE_JS_URL),
         SUPABASE_JS_INTEGRITY_PLACEHOLDER: script_json(SUPABASE_JS_INTEGRITY),
         CRAWLER_AGENT_TOKENS_PLACEHOLDER: script_json(list(crawler_tokens)),
+        SERVICE_WORKER_URL_PLACEHOLDER: script_json(f"/{SERVICE_WORKER_PATH}"),
     }
     # The CSP hashes the finished script, so it's filled in last.
     html = reduce(lambda page, sub: page.replace(*sub), substitutions.items(), TEMPLATE_PATH.read_text())
-    return html.replace(CSP_PLACEHOLDER, escape(page_csp(html, supabase_url)))
+    return html.replace(CSP_PLACEHOLDER, escape(page_csp(html, supabase_url, installable=True)))
 
 
 def main() -> None:
@@ -520,6 +525,9 @@ def write_pages(
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(html)
     print(f"wrote {OUTPUT_PATH}")
+
+    for path in write_pwa(OUTPUT_PATH.parent, html):
+        print(f"wrote {path}")
 
     llms_path = write_llms_txt(OUTPUT_PATH.parent, articles)
     print(f"wrote {llms_path}")

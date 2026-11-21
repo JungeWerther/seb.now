@@ -24,7 +24,7 @@ const ALLOWED = {};
 
 const TABLE_TYPES = new Set(["Mapping", "Cases"]);
 
-const sources = readdirSync(SRC).filter((f) => f.endsWith(".ts")).sort().map((file) => ({
+const sources = readdirSync(SRC, { recursive: true }).filter((f) => f.endsWith(".ts")).sort().map((file) => ({
   file,
   tree: ts.createSourceFile(file, readFileSync(new URL(file, SRC), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS),
 }));

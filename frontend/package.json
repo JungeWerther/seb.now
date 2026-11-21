@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json && tsc -p src/sw/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p src/sw/tsconfig.json --noEmit",
     "lint": "eslint .",
     "test": "node --test test/*.test.mjs"
   },

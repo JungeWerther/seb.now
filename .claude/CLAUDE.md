@@ -1405,6 +1405,32 @@ site-relative links; it names no infrastructure, `test_it_names_no_infrastructur
 its title's brackets escaped and its URL's link-ending characters
 percent-encoded. A new page every reader has goes in the template.
 
+**Installable app — `seb_now.pwa`.** The build writes, next to `index.html`:
+`manifest.json` (`/` as id, start and scope, standalone, shortcuts to `/o/latest`
+and `/o/top`), the icons (`icon-192.png`, `icon-512.png`, `icon-maskable-512.png`,
+`apple-touch-icon.png`, `favicon.svg`) and `sw.js`. Their colours are the palette
+and block tokens (`current_palette`: theme.css's defaults, then the built-in
+styles' values the build is inside), so the icons (the block look with the
+wordmark's accent ".") and the `theme-color` metas follow the palette at the next
+build; they're drawn with Pillow, no image is committed. The service worker is
+`frontend/src/sw/sw.ts`, compiled with its own WebWorker tsconfig to
+`templates/sw.js` (committed, like the other scripts) and filled by
+`service_worker`: its cache is named by the built page's hash, so a deploy drops
+the old one. It answers a navigation to `/` or an app route network-first, the
+last page it fetched when offline (one copy, keyed `/`, since every route is the
+catch-all document); the app routes are read from the page script's
+`*_PATH_PATTERN`s (`app_route_prefixes`), so **a new routed page needs nothing
+here**, but its pattern must keep the `^/x/` shape. The icons, the manifest and
+the pinned supabase-js file are cache-first, Google Fonts stale-while-revalidate,
+and everything else (Supabase, covers, `/posts/`, `/oauth/consent`, `/connect`,
+`/mcp`, `/ap`, `/.well-known`, `llms.txt`) passes through untouched. The page
+registers it on `load` (`SERVICE_WORKER_URL`) and works the same without it. The
+index's CSP adds `worker-src 'self'` and `manifest-src 'self'`
+(`page_csp(..., installable=True)`), since `default-src 'none'` refuses both;
+every page's `img-src` allows `'self'` for the icons. `with_app_head` fills the
+index's `<!--__APP_HEAD__-->`; `with_icon_links` gives the other pages (posts,
+consent, connect) just the icons. QA: `tests/test_pwa.py`.
+
 **ActivityPub proxy — real actor, not a stub.** `fediverse-ingest` above
 only ever *reads* from the fediverse (Mastodon's public REST API).
 Becoming a followable ActivityPub actor at `@seb@seb.now` needs the

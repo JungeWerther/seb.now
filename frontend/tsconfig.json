@@ -18,5 +18,7 @@
     "newLine": "lf",
     "outDir": "../src/seb_now/templates"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  // The service worker has its own config (src/sw/tsconfig.json).
+  "exclude": ["src/sw"]
 }
