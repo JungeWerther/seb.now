@@ -1,0 +1,88 @@
+/* The site's theme, shared by every page seb.now builds and the follow
+   extension (one file, inlined by seb_now.theme / copied by the extension's
+   build): its colours and its block look.
+
+   Colours are roles, each with a light and a dark value: tokens of the
+   palette style type (entity.style.palette). Blocks are square, outlined and
+   extruded: their underlay sits --block-depth down and right, and the
+   corners are joined to it by diagonals, so they read as solid slabs; tokens
+   of the block style type (entity.style.block). The build writes the built-in
+   styles' values after these defaults, the page applies the database's
+   current built-in values at runtime, and a reader's Appearance pick goes on
+   top. Pages read the aliases below (--bg, --fg, --positive, ...), never a
+   colour of their own. */
+:root {
+  --color-text: #1a1a1a;
+  --color-text-dark: #e8e8e8;
+  --color-page: #ffffff;
+  --color-page-dark: #12141f;
+  --color-card: #f6f6f6;
+  --color-card-dark: #1b1d2c;
+  --color-accent: #75352e;
+  --color-accent-dark: #c1846e;
+  --color-accent-soft: #f2e4df;
+  --color-accent-soft-dark: #36231f;
+  --color-muted: #6f6a64;
+  --color-muted-dark: #a8a29e;
+  --color-muted-soft: #efedea;
+  --color-muted-soft-dark: #26292f;
+  --color-alert: #b3261e;
+  --color-alert-dark: #f2b8b5;
+  --block-depth: 5px;
+  --block-line: 2px;
+  --block-radius: 0;
+  --block-ink: #333d84;
+  --block-ink-dark: #8b90cf;
+  --fg: var(--color-text);
+  --bg: var(--color-page);
+  --post-bg: var(--color-card);
+  --positive: var(--color-accent);
+  --positive-soft: var(--color-accent-soft);
+  --negative: var(--color-muted);
+  --negative-soft: var(--color-muted-soft);
+  --muted: var(--color-muted);
+  --alert: var(--color-alert);
+  --ink: var(--block-ink);
+  --ink-dark: var(--block-ink-dark);
+  --text-on-dark: var(--color-text-dark);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: var(--color-text-dark);
+    --bg: var(--color-page-dark);
+    --post-bg: var(--color-card-dark);
+    --positive: var(--color-accent-dark);
+    --positive-soft: var(--color-accent-soft-dark);
+    --negative: var(--color-muted-dark);
+    --negative-soft: var(--color-muted-soft-dark);
+    --muted: var(--color-muted-dark);
+    --alert: var(--color-alert-dark);
+    --ink: var(--block-ink-dark);
+  }
+}
+/* Resolved on every element, so a page only says which elements are blocks
+   (border: var(--block-edge); box-shadow: var(--extrusion)) and how deep
+   (--depth), and a region can swap --ink (a dark band) for its blocks. The
+   extrusion is the outline's colour stacked in 16 diagonal steps, which is
+   what fills the corners. */
+*, ::before, ::after {
+  --depth: var(--block-depth);
+  --block-edge: var(--block-line) solid var(--ink);
+  --extrusion:
+    calc(var(--depth) * 1/16) calc(var(--depth) * 1/16) 0 var(--ink),
+    calc(var(--depth) * 2/16) calc(var(--depth) * 2/16) 0 var(--ink),
+    calc(var(--depth) * 3/16) calc(var(--depth) * 3/16) 0 var(--ink),
+    calc(var(--depth) * 4/16) calc(var(--depth) * 4/16) 0 var(--ink),
+    calc(var(--depth) * 5/16) calc(var(--depth) * 5/16) 0 var(--ink),
+    calc(var(--depth) * 6/16) calc(var(--depth) * 6/16) 0 var(--ink),
+    calc(var(--depth) * 7/16) calc(var(--depth) * 7/16) 0 var(--ink),
+    calc(var(--depth) * 8/16) calc(var(--depth) * 8/16) 0 var(--ink),
+    calc(var(--depth) * 9/16) calc(var(--depth) * 9/16) 0 var(--ink),
+    calc(var(--depth) * 10/16) calc(var(--depth) * 10/16) 0 var(--ink),
+    calc(var(--depth) * 11/16) calc(var(--depth) * 11/16) 0 var(--ink),
+    calc(var(--depth) * 12/16) calc(var(--depth) * 12/16) 0 var(--ink),
+    calc(var(--depth) * 13/16) calc(var(--depth) * 13/16) 0 var(--ink),
+    calc(var(--depth) * 14/16) calc(var(--depth) * 14/16) 0 var(--ink),
+    calc(var(--depth) * 15/16) calc(var(--depth) * 15/16) 0 var(--ink),
+    calc(var(--depth) * 16/16) calc(var(--depth) * 16/16) 0 var(--ink);
+}

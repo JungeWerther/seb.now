@@ -11,8 +11,8 @@ const e2e = process.argv.includes("--e2e");
 
 await rm(dist, { recursive: true, force: true });
 await cp(`${root}static`, dist, { recursive: true });
-// The site's block look (square, outlined, extruded), from its one source.
-await cp(`${root}../src/seb_now/templates/block.css`, `${dist}/block.css`);
+// The site's theme (colours and block look), from its one source.
+await cp(`${root}../src/seb_now/templates/theme.css`, `${dist}/theme.css`);
 await build({
   entryPoints: [`${root}src/popup.ts`, `${root}src/options.ts`, `${root}src/connect.ts`],
   outdir: dist,

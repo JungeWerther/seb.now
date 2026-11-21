@@ -8,18 +8,9 @@
   <meta name="referrer" content="no-referrer">
   <title>Connect the follow extension — seb.now</title>
   <style>
-    /*__BLOCK_CSS__*/
+    /*__THEME_CSS__*/
     :root {
       color-scheme: light dark;
-      --bg: #ffffff;
-      --fg: #1a1a1a;
-      --post-bg: #f6f6f6;
-      --positive: #4c9a6a;
-      --positive-soft: #e1f3e6;
-      --muted: #707070;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root { --bg: #161616; --fg: #e8e8e8; --post-bg: #000000; --positive: #7fc999; --positive-soft: #203a29; --muted: #a0a0a0; }
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -49,7 +40,7 @@
     button:focus-visible { outline: 2px solid var(--positive); outline-offset: 3px; --ink: var(--positive); }
     button:disabled { opacity: 0.5; cursor: default; }
     #status:empty { display: none; }
-    /* Blocks (block.css): square, outlined, extruded. */
+    /* Blocks (theme.css): square, outlined, extruded. */
     :where(.card, button) { border: var(--block-edge); box-shadow: var(--extrusion); }
     :where(button) { --depth: calc(var(--block-depth) / 2); }
     /* Hidden until the page script has checked it isn't framed (see consent.html). */

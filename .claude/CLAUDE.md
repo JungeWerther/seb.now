@@ -553,8 +553,8 @@ past `DOCK_ACTIONS_MIN_SCROLL_Y`) reveals a row of round icon buttons
 (`#dock-actions`) right-aligned above the search bar, fading in; scrolling down
 `DOCK_ACTIONS_HIDE_PX` fades it out, and it stays tappable until fully gone.
 `#dock-actions` must set `pointer-events: auto` itself, since `#search-dock`
-turns them off. The first, back-to-top (`#back-to-top`, a large soft-green
-circle), takes a tap from `pointerdown`/`pointerup` (moved less than
+turns them off. The first, back-to-top (`#back-to-top`, a large accent-tinted
+square), takes a tap from `pointerdown`/`pointerup` (moved less than
 `SWIPE_CAPTURE_SLOP_PX`) rather than `click` — during a momentum scroll a touch
 only stops the scroll and never produces a click — and scrolls to the top and restarts the
 feed with a fresh `as_of` (the current search, if any, from its newest result),
@@ -876,7 +876,7 @@ an optional loader in `OVERLAY_LOADERS`. **My Algorithm** (`#taste-overlay`)
 lists the signed-in user's leaf topics from `user_topic_preferences`, ranked
 by the Beta mean `alpha / (alpha + beta)`, with the view's `upvotes`/`downvotes`
 counts, the score itself (the formula's output, two decimals) and a
-green/red slider whose split is the score. The slider is hand-rolled on
+accent/muted slider whose split is the score. The slider is hand-rolled on
 pointer events (`role="slider"`, arrow/Page/Home/End keys), not `<input
 type="range">`, which Firefox for Android kept snapping back mid-drag; it's
 `touch-action: pan-y`, and like swiping a card a touch only takes the slider
@@ -1004,7 +1004,7 @@ through `public.related_feed` (same arguments), which adds each link's row in
 `FEED_SELECT`'s shape as `link_row`, so a page is one round trip rather than an
 rpc followed by a fetch by id; keep the two shapes in sync. What each shares
 with the focused post is shown by its chips (shared ones sorted first and
-tinted `.shared`, green), and tapping one goes a level deeper. Every rendered
+tinted `.shared`, in the accent), and tapping one goes a level deeper. Every rendered
 row is kept in `linkRows` by id, so focusing a link the page has already shown
 needs no fetch: its entities and topics appear at once (only a pre-rendered
 or directly visited link is fetched, with a skeleton card meanwhile). Each step is `history.pushState`d with its depth
@@ -1170,6 +1170,32 @@ first, whatever storage holds. QA: `tests/qa`, `npm run appearance`. QA: CI's `d
 runs `tests/db` on the `supabase/postgres` image (each run a fresh database
 shaped like production's, `tests/db/production_shape.sql`), including a check
 that Python and `pg_jsonschema` accept and refuse the same values.
+
+**The theme — `templates/theme.css`, `seb_now.theme`.** Every colour and the
+block look are tokens in one file, inlined into every page the build renders
+(index, consent, connect, posts) by the `with_theme_css` decorator and copied
+into the follow extension by its build. Colours are roles, each with a light
+and a dark value (`--color-<role>` / `--color-<role>-dark`: text, page, card,
+accent, accent soft, muted, muted soft, alert), tokens of
+`entity.style.palette` ("Colours"); pages read the aliases the theme switches
+by `prefers-color-scheme` (`--fg`, `--bg`, `--post-bg`, `--positive`,
+`--positive-soft`, `--negative`, `--negative-soft`, `--muted`, `--alert`), never
+a colour of their own: `tests/test_site_styles.py` fails on any hex or rgb colour
+in page CSS outside the theme except neutral translucent greys/white/black. Blocks
+(`entity.style.block`: depth, line, radius, light and dark ink) are square,
+outlined and extruded down-right with the corners joined by diagonals
+(`--extrusion`, the ink stacked in 16 diagonal steps, resolved per element with
+`--block-edge`); a page lists its block elements in a zero-specificity `:where`
+rule and a state only swaps `--ink` or `--depth`. The built-in styles (no
+owner, the first by name of each type) are written after the theme's defaults
+at build time (`site.main` wraps every page in `style_tokens(...)`), and the
+page applies the database's current ones at runtime on an adopted stylesheet
+under the inline Appearance picks (`refreshBuiltinStyles`, `builtinDeclarations`
+in `frontend/src/styles.ts`), cached in localStorage (`seb-now-builtin-styles`)
+for the first paint. So changing the site's colours is an `update entities set
+style = style || '{...}' where kind_path = 'entity.style.palette' and owner_id
+is null`, with no deploy for the feed (consent, connect, posts and the extension
+take the built values at the next build).
 
 **Places — `place-resolve`.** Links place entities to Wikidata so where a place
 is comes from what it is (`entities.place_path`, see "Reversible graph edits and
