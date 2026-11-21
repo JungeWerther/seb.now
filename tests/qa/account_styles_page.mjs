@@ -2,7 +2,9 @@
 // style pick in style_picks (as set on another device, or by an agent through
 // the MCP server's pick_style): the page applies it though this browser has
 // no pick of its own, and picking in Appearance writes the account's pick
-// (changed for a style, dropped for Default).
+// (changed for a style, dropped for Default) one save at a time in click
+// order; a cached pick the account held goes once the account's row has,
+// while this browser's own picks stay.
 import { checker, openPage, servePage } from "./page_harness.mjs";
 
 const LENGTH = { type: "string", pattern: "^(0|[0-9]{1,4}(\\.[0-9]{1,3})?(px|rem|em|vw|vh|%))$" };
@@ -29,7 +31,7 @@ const { browser, origin, close } = await servePage({
   links: [LINK],
   entities: [BUILT_IN, WIDE],
   style_picks: [{ type_path: kinds.path, style: WIDE }],
-}, 8781);
+}, 8781, { "style_picks.update": 800 });
 const { check, failed } = checker();
 
 const column = (page) => page.evaluate(() => document.documentElement.style.getPropertyValue("--column-width"));
@@ -41,7 +43,6 @@ async function pick(page, name) {
   await page.waitForSelector("#appearance-list button");
   await page.click(`#appearance-list button:text-is("${name}")`);
   await page.keyboard.press("Escape");
-  await page.waitForTimeout(300);
 }
 
 {
@@ -51,12 +52,47 @@ async function pick(page, name) {
   check("and is kept for the next first paint", await page.evaluate(() =>
     Object.keys(JSON.parse(localStorage.getItem("seb-now-styles") ?? "{}"))), [kinds.path]);
   await pick(page, "seb.now layout");
-  check("picking a style changes the account's pick", await pickWrites(page), ["update"]);
   await pick(page, "Default");
-  check("Default drops it", await pickWrites(page), ["update", "delete"]);
+  check("a save waits for the one before it", await pickWrites(page), ["update"]);
+  await page.waitForTimeout(1200);
+  check("then Default drops the pick, last", await pickWrites(page), ["update", "delete"]);
   check("no script errors", errors, []);
   await page.close();
 }
-
 await close();
+
+// Another device (or an agent) has since dropped the account's pick.
+const later = await servePage({
+  ranked_feed: [{ link_id: LINK.id, rank: 1 }],
+  links: [LINK],
+  entities: [BUILT_IN, WIDE],
+  style_picks: [],
+}, 8782);
+{
+  const context = await later.browser.newContext();
+  await context.addInitScript(([path, wide]) => {
+    localStorage.setItem("seb-now-styles", JSON.stringify({
+      [path]: { id: wide.id, style: wide.style, schema: wide.kinds.schema, account: true },
+    }));
+  }, [kinds.path, WIDE]);
+  const { page, errors } = await openPage(later.browser, later.origin, context);
+  await page.waitForFunction(() => document.documentElement.style.getPropertyValue("--column-width") === "");
+  check("a cached account pick goes with the account's row", await column(page), "");
+  check("no script errors", errors, []);
+  await page.close();
+}
+{
+  const context = await later.browser.newContext();
+  await context.addInitScript(([path, wide]) => {
+    localStorage.setItem("seb-now-styles", JSON.stringify({
+      [path]: { id: wide.id, style: wide.style, schema: wide.kinds.schema, account: false },
+    }));
+  }, [kinds.path, WIDE]);
+  const { page, errors } = await openPage(later.browser, later.origin, context);
+  await page.waitForTimeout(1500);
+  check("this browser's own pick stays", await column(page), "1000px");
+  check("no script errors", errors, []);
+  await page.close();
+}
+await later.close();
 if (failed()) process.exit(1);

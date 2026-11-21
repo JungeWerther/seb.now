@@ -1171,7 +1171,9 @@ first, whatever storage holds. A real account's picks are also rows of
 added; dropped for Default; refused for an anonymous session, whose picks stay in
 the browser), and `refreshStoredStyles` applies them over the browser's own, so
 a pick follows the account across devices, and one an agent sets through the
-MCP server's `pick_style` takes effect on the next load. The signed-in MCP
+MCP server's `pick_style` takes effect on the next load. Saves run one at a time
+in click order (`queueStylePick`), and a cached pick the account held
+(`account: true`) is dropped once the account no longer holds it. The signed-in MCP
 (`/mcp/user`) also has `list_styles`, `create_style` (best `based_on` an
 existing style), `update_style` (a compare-and-set merge) and `delete_style`,
 run as the reader, with values first parsed by `_shared/style_args.ts`. QA:

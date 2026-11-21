@@ -4085,7 +4085,9 @@
       }
     }
 
-    const styleChoice = (row) => ({ id: row.id, style: row.style, schema: row.kinds.schema });
+    // `account` marks a pick the account holds (read from style_picks, or saved
+    // there), which goes when the account's row does; any other is this browser's.
+    const styleChoice = (row, account = false) => ({ id: row.id, style: row.style, schema: row.kinds.schema, account });
 
     function applyStoredStyles() {
       Object.values(styleChoices).forEach((choice) => withStoredChoice(choice, ({ schema, style }) => applyStyle(schema, style)));
@@ -4164,7 +4166,20 @@
       clearStyle(type.schema);
       if (row) applyStyle(type.schema, row.style);
       setStyleChoices(row ? { ...others, [type.path]: styleChoice(row) } : others);
-      saveStylePick(type.path, row?.id ?? null);
+      queueStylePick(type.path, row?.id ?? null);
+    }
+
+    // Saves run one at a time in click order, so the last pick is the one the
+    // account keeps.
+    let stylePickSaves = Promise.resolve();
+    function queueStylePick(typePath, styleId) {
+      stylePickSaves = stylePickSaves.then(() => saveStylePick(typePath, styleId)).catch((error) => console.error(STYLE_PICK_FAILED, error));
+    }
+
+    // A pick the account now holds is marked so, if it's still this browser's pick.
+    function markAccountPick(typePath, styleId) {
+      const choice = styleChoices[typePath];
+      if (choice?.id === styleId) setStyleChoices({ ...styleChoices, [typePath]: { ...choice, account: true } });
     }
 
     // The account's pick for a type: updated, else added (not an upsert, since a
@@ -4190,39 +4205,51 @@
       const code = added.error?.code;
       if (code === STYLE_PICK_TAKEN && retry) return saveStylePick(typePath, styleId, false);
       if (added.error && code !== STYLE_PICK_REFUSED) console.error(STYLE_PICK_FAILED, added.error);
+      if (!added.error && styleId !== null) markAccountPick(typePath, styleId);
     }
 
-    // This browser's picks, re-read so an edited style is reapplied and a
-    // deleted one dropped, and the account's (none for an anonymous session).
+    // The cached picks re-read, so an edited style is reapplied and a deleted one
+    // dropped, and the account's (none for an anonymous session; null when they
+    // couldn't be read, which leaves the cached ones as they are).
     async function fetchStylePicks(ids) {
       const db = await supabaseReady;
       const session = await pendingSession;
-      const [local, account] = await Promise.all([
+      const [cached, account] = await Promise.all([
         ids.length ? db.from(ENTITIES_TABLE).select(STYLE_SELECT).in(STYLE_ID, ids) : { data: [], error: null },
         session ? db.from(STYLE_PICKS_TABLE).select(STYLE_PICK_SELECT) : { data: [], error: null },
       ]);
+      if (account.error) console.error(STYLE_LOAD_FAILED, account.error);
       return {
-        data: [...(local.data ?? []), ...(account.data ?? []).map((pick) => pick.style).filter(Boolean)],
-        error: local.error ?? account.error,
+        data: cached.data,
+        account: account.error ? null : account.data.map((pick) => pick.style).filter(Boolean),
+        error: cached.error,
       };
     }
 
-    // The picks brought up to date from the database, the account's last so
-    // they win for their types.
+    const withSchema = (rows) => rows.filter((row) => row.kinds?.schema);
+
+    // The picks brought up to date from the database: the cached ones re-read,
+    // one the account held kept only while the account still holds it, then
+    // the account's, which win for their types.
     async function refreshStoredStyles() {
       const revision = styleChoicesRevision;
       const choices = styleChoices;
       const ids = Object.values(choices).map((choice) => choice?.id).filter(Boolean);
-      const { data, error } = await fetchStylePicks(ids);
+      const { data, account, error } = await fetchStylePicks(ids);
       if (error) {
         console.error(STYLE_LOAD_FAILED, error);
         return;
       }
       if (revision !== styleChoicesRevision) return;
-      const current = new Map(data.filter((row) => row.kinds?.schema).map((row) => [row.kind_path, row]));
+      const heldByAccount = (row) => Boolean(choices[row.kind_path]?.account);
+      const cached = withSchema(data)
+        .filter((row) => account === null || !heldByAccount(row))
+        .map((row) => [row.kind_path, { row, account: heldByAccount(row) }]);
+      const accountPicks = withSchema(account ?? []).map((row) => [row.kind_path, { row, account: true }]);
+      const current = new Map([...cached, ...accountPicks]);
       Object.values(choices).forEach((choice) => withStoredChoice(choice, ({ schema }) => clearStyle(schema)));
-      current.forEach((row) => applyStyle(row.kinds.schema, row.style));
-      setStyleChoices(Object.fromEntries([...current].map(([path, row]) => [path, styleChoice(row)])));
+      current.forEach(({ row }) => applyStyle(row.kinds.schema, row.style));
+      setStyleChoices(Object.fromEntries([...current].map(([path, { row, account }]) => [path, styleChoice(row, account)])));
     }
 
     // A type's choices: Default (null), then each of its styles.
