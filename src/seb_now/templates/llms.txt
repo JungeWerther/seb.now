@@ -6,14 +6,14 @@ Agents read the feed through the MCP server rather than this page. Every post, t
 
 ## Agents
 
-- [MCP server](/mcp): read-only tools: get_feed, search_links, list_topics, get_links_by_topic, get_link, list_topic_proposals
-- [Signed-in MCP server](/mcp/user): OAuth; ranks the feed by your votes, and can vote, propose topics and suggest a link's topic
+- [MCP server](/mcp): read the feed, search links, browse topics
+- [Signed-in MCP server](/mcp/user): your own ranking, plus voting and proposing topics; needs sign-in
 
-### The MCP server over plain HTTP
+### Without an MCP client
 
-No MCP client is needed: `/mcp` is stateless Streamable HTTP, so every request is one JSON-RPC 2.0 message in a POST, answered with plain JSON. There are no sessions and no `initialize` handshake to do first (GET and DELETE answer 405). Send `Content-Type: application/json` and `Accept: application/json, text/event-stream`.
+`/mcp` also works as a plain HTTP endpoint: POST one JSON-RPC 2.0 message per request.
 
-List the tools and their input schemas:
+List the tools:
 
 ```sh
 curl -s https://seb.now/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
@@ -26,8 +26,6 @@ Call one:
 curl -s https://seb.now/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_feed","arguments":{"limit":10}}}'
 ```
-
-`/mcp/user` takes the same messages with an OAuth bearer token; without one it answers 401 with a `WWW-Authenticate` header pointing at its protected-resource metadata, where the OAuth flow starts.
 
 ## Browse
 

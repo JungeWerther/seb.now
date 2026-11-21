@@ -1362,9 +1362,9 @@ crawler makes no anonymous account and sends no impressions, visits or votes
 (every caller already handles a null session). Serve a crawler different
 content and it is cloaking; this only drops what a crawler can't use. The
 build also writes `dist/llms.txt` (`llms.py`, served at `seb.now/llms.txt`):
-`templates/llms.txt` (summary, the MCP endpoints and how to explore `/mcp`
-over plain HTTP with `curl`: one JSON-RPC POST each, no `initialize` first, the
-sort and source pages, site-relative links) followed by the pre-rendered links, each one line with
+`templates/llms.txt` (summary, the MCP endpoints and `curl` examples for
+using `/mcp` as a plain HTTP endpoint, the sort and source pages,
+site-relative links; it names no infrastructure, `test_it_names_no_infrastructure`) followed by the pre-rendered links, each one line with
 its title's brackets escaped and its URL's link-ending characters
 percent-encoded. A new page every reader has goes in the template.
 

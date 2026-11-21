@@ -26,7 +26,12 @@ def test_it_says_the_mcp_server_can_be_explored_over_plain_http() -> None:
     text = render_llms_txt([])
     assert '"method":"tools/list"' in text
     assert '"method":"tools/call"' in text
-    assert "no `initialize` handshake" in text
+
+
+def test_it_names_no_infrastructure() -> None:
+    text = render_llms_txt([]).lower()
+    for detail in ("supabase", "digitalocean", "edge function", "stateless", "405", "www-authenticate", "oauth"):
+        assert detail not in text
 
 
 def test_without_links_there_is_no_links_section() -> None:
