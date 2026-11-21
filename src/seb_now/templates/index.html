@@ -1114,10 +1114,10 @@
       .query-chip, .meta .topic, .post-footer .entity, .tag, #focus-back, #find-sources, .taste-thumb) {
       --depth: calc(var(--block-depth) / 2);
     }
-    /* A card is outlined, and its extrusion belongs to the slot it swipes out
-       of, which stays put; the swung card carries its own (dragging, above).
-       The slot gives up its right edge to the extrusion, since the row clips. */
-    .swipe-content .post { border: var(--block-edge); }
+    /* A card has no outline, only its extrusion, which belongs to the slot it
+       swipes out of and stays put; the swung card carries its own (dragging,
+       above). The slot gives up its right edge to the extrusion, since the row
+       clips. */
     .post-swipe { box-shadow: var(--extrusion); margin-right: var(--block-depth); margin-bottom: var(--block-depth); }
     /* A picked style's button is a green block, extrusion included. */
     #appearance-list button[aria-pressed="true"] { --ink: var(--positive); }
