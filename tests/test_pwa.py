@@ -143,5 +143,12 @@ def test_the_installed_app_draws_edge_to_edge_clear_of_the_system_bars() -> None
     # Everything fixed to an edge keeps clear of the bars by the safe-area insets.
     assert "--safe-top: env(safe-area-inset-top" in template
     assert "--safe-bottom: env(safe-area-inset-bottom" in template
+    # In landscape the cutout sits at a side, so the side gutters keep clear of it too.
+    assert "--safe-left: env(safe-area-inset-left" in template
+    assert "--safe-right: env(safe-area-inset-right" in template
+    for name in ("body", r"\.header-inner", "#search-dock"):
+        rule = re.search(r"\n    " + name + r" \{(.*?)\n    \}", template, re.S)
+        assert rule is not None, name
+        assert "var(--safe-left)" in rule[1] and "var(--safe-right)" in rule[1], name
     for rule in re.findall(r"\n    (header|#search-dock|#toast-container) \{(.*?)\n    \}", template, re.S):
         assert "var(--safe-" in rule[1], rule[0]
