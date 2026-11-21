@@ -4028,6 +4028,17 @@
     const BUTTON_TYPE = "button";
     const ARIA_PRESSED = "aria-pressed";
     const STYLE_LOAD_FAILED = "failed to load styles";
+    // A real account's picks are also rows of style_picks (synced across its
+    // devices, and set by agents through the MCP server's pick_style), which
+    // win over this browser's own for every type they cover. An anonymous
+    // session can't write them, so its picks stay in this browser.
+    const STYLE_PICKS_TABLE = "style_picks";
+    const STYLE_PICK_SELECT = `type_path, style:entities(${STYLE_SELECT})`;
+    const STYLE_PICK_TYPE = "type_path";
+    const STYLE_PICK_USER = "user_id";
+    const STYLE_PICK_REFUSED = "42501";
+    const STYLE_PICK_TAKEN = "23505";
+    const STYLE_PICK_FAILED = "failed to save the style pick";
     const STYLE_CHOICES_UNREADABLE = "ignoring a stored style choice";
 
     // { [kind_path]: { id, style, schema } }, or {} when there's none or it can't be read.
@@ -4153,17 +4164,56 @@
       clearStyle(type.schema);
       if (row) applyStyle(type.schema, row.style);
       setStyleChoices(row ? { ...others, [type.path]: styleChoice(row) } : others);
+      saveStylePick(type.path, row?.id ?? null);
     }
 
-    // The picks brought up to date from the database: an edited style is
-    // reapplied, a deleted one dropped.
+    // The account's pick for a type: updated, else added (not an upsert, since a
+    // pick's type_path isn't updatable), or dropped for Default. Refused for an
+    // anonymous session, whose picks stay in this browser.
+    const stylePickWrites = {
+      drop: (db, userId, typePath) =>
+        db.from(STYLE_PICKS_TABLE).delete().eq(STYLE_PICK_USER, userId).eq(STYLE_PICK_TYPE, typePath),
+      change: (db, userId, typePath, styleId) =>
+        db.from(STYLE_PICKS_TABLE).update({ style_id: styleId, picked_at: new Date().toISOString() })
+          .eq(STYLE_PICK_USER, userId).eq(STYLE_PICK_TYPE, typePath).select(STYLE_PICK_TYPE),
+      add: (db, _userId, typePath, styleId) =>
+        db.from(STYLE_PICKS_TABLE).insert({ type_path: typePath, style_id: styleId }),
+    };
+
+    async function saveStylePick(typePath, styleId, retry = true) {
+      const session = await pendingSession;
+      if (!session) return;
+      const db = await supabaseReady;
+      const args = [db, session.user.id, typePath, styleId];
+      const changed = styleId === null ? await stylePickWrites.drop(...args) : await stylePickWrites.change(...args);
+      const added = styleId === null || changed.data?.length ? changed : await stylePickWrites.add(...args);
+      const code = added.error?.code;
+      if (code === STYLE_PICK_TAKEN && retry) return saveStylePick(typePath, styleId, false);
+      if (added.error && code !== STYLE_PICK_REFUSED) console.error(STYLE_PICK_FAILED, added.error);
+    }
+
+    // This browser's picks, re-read so an edited style is reapplied and a
+    // deleted one dropped, and the account's (none for an anonymous session).
+    async function fetchStylePicks(ids) {
+      const db = await supabaseReady;
+      const session = await pendingSession;
+      const [local, account] = await Promise.all([
+        ids.length ? db.from(ENTITIES_TABLE).select(STYLE_SELECT).in(STYLE_ID, ids) : { data: [], error: null },
+        session ? db.from(STYLE_PICKS_TABLE).select(STYLE_PICK_SELECT) : { data: [], error: null },
+      ]);
+      return {
+        data: [...(local.data ?? []), ...(account.data ?? []).map((pick) => pick.style).filter(Boolean)],
+        error: local.error ?? account.error,
+      };
+    }
+
+    // The picks brought up to date from the database, the account's last so
+    // they win for their types.
     async function refreshStoredStyles() {
       const revision = styleChoicesRevision;
       const choices = styleChoices;
       const ids = Object.values(choices).map((choice) => choice?.id).filter(Boolean);
-      if (!ids.length) return;
-      const { data, error } = await (await supabaseReady)
-        .from(ENTITIES_TABLE).select(STYLE_SELECT).in(STYLE_ID, ids);
+      const { data, error } = await fetchStylePicks(ids);
       if (error) {
         console.error(STYLE_LOAD_FAILED, error);
         return;

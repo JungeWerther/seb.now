@@ -1166,7 +1166,16 @@ other). Picks live in `styleChoices`, copied per type to localStorage
 loaded; `refreshStoredStyles` then replaces them with the database's copy, or
 drops a style deleted since, unless a pick was made meanwhile
 (`styleChoicesRevision`). Picking always clears the type's own properties
-first, whatever storage holds. QA: `tests/qa`, `npm run appearance`. QA: CI's `db` job
+first, whatever storage holds. A real account's picks are also rows of
+`style_picks`: picking writes the account's (`saveStylePick`: changed, else
+added; dropped for Default; refused for an anonymous session, whose picks stay in
+the browser), and `refreshStoredStyles` applies them over the browser's own, so
+a pick follows the account across devices, and one an agent sets through the
+MCP server's `pick_style` takes effect on the next load. The signed-in MCP
+(`/mcp/user`) also has `list_styles`, `create_style` (best `based_on` an
+existing style), `update_style` (a compare-and-set merge) and `delete_style`,
+run as the reader, with values first parsed by `_shared/style_args.ts`. QA:
+`tests/qa`, `npm run appearance` and `npm run account-styles`. QA: CI's `db` job
 runs `tests/db` on the `supabase/postgres` image (each run a fresh database
 shaped like production's, `tests/db/production_shape.sql`), including a check
 that Python and `pg_jsonschema` accept and refuse the same values.
