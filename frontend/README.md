@@ -43,3 +43,9 @@ fields where a `Cases` table and `match` would do.
   (`styleDeclarations`), each value checked against its style type's stored
   schema (`acceptsByTokenField`, `acceptsByPrimitiveType`) before the page
   sets it; `styleProperties` lists a type's properties, to clear them.
+
+- `src/sw/sw.ts`: the service worker, the one file that isn't inlined into the
+  page. It has its own config (`src/sw/tsconfig.json`, the WebWorker lib, no
+  DOM), is built and type-checked by the same scripts, and compiles to
+  `src/seb_now/templates/sw.js`, which `seb_now.pwa` fills with its version,
+  routes and cached files and writes to `dist/sw.js`.

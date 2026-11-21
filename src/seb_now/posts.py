@@ -15,6 +15,7 @@ from typing import TypedDict
 
 from seb_now.auth import get_unauthenticated_client
 from seb_now.db_types import Table
+from seb_now.pwa import with_icon_links
 from seb_now.rows import select, validated
 from seb_now.sanitize import content_security_policy, is_safe_slug, render_markdown, safe_http_url
 from seb_now.theme import with_theme_css
@@ -77,6 +78,7 @@ def load_posts() -> list[Post]:
     return [post for link in validated(PostRow, response.data) if (post := post_from_link(link))]
 
 
+@with_icon_links
 @with_theme_css
 def render_post(post: Post) -> str:
     og_image_tag = f'<meta property="og:image" content="{escape(post.image)}">' if post.image else ""
@@ -89,6 +91,7 @@ def render_post(post: Post) -> str:
   <meta name="color-scheme" content="light dark">
   <meta http-equiv="Content-Security-Policy" content="{escape(POST_CSP)}">
   <title>{escape(post.title)} — seb.now</title>
+  <!--__ICON_LINKS__-->
   <meta name="description" content="{escape(post.description)}">
   <meta property="og:type" content="article">
   <meta property="og:title" content="{escape(post.title)}">

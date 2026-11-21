@@ -15,12 +15,14 @@ from html import escape
 from pathlib import Path
 
 from seb_now.constants import CONNECT_PATH, SUPABASE_JS_INTEGRITY, SUPABASE_JS_URL
+from seb_now.pwa import with_icon_links
 from seb_now.sanitize import page_csp, script_json
 from seb_now.theme import with_theme_css
 
 TEMPLATE_PATH = Path(__file__).parent / "templates" / "connect.html"
 
 
+@with_icon_links
 @with_theme_css
 def render_connect(*, supabase_url: str = "", supabase_anon_key: str = "") -> str:
     html = TEMPLATE_PATH.read_text()

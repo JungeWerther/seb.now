@@ -130,6 +130,8 @@ SUPABASE_JS_INTEGRITY = "sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0
 # stylesheet and the font files it references.
 GOOGLE_FONTS_STYLESHEET_ORIGIN = "https://fonts.googleapis.com"
 GOOGLE_FONTS_FILE_ORIGIN = "https://fonts.gstatic.com"
+# sanitize.py — the CSP source for the page's own origin
+SELF_SOURCE = "'self'"
 
 # Pixel sizes of the feed rows' Lucide icons: the swipe tints, the score and the reply button.
 SWIPE_ICON_SIZE = 18
@@ -138,3 +140,43 @@ REPLY_ICON_SIZE = 16
 # The feed's first covers are its likely Largest Contentful Paint, so the build
 # loads this many eagerly (the first with fetchpriority="high") and the rest lazily.
 EAGER_COVERS = 2
+
+# pwa.py — the installable app: dist/manifest.json, the icons and dist/sw.js.
+APP_NAME = "seb.now"
+APP_DESCRIPTION = "Links worth reading, ranked by your own taste."
+APP_START_URL = "/"
+APP_DISPLAY = "standalone"
+APP_CATEGORY = "news"
+MANIFEST_PATH = "manifest.json"
+SERVICE_WORKER_PATH = "sw.js"
+FAVICON_SVG_PATH = "favicon.svg"
+# PNG icons, by edge in pixels: the two sizes Android needs to install, and
+# Apple's home-screen icon (opaque, it draws its own corners).
+ICON_PATH_TEMPLATE = "icon-{size}.png"
+MASKABLE_ICON_PATH_TEMPLATE = "icon-maskable-{size}.png"
+APPLE_TOUCH_ICON_PATH = "apple-touch-icon.png"
+ICON_SIZE_SMALL = 192
+ICON_SIZE_LARGE = 512
+APPLE_TOUCH_ICON_SIZE = 180
+# Drawn this many times larger, then downscaled, for anti-aliased edges.
+ICON_SUPERSAMPLE = 4
+# The icon's geometry, as fractions of its edge: the block's face, how far its
+# slab extrudes down-right, its outline, and the "." from the wordmark.
+ICON_FACE_START = 0.12
+ICON_FACE_END = 0.76
+ICON_DEPTH = 0.12
+ICON_LINE = 0.045
+ICON_DOT_RADIUS = 0.11
+# A maskable icon is cropped to as little as the circle of 40% radius around
+# its centre (the safe zone), so its block is drawn this much smaller, centred.
+MASKABLE_SCALE = 0.66
+# Apple only rounds the corners, so its icon's block can fill more of it.
+APPLE_ICON_SCALE = 0.84
+# Manifest shortcuts: a long-press on the icon opens a sort order's page.
+SHORTCUT_LATEST_NAME = "Latest"
+SHORTCUT_LATEST_URL = "/o/latest"
+SHORTCUT_TOP_NAME = "Top"
+SHORTCUT_TOP_URL = "/o/top"
+# The service worker's cache is named after this many hex digits of the
+# built index page's SHA-256, so every deploy gets a fresh cache.
+SERVICE_WORKER_VERSION_LENGTH = 16

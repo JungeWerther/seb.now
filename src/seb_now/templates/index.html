@@ -6,6 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <meta http-equiv="Content-Security-Policy" content="__CONTENT_SECURITY_POLICY__">
   <title>seb.now</title>
+  <!--__APP_HEAD__-->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&display=swap" rel="stylesheet">
@@ -1314,6 +1315,15 @@
       script.addEventListener(ERROR_EVENT, () => reject(new Error(SUPABASE_JS_FAILED)));
       document.head.append(script);
     }).then(({ createClient }) => createClient(SUPABASE_URL, SUPABASE_ANON_KEY));
+
+    // The service worker (seb_now.pwa writes it): makes the site installable
+    // and its last feed readable offline. Registered once the page has
+    // loaded, so it never competes with the feed's first requests; the page
+    // works the same without it.
+    const SERVICE_WORKER_URL = __SERVICE_WORKER_URL__;
+    window.addEventListener(LOAD_EVENT, () => {
+      navigator.serviceWorker?.register(SERVICE_WORKER_URL).catch(() => undefined);
+    });
 
     // Covers point at arbitrary third-party sites, so drop one that fails to
     // load rather than leave an empty frame; a favicon that fails leaves its

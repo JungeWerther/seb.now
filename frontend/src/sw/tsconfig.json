@@ -1,0 +1,11 @@
+{
+  // The service worker runs in a worker, not the page: its own lib (WebWorker,
+  // no DOM) and its own output file, src/seb_now/templates/sw.js.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "WebWorker"],
+    "outDir": "../../../src/seb_now/templates"
+  },
+  "include": ["./*.ts"],
+  "exclude": []
+}

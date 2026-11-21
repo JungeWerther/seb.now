@@ -23,6 +23,11 @@ def theme_css() -> str:
     return THEME_CSS_PATH.read_text()
 
 
+def current_style_tokens() -> str:
+    """The style tokens pages rendered now carry (the `:root` rule `style_tokens` set)."""
+    return _style_tokens.get()
+
+
 @contextmanager
 def style_tokens(css: str) -> Iterator[None]:
     """Pages rendered inside this carry `css` (a `:root` rule) after the theme's defaults."""
