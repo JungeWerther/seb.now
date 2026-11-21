@@ -949,3 +949,14 @@ def test_render_gives_every_row_vote_buttons_and_a_permalink_for_keyboards() -> 
         '<button type="button" class="score" aria-pressed="false"><span class="visually-hidden">Bookmark, score </span>'
         in html
     )
+
+
+def test_the_page_skips_its_anonymous_session_for_the_crawlers_it_is_given() -> None:
+    html = render([], crawler_tokens=["googlebot", "oai-searchbot"])
+    assert 'const CRAWLER_AGENT_TOKENS = ["googlebot", "oai-searchbot"];' in html
+    session = html[html.index("async function ensureSession() {") :]
+    assert session.index("if (IS_CRAWLER) return null;") < session.index("signInAnonymously")
+
+
+def test_without_crawler_tokens_every_visitor_gets_a_session() -> None:
+    assert "const CRAWLER_AGENT_TOKENS = [];" in render([])

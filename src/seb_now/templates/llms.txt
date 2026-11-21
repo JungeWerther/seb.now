@@ -1,0 +1,35 @@
+# seb.now
+
+> An open link feed: posts from followed YouTube channels, Mastodon accounts, web and event feeds, and Hacker News, tagged with the topics they're about and the entities they mention, ranked by readers' votes.
+
+Agents read the feed through the MCP server rather than this page. Every post, topic, entity, kind and sort order has its own page.
+
+## Agents
+
+- [MCP server](/mcp): read the feed, search links, browse topics
+- [Signed-in MCP server](/mcp/user): your own ranking, plus voting and proposing topics; needs sign-in
+
+### Without an MCP client
+
+`/mcp` also works as a plain HTTP endpoint: POST one JSON-RPC 2.0 message per request.
+
+List the tools:
+
+```sh
+curl -s https://seb.now/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+Call one:
+
+```sh
+curl -s https://seb.now/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_feed","arguments":{"limit":10}}}'
+```
+
+## Browse
+
+- [Latest](/o/latest): every post, newest first
+- [Top](/o/top): most upvoted
+- [Discussed](/o/discussed): most replied to
+- [Sources](/k/entity.source): every followed channel, account and feed

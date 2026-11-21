@@ -20,6 +20,8 @@ class Table(StrEnum):
     AP_FOLLOWERS = "ap_followers"
     AP_POSTS = "ap_posts"
     APP_SETTINGS = "app_settings"
+    CRAWLER_ACCOUNTS = "crawler_accounts"
+    CRAWLER_AGENTS = "crawler_agents"
     DOMAIN_SOURCE_TYPES = "domain_source_types"
     ENTITIES = "entities"
     ENTITY_EDITS = "entity_edits"
@@ -111,6 +113,19 @@ class ApPostsRow(TypedDict):
 class AppSettingsRow(TypedDict):
     key: str
     value: str
+
+
+class CrawlerAccountsRow(TypedDict):
+    user_id: str | None
+    user_agent: str | None
+    first_seen_at: str | None
+
+
+class CrawlerAgentsRow(TypedDict):
+    token: str
+    operator: str
+    purpose: str
+    created_at: str
 
 
 class DomainSourceTypesRow(TypedDict):

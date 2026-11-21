@@ -1379,6 +1379,21 @@ connected in this environment** — there is currently no automated way to
 inspect or deploy to DO from a Claude Code session here; DO setup is a
 manual step until that changes.
 
+**Crawlers and `llms.txt`.** DO's static site can't route by user agent, so
+crawlers get the same page as everyone, minus the session: `site.py` reads the
+tokens of `public.crawler_agents` (`load_crawler_tokens`, see "Crawlers read,
+they don't send signals") into the page as `CRAWLER_AGENT_TOKENS`, and
+`ensureSession` returns no session for a matching `navigator.userAgent`, so a
+crawler makes no anonymous account and sends no impressions, visits or votes
+(every caller already handles a null session). Serve a crawler different
+content and it is cloaking; this only drops what a crawler can't use. The
+build also writes `dist/llms.txt` (`llms.py`, served at `seb.now/llms.txt`):
+`templates/llms.txt` (summary, the MCP endpoints and `curl` examples for
+using `/mcp` as a plain HTTP endpoint, the sort and source pages,
+site-relative links; it names no infrastructure, `test_it_names_no_infrastructure`) followed by the pre-rendered links, each one line with
+its title's brackets escaped and its URL's link-ending characters
+percent-encoded. A new page every reader has goes in the template.
+
 **ActivityPub proxy — real actor, not a stub.** `fediverse-ingest` above
 only ever *reads* from the fediverse (Mastodon's public REST API).
 Becoming a followable ActivityPub actor at `@seb@seb.now` needs the

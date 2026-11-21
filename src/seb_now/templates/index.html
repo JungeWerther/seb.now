@@ -1351,7 +1351,13 @@
     const SWIPE_TINT_PREVIEW_OPACITY = 0.55;
     const SWIPE_ARMED_VIBRATE_MS = 8;
 
+    // A crawler reads the feed as anyone logged out and makes no account: the
+    // user-agent tokens of public.crawler_agents, injected at build time.
+    const CRAWLER_AGENT_TOKENS = __CRAWLER_AGENT_TOKENS__;
+    const IS_CRAWLER = CRAWLER_AGENT_TOKENS.some((token) => navigator.userAgent.toLowerCase().includes(token));
+
     async function ensureSession() {
+      if (IS_CRAWLER) return null;
       const { data: { session } } = await (await supabaseReady).auth.getSession();
       if (session) return session;
       const { data, error } = await (await supabaseReady).auth.signInAnonymously();
