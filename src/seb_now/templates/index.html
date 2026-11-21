@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <meta http-equiv="Content-Security-Policy" content="__CONTENT_SECURITY_POLICY__">
   <title>seb.now</title>
@@ -35,6 +35,13 @@
       --brand-ink-offset: -1.3px;
       --header-brand-gap: 19px;
       --header-height: calc(2 * var(--header-brand-gap) + var(--brand-ink-height));
+      /* The page draws edge to edge (viewport-fit=cover), so the installed app
+         paints under the system bars instead of leaving a blank strip; what
+         sits at an edge keeps clear of them by these insets (0 in a browser tab). */
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
       --page-pad: calc(var(--gutter) - (var(--favicon-size) - var(--header-icon-glyph)) / 2);
       /* Tokens of the layout style type (entity.style.layout); the build
          overrides them from its built-in style and a reader's chosen style
@@ -54,7 +61,7 @@
       margin: 0 auto;
       /* The first article starts as far below the header (plus its 1px border)
          as the feed is inset from the left. */
-      padding: calc(var(--header-height) + 1px + var(--page-pad)) var(--page-pad) 6rem;
+      padding: calc(var(--safe-top) + var(--header-height) + 1px + var(--page-pad)) max(var(--page-pad), var(--safe-right)) calc(6rem + var(--safe-bottom)) max(var(--page-pad), var(--safe-left));
       line-height: 1.5;
       background: var(--bg);
       color: var(--fg);
@@ -64,7 +71,9 @@
       top: 0;
       left: 0;
       right: 0;
-      height: var(--header-height);
+      height: calc(var(--safe-top) + var(--header-height));
+      padding-top: var(--safe-top);
+      box-sizing: border-box;
       z-index: 10;
       background: var(--bg);
       border-bottom: 1px solid rgba(128, 128, 128, 0.12);
@@ -74,7 +83,7 @@
       max-width: calc(var(--column-width) + 2 * var(--gutter));
       height: 100%;
       margin: 0 auto;
-      padding: 0 var(--gutter);
+      padding: 0 max(var(--gutter), var(--safe-right)) 0 max(var(--gutter), var(--safe-left));
       box-sizing: border-box;
       display: flex;
       align-items: center;
@@ -88,7 +97,7 @@
       z-index: 15;
       display: flex;
       justify-content: center;
-      padding: 1.75rem var(--gutter) calc(1.25rem + env(safe-area-inset-bottom) + 40px);
+      padding: 1.75rem max(var(--gutter), var(--safe-right)) calc(1.25rem + var(--safe-bottom) + 40px) max(var(--gutter), var(--safe-left));
       pointer-events: none;
       will-change: transform;
     }
@@ -1044,7 +1053,7 @@
     }
     #toast-container {
       position: fixed;
-      bottom: 6.5rem;
+      bottom: calc(6.5rem + var(--safe-bottom));
       left: 50%;
       transform: translateX(-50%);
       display: flex;
