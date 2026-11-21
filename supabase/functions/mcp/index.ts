@@ -55,6 +55,7 @@ const PROPOSAL_SELECT =
   "topic_proposal_examples(p, links(id, title, url))";
 const LINK_SELECT = "id, title, url, author, created_at, link_topics(p, topic_id, topics(name))";
 const STYLE_SELECT = "id, name, description, kind_path, style, owner_id";
+const UNIQUE_VIOLATION = "23505";
 
 const PROTECTED_RESOURCE_METADATA_URL = `${ENV.SUPABASE_URL}/functions/v1/mcp/oauth-protected-resource`;
 const AUTHORIZATION_SERVER = `${ENV.SUPABASE_URL}/auth/v1`;
@@ -629,6 +630,35 @@ async function ownStyle(db: Db, id: string, userId: string): Promise<StyleRow> {
   return style;
 }
 
+// Merges `tokens` into a style and sets its description, only if the style is
+// still what was read (compare-and-set on its values), so two updates racing on
+// different tokens can't drop one another's: the loser re-reads and merges again.
+// Null when every attempt lost the race.
+async function mergeStyle(
+  db: Db,
+  current: StyleRow,
+  tokens: Record<string, string | number> | undefined,
+  description: string | undefined,
+  attemptsLeft: number = MCP.STYLE_UPDATE_ATTEMPTS,
+): Promise<StyleRow | null> {
+  if (attemptsLeft === 0) return null;
+  const changes = {
+    ...(tokens === undefined ? {} : { style: { ...current.style, ...tokens } }),
+    ...(description === undefined ? {} : { description }),
+  };
+  const updated = await fetched<StyleRow | null>(
+    db
+      .from("entities")
+      .update(changes)
+      .eq("id", current.id)
+      .eq("style", JSON.stringify(current.style))
+      .select(STYLE_SELECT)
+      .maybeSingle(),
+    InvalidArgs,
+  );
+  return updated ?? mergeStyle(db, await styleById(db, current.id), tokens, description, attemptsLeft - 1);
+}
+
 const listStylesTool = tool({
   name: "list_styles",
   title: "List styles",
@@ -721,15 +751,8 @@ const updateStyleTool = tool({
   annotations: writes(true),
   handler: async ({ style_id: id, style, description }, { db, userId }) => {
     if (style === undefined && description === undefined) throw new InvalidArgs("give style, description or both");
-    const current = await ownStyle(db, id, userId);
-    const changes = {
-      ...(style === undefined ? {} : { style: { ...current.style, ...style } }),
-      ...(description === undefined ? {} : { description }),
-    };
-    const updated = await fetched<StyleRow>(
-      db.from("entities").update(changes).eq("id", id).select(STYLE_SELECT).single(),
-      InvalidArgs,
-    );
+    const updated = await mergeStyle(db, await ownStyle(db, id, userId), style, description);
+    if (!updated) throw new InvalidArgs("The style kept changing while being updated; try again");
     return formatStyle(updated, userId);
   },
 });
@@ -747,6 +770,25 @@ const deleteStyleTool = tool({
     return { deleted: id, name: style.name };
   },
 });
+
+// Not an upsert: a pick's type_path isn't updatable, and an upsert's update
+// would set it. Update the pick, else add it; a first pick that loses a race to
+// another (the key now taken) updates the one that won.
+async function savePick(db: Db, userId: string, typePath: string, styleId: string, retry = true): Promise<void> {
+  const repicked = await fetched<unknown[]>(
+    db
+      .from("style_picks")
+      .update({ style_id: styleId, picked_at: new Date().toISOString() })
+      .eq("type_path", typePath)
+      .eq("user_id", userId)
+      .select("type_path"),
+    InvalidArgs,
+  );
+  if (repicked.length) return;
+  const { error } = await db.from("style_picks").insert({ type_path: typePath, style_id: styleId });
+  if (error?.code === UNIQUE_VIOLATION && retry) return savePick(db, userId, typePath, styleId, false);
+  if (error) throw new InvalidArgs(error.message);
+}
 
 const pickStyleTool = tool({
   name: "pick_style",
@@ -774,17 +816,7 @@ const pickStyleTool = tool({
         "Picks are kept for a real seb.now account: add an email under My Profile, or pick it in Appearance meanwhile",
       );
     }
-    // Not an upsert: a pick's type_path isn't updatable, and an upsert's update would set it.
-    const repicked = await fetched<unknown[]>(
-      db
-        .from("style_picks")
-        .update({ style_id: id, picked_at: new Date().toISOString() })
-        .eq("type_path", typePath)
-        .eq("user_id", userId)
-        .select("type_path"),
-      InvalidArgs,
-    );
-    if (!repicked.length) await fetched(db.from("style_picks").insert({ type_path: typePath, style_id: id }), InvalidArgs);
+    await savePick(db, userId, typePath, id);
     return { type, picked: formatStyle(style, userId) };
   },
 });

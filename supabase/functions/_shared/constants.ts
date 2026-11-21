@@ -240,6 +240,9 @@ export const MCP = Object.freeze({
   MAX_RATIONALE_LENGTH: 500,
   MAX_TOPIC_NAME_LENGTH: 60,
   MAX_TOPIC_DESCRIPTION_LENGTH: 300,
+  // update_style re-reads and merges again when another update changed the
+  // style meanwhile, at most this many times in all.
+  STYLE_UPDATE_ATTEMPTS: 3,
   // The URL clients connect to for the signed-in endpoint, and so the OAuth
   // resource its tokens are for: the seb.now proxy, not this function's own URL.
   USER_RESOURCE: "https://seb.now/mcp/user",
