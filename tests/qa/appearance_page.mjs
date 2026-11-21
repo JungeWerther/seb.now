@@ -31,6 +31,8 @@ const { browser, origin, close } = await servePage({
   ranked_feed: [{ link_id: LINK.id, rank: 1 }],
   links: [LINK],
   entities: [BUILT_IN, WIDE, BAD],
+  // An anonymous reader: the account keeps no picks, so they stay in the browser.
+  style_picks: { error: "new row violates row-level security policy for table \"style_picks\"" },
 }, 8767, { "entities.in": 1500 });
 const { check, failed } = checker();
 
