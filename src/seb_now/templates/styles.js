@@ -54,3 +54,12 @@ function styleDeclarations(schema, values) {
 function styleProperties(schema) {
     return Object.keys(schema.properties).filter((token) => TOKEN_NAME.test(token)).map(tokenProperty);
 }
+// The built-in styles' declarations, one style per type: the first by name,
+// as the build picks them (site.style_tokens_css), so the page and the build
+// agree on which built-in style a type has.
+function builtinDeclarations(rows) {
+    const firstByType = [...rows]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .reduce((types, row) => (row.kinds && !types.has(row.kind_path) ? types.set(row.kind_path, row) : types), new Map());
+    return [...firstByType.values()].flatMap((row) => (row.kinds ? styleDeclarations(row.kinds.schema, row.style) : []));
+}

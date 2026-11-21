@@ -14,10 +14,10 @@ from pathlib import Path
 from typing import TypedDict
 
 from seb_now.auth import get_unauthenticated_client
-from seb_now.block import with_block_css
 from seb_now.db_types import Table
 from seb_now.rows import select, validated
 from seb_now.sanitize import content_security_policy, is_safe_slug, render_markdown, safe_http_url
+from seb_now.theme import with_theme_css
 
 SITE_URL = "https://seb.now"
 MARKDOWN_EXTENSIONS = ["extra", "sane_lists"]
@@ -77,7 +77,7 @@ def load_posts() -> list[Post]:
     return [post for link in validated(PostRow, response.data) if (post := post_from_link(link))]
 
 
-@with_block_css
+@with_theme_css
 def render_post(post: Post) -> str:
     og_image_tag = f'<meta property="og:image" content="{escape(post.image)}">' if post.image else ""
     cover_tag = f'<img class="cover" src="{escape(post.image)}" alt="" loading="lazy">' if post.image else ""
@@ -99,16 +99,8 @@ def render_post(post: Post) -> str:
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap" rel="stylesheet">
   <style>
-    /*__BLOCK_CSS__*/
-    :root {{
-      color-scheme: light dark;
-      --bg: #ffffff;
-      --fg: #1a1a1a;
-      --positive: #4c9a6a;
-    }}
-    @media (prefers-color-scheme: dark) {{
-      :root {{ --bg: #161616; --fg: #e8e8e8; --positive: #7fc999; }}
-    }}
+    /*__THEME_CSS__*/
+    :root {{ color-scheme: light dark; }}
     body {{
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       max-width: 680px;
@@ -128,12 +120,12 @@ def render_post(post: Post) -> str:
       display: block;
       margin: 1rem 0;
     }}
-    .byline {{ color: gray; font-size: 0.85rem; margin: 0.3rem 0 2rem; }}
+    .byline {{ color: var(--muted); font-size: 0.85rem; margin: 0.3rem 0 2rem; }}
     h1 {{ margin-bottom: 0.3rem; font-family: 'Bricolage Grotesque', sans-serif; }}
     article img {{ max-width: 100%; border-radius: var(--block-radius); }}
     article pre {{ overflow-x: auto; padding: 0.8rem; background: rgba(128, 128, 128, 0.12); border-radius: var(--block-radius); }}
     article code {{ font-size: 0.9em; }}
-    /* Blocks (block.css): square, outlined, extruded. */
+    /* Blocks (theme.css): square, outlined, extruded. */
     :where(.cover, article pre) {{ border: var(--block-edge); box-shadow: var(--extrusion); }}
     :where(article pre) {{ --depth: calc(var(--block-depth) / 2); }}
   </style>

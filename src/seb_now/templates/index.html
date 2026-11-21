@@ -12,13 +12,6 @@
   <style>
     :root {
       color-scheme: light dark;
-      --bg: #ffffff;
-      --fg: #1a1a1a;
-      --post-bg: #f6f6f6;
-      --positive: #4c9a6a;
-      --positive-soft: #e1f3e6;
-      --negative: #c96a6a;
-      --negative-soft: #f8e6e6;
       --sheen: rgba(255, 255, 255, 0.5);
       /* The header's icon glyph is centred vertically in the header, one
          gutter from its left edge, and shares its centre with the feed's
@@ -48,17 +41,9 @@
       --column-width: 720px;
       --dock-width: 480px;
     }
-    /*__BLOCK_CSS__*/
-    /*__STYLE_TOKENS__*/
+    /*__THEME_CSS__*/
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #161616;
-        --fg: #e8e8e8;
-        --post-bg: #000000;
-        --positive: #7fc999;
-        --positive-soft: #203a29;
-        --negative: #e0a0a0;
-        --negative-soft: #3a2323;
         --sheen: rgba(255, 255, 255, 0.07);
       }
     }
@@ -224,7 +209,7 @@
       outline: 2px solid transparent;
       --ink: var(--positive);
     }
-    #search-input::placeholder { color: gray; }
+    #search-input::placeholder { color: var(--muted); }
     #search-input::-webkit-search-cancel-button { display: none; }
     #search-clear {
       display: none;
@@ -240,7 +225,7 @@
       border: none;
       border-radius: var(--block-radius);
       background: rgba(128, 128, 128, 0.18);
-      color: gray;
+      color: var(--muted);
       cursor: pointer;
     }
     #search-clear:hover { background: rgba(128, 128, 128, 0.3); color: var(--fg); }
@@ -278,7 +263,7 @@
     }
     .query-chip.reading { background: var(--positive-soft); }
     .query-chip .query-chip-kind { color: var(--positive); }
-    a.query-chip { cursor: pointer; border-style: dashed; color: gray; text-decoration: none; }
+    a.query-chip { cursor: pointer; border-style: dashed; color: var(--muted); text-decoration: none; }
     a.query-chip:hover { color: var(--fg); }
     a.query-chip[data-kind]::before { content: attr(data-kind) " "; color: var(--positive); }
     #reply-composer {
@@ -297,7 +282,7 @@
       gap: 0.4rem;
       padding-right: 2rem;
       font-size: 0.7rem;
-      color: gray;
+      color: var(--muted);
       white-space: nowrap;
       overflow: hidden;
     }
@@ -315,7 +300,7 @@
       border: none;
       border-radius: var(--block-radius);
       background: rgba(128, 128, 128, 0.18);
-      color: gray;
+      color: var(--muted);
       cursor: pointer;
     }
     .composer-row { display: flex; align-items: flex-end; gap: 0.5rem; margin-top: 0.3rem; }
@@ -336,7 +321,7 @@
       line-height: 1.4;
       padding: 0.3rem 0;
     }
-    #reply-input::placeholder { color: gray; }
+    #reply-input::placeholder { color: var(--muted); }
     #reply-send {
       flex: 0 0 auto;
       display: flex;
@@ -351,11 +336,11 @@
       cursor: pointer;
     }
     #reply-send:disabled { opacity: 0.4; cursor: default; }
-    #reply-remaining { font-size: 0.7rem; color: gray; align-self: center; }
-    #reply-remaining.over { color: var(--negative); }
+    #reply-remaining { font-size: 0.7rem; color: var(--muted); align-self: center; }
+    #reply-remaining.over { color: var(--alert); }
     #search-empty {
       display: none;
-      color: gray;
+      color: var(--muted);
       font-size: 0.85rem;
       text-align: center;
       padding: 2.5rem 0;
@@ -435,7 +420,7 @@
     .bubble .bubble-icon svg { width: 1rem; height: 1rem; }
     /* The reader's query credits left (query_credits_left): shown, not tapped. */
     .bubble.balance { cursor: default; font-variant-numeric: tabular-nums; }
-    .bubble.balance.empty .bubble-icon { background: gray; }
+    .bubble.balance.empty .bubble-icon { background: var(--muted); }
     dialog.overlay {
       width: min(420px, calc(100vw - 2 * var(--gutter)));
       max-height: calc(100dvh - 2 * var(--header-height));
@@ -480,7 +465,7 @@
     .overlay-close svg,
     .overlay-up svg { width: 1.1rem; height: 1.1rem; }
     .overlay-up[hidden] { display: none; }
-    #profile-overlay label { display: block; font-size: 0.8rem; color: gray; margin-bottom: 0.3rem; }
+    #profile-overlay label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.3rem; }
     #profile-overlay .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
     #handle-input {
       font: inherit;
@@ -501,24 +486,24 @@
       cursor: pointer;
     }
     #handle-save:disabled { opacity: 0.5; cursor: default; }
-    #profile-hint { font-size: 0.8rem; color: gray; margin: 0.5rem 0 0; }
-    #profile-status { font-size: 0.8rem; color: gray; min-height: 1.2em; margin: 0.4rem 0 0; }
-    /* Unread notifications: a red dot on the menu icon and on the Inbox bubble. */
+    #profile-hint { font-size: 0.8rem; color: var(--muted); margin: 0.5rem 0 0; }
+    #profile-status { font-size: 0.8rem; color: var(--muted); min-height: 1.2em; margin: 0.4rem 0 0; }
+    /* Unread notifications: a dot on the menu icon and on the Inbox bubble. */
     #menu-btn { position: relative; }
     .unread-dot {
       width: 0.55rem;
       height: 0.55rem;
       border-radius: var(--block-radius);
-      background: var(--negative);
+      background: var(--alert);
       box-shadow: 0 0 0 2px var(--bg);
     }
     .unread-dot[hidden] { display: none; }
     #menu-unread-dot { position: absolute; top: 0.1rem; right: 0.1rem; }
     #inbox-bubble .bubble-icon { position: relative; }
     #inbox-bubble .unread-dot { position: absolute; top: -0.1rem; right: -0.1rem; }
-    #inbox-count { font-variant-numeric: tabular-nums; color: gray; }
+    #inbox-count { font-variant-numeric: tabular-nums; color: var(--muted); }
     #inbox-count:empty { display: none; }
-    #inbox-status { font-size: 0.85rem; color: gray; margin: 0; }
+    #inbox-status { font-size: 0.85rem; color: var(--muted); margin: 0; }
     #inbox-status:empty { display: none; }
     #inbox-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
     #inbox-list button {
@@ -533,12 +518,12 @@
       cursor: pointer;
     }
     #inbox-list .unread button { --ink: var(--negative); }
-    #inbox-list .inbox-what { margin: 0; font-size: 0.8rem; color: gray; }
-    .appearance-lead { font-size: 0.85rem; color: gray; margin: 0; }
-    #appearance-status { font-size: 0.85rem; color: gray; margin: 0; }
+    #inbox-list .inbox-what { margin: 0; font-size: 0.8rem; color: var(--muted); }
+    .appearance-lead { font-size: 0.85rem; color: var(--muted); margin: 0; }
+    #appearance-status { font-size: 0.85rem; color: var(--muted); margin: 0; }
     #appearance-status:empty { display: none; }
     #appearance-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.8rem; }
-    #appearance-list .style-type-label { margin: 0 0 0.35rem; font-size: 0.8rem; color: gray; }
+    #appearance-list .style-type-label { margin: 0 0 0.35rem; font-size: 0.8rem; color: var(--muted); }
     #appearance-list .style-choices { display: flex; flex-wrap: wrap; gap: 0.4rem; }
     #appearance-list button {
       font: inherit;
@@ -553,13 +538,13 @@
     #inbox-list .inbox-body { margin: 0.25rem 0 0; font-size: 0.9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
     #taste-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
     .taste-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.3rem 0.75rem; font-size: 0.85rem; }
-    .taste-custom { margin-left: 0.4rem; font-size: 0.7rem; color: gray; }
+    .taste-custom { margin-left: 0.4rem; font-size: 0.7rem; color: var(--muted); }
     .taste-votes { display: flex; gap: 0.6rem; font-size: 0.75rem; font-variant-numeric: tabular-nums; }
     .taste-up { color: var(--positive); }
     .taste-down { color: var(--negative); }
     /* A hand-rolled slider (not <input type=range>, which some mobile
-       browsers let the page's scrolling steal mid-drag). The track is green
-       up to the thumb and red after it, so the split is the topic's score.
+       browsers let the page's scrolling steal mid-drag). The track is the accent
+       up to the thumb and muted after it, so the split is the topic's score.
        The hit area is taller than the track; pan-y leaves vertical swipes to
        scroll the list. */
     .taste-control { grid-column: 1 / -1; display: flex; align-items: center; gap: 0.5rem; }
@@ -606,7 +591,7 @@
       border: none;
       border-radius: var(--block-radius);
       background: none;
-      color: gray;
+      color: var(--muted);
       cursor: pointer;
     }
     .taste-clear:hover { color: var(--fg); background: var(--post-bg); }
@@ -624,8 +609,8 @@
       cursor: pointer;
     }
     #taste-reset.visible { display: block; }
-    #taste-status { color: gray; font-size: 0.85rem; margin: 0; }
-    .taste-score { color: gray; }
+    #taste-status { color: var(--muted); font-size: 0.85rem; margin: 0; }
+    .taste-score { color: var(--muted); }
     .taste-lead { font-weight: 700; font-size: 0.9rem; margin: 0 0 1rem; }
     .taste-formula {
       margin: 0 0 1.25rem;
@@ -731,7 +716,7 @@
       overflow: hidden;
       font-size: 0.72rem;
       font-weight: 600;
-      color: gray;
+      color: var(--muted);
     }
     .swipe-content .favicon::before { content: attr(data-letter); position: absolute; }
     .swipe-content .favicon img {
@@ -795,7 +780,7 @@
       padding: 0.05rem 0.5rem;
       border-radius: var(--block-radius);
       background: rgba(128, 128, 128, 0.14);
-      color: gray;
+      color: var(--muted);
       white-space: nowrap;
     }
     /* On a related link: what it shares with the focused post. */
@@ -827,7 +812,7 @@
       .skeleton .favicon,
       .skeleton .bone { animation: none; }
     }
-    .swipe-content .reply-count { font-size: 0.75rem; color: gray; font-variant-numeric: tabular-nums; }
+    .swipe-content .reply-count { font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
     /* Text for screen readers only. */
     .visually-hidden {
       position: absolute;
@@ -855,7 +840,7 @@
       font: inherit;
       font-size: 0.75rem;
       font-variant-numeric: tabular-nums;
-      color: gray;
+      color: var(--muted);
       cursor: pointer;
     }
     .post-footer .score { margin-right: 0.15rem; }
@@ -876,7 +861,7 @@
       padding: 0;
       border-radius: var(--block-radius);
       background: var(--bg);
-      color: gray;
+      color: var(--muted);
       cursor: pointer;
     }
     .swipe-content .reply-btn:hover { color: var(--fg); --ink: var(--positive); }
@@ -892,7 +877,7 @@
     }
     html.focus-bg body,
     html.focus-bg .swipe-content { background: transparent; }
-    #focus { color: #e8e8e8; padding-bottom: 1.25rem; }
+    #focus { color: var(--text-on-dark); padding-bottom: 1.25rem; }
     /* It takes focus only so the keyboard continues from the page just
        opened; the ring would outline the whole band. */
     #focus:focus { outline: none; }
@@ -916,7 +901,7 @@
     .link-list { list-style: none; margin: 0; padding: 0; }
     ul.articles li.article { cursor: pointer; }
     ul.articles .post :is(a, button) { cursor: pointer; }
-    html.focused ul.articles .domain { color: gray; }
+    html.focused ul.articles .domain { color: var(--muted); }
     html.focused ul.articles li.article { animation: focus-in 0.45s ease both; }
     @keyframes focus-in {
       from { opacity: 0; transform: translateY(12px); }
@@ -925,7 +910,7 @@
       html { transition: none; }
       html.focused ul.articles li.article { animation: none; }
     }
-    #focus-status { color: gray; font-size: 0.85rem; margin: 0; }
+    #focus-status { color: var(--muted); font-size: 0.85rem; margin: 0; }
     #focus-status:empty { display: none; }
     .link-section-title {
       margin: 1.2rem 0 0.45rem;
@@ -933,7 +918,7 @@
       font-weight: 700;
       letter-spacing: 0.06em;
       text-transform: uppercase;
-      color: gray;
+      color: var(--muted);
     }
     .tag-list { display: flex; flex-wrap: wrap; gap: 0.35rem; list-style: none; margin: 0; padding: 0; }
     .tag {
@@ -943,7 +928,7 @@
       border-radius: var(--block-radius);
     }
     .tag.entity { --ink: var(--positive); }
-    .tag .tag-detail { margin-left: 0.35rem; font-size: 0.65rem; color: gray; }
+    .tag .tag-detail { margin-left: 0.35rem; font-size: 0.65rem; color: var(--muted); }
     .tag a { color: inherit; text-decoration: none; }
     .tag a:hover { text-decoration: underline; }
     #focus-entity[hidden], #focus-topic[hidden], #focus-kind[hidden], #find-sources[hidden] { display: none; }
@@ -955,10 +940,10 @@
       letter-spacing: -0.02em;
       overflow-wrap: anywhere;
     }
-    #focus-entity-meta, #focus-topic-meta, #focus-kind-meta { margin: 0; font-size: 0.8rem; color: gray; }
+    #focus-entity-meta, #focus-topic-meta, #focus-kind-meta { margin: 0; font-size: 0.8rem; color: var(--muted); }
     #focus-entity-meta a, #focus-topic-meta a, #focus-kind-meta a { color: inherit; }
     #focus-entity-meta a:hover, #focus-topic-meta a:hover, #focus-kind-meta a:hover { color: var(--fg); }
-    #focus-topic-description, #focus-kind-description { margin: 0.5rem 0 0; font-size: 0.85rem; color: #b8b8b8; max-width: 40rem; }
+    #focus-topic-description, #focus-kind-description { margin: 0.5rem 0 0; font-size: 0.85rem; color: color-mix(in srgb, var(--text-on-dark) 75%, transparent); max-width: 40rem; }
     #focus-topic-description:empty, #focus-kind-description:empty { display: none; }
     /* On a topic's or an entity's page, top right opposite ← Feed and
        styled like it. */
@@ -986,7 +971,7 @@
       gap: 0.45rem;
     }
     .swipe-content .replies[hidden] { display: none; }
-    .reply-author { display: block; font-size: 0.7rem; color: gray; }
+    .reply-author { display: block; font-size: 0.7rem; color: var(--muted); }
     .reply-body { margin: 0; font-size: 0.9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
     .swipe-content .cover-link { display: block; margin: 0.6rem 0 0; }
     .swipe-content .cover {
@@ -1015,7 +1000,7 @@
       font-size: 0.72rem;
       font-weight: 600;
       line-height: var(--domain-line-height);
-      color: gray;
+      color: var(--muted);
       text-align: left;
     }
     /* A domain line with a source links to the source's page. */
@@ -1035,14 +1020,14 @@
       font-size: 0.72rem;
       font-weight: 300;
       line-height: var(--domain-line-height);
-      color: gray;
+      color: var(--muted);
       white-space: nowrap;
     }
     .swipe-content .posted:not(:empty)::before { content: "· "; }
     .article-row { display: flex; align-items: center; gap: 0.6rem; }
     .article-row a { flex: 1; min-width: 0; overflow-wrap: anywhere; text-decoration: none; color: inherit; }
     .article-row a:hover { text-decoration: underline; }
-    .article-row a.visited { color: gray; }
+    .article-row a.visited { color: var(--muted); }
     .meta .topics {
       display: flex;
       gap: 0.25rem;
@@ -1053,7 +1038,7 @@
       line-height: 1.4;
       padding: 0 0.45rem;
       border-radius: var(--block-radius);
-      color: gray;
+      color: var(--muted);
       white-space: nowrap;
     }
     #toast-container {
@@ -1070,8 +1055,8 @@
     }
     .toast {
       pointer-events: auto;
-      background: #2d2d2d;
-      color: #f2f2f2;
+      background: var(--fg);
+      color: var(--bg);
       padding: 0.6rem 1rem;
       border-radius: var(--block-radius);
       display: flex;
@@ -1084,7 +1069,7 @@
     .toast .undo {
       background: none;
       border: none;
-      color: #8ab4f8;
+      color: var(--positive-soft);
       font: inherit;
       font-weight: 600;
       cursor: pointer;
@@ -1098,7 +1083,7 @@
       from { transform: translateY(0); opacity: 1; }
       to { transform: translateY(120%); opacity: 0; }
     }
-    /* Blocks (block.css): square, outlined, and extruded down-right with the
+    /* Blocks (theme.css): square, outlined, and extruded down-right with the
        corners joined diagonally. Zero specificity, so a state rule only
        swaps --ink (hover, focus, shared, pressed) or --depth. */
     :where(#search-input, #reply-composer, .dock-action, .bubble, dialog.overlay, .toast,
@@ -1119,7 +1104,7 @@
        above). The slot gives up its right edge to the extrusion, since the row
        clips. */
     .post-swipe { box-shadow: var(--extrusion); margin-right: var(--block-depth); margin-bottom: var(--block-depth); }
-    /* A picked style's button is a green block, extrusion included. */
+    /* A picked style's button is an accent block, extrusion included. */
     #appearance-list button[aria-pressed="true"] { --ink: var(--positive); }
     /* The focused post's black band: blocks there are drawn in the dark ink. */
     #focus { --ink: var(--block-ink-dark); }
@@ -1184,7 +1169,7 @@
   × (1 + everyone's upvotes)
   / (2 + everyone's up + down votes)
   × 0.5 ^ (age in hours / 24)</code></pre>
-    <p class="taste-lead">Green topics are more likely to appear in your feed</p>
+    <p class="taste-lead">Topics with a longer coloured bar are more likely to appear in your feed</p>
     <p id="taste-status"></p>
     <ol id="taste-list"></ol>
     <button id="taste-reset">Reset all to default</button>
@@ -4095,6 +4080,71 @@
       Object.values(styleChoices).forEach((choice) => withStoredChoice(choice, ({ schema, style }) => applyStyle(schema, style)));
     }
 
+    // Built-in styles (no owner) are the site's own values. They live in the
+    // database so they change without a deploy: the build writes the values it
+    // saw, and the page applies the current ones on a sheet of its own, under
+    // the inline Appearance picks (so Default falls back to them). The last
+    // ones seen are kept in localStorage, so the first paint already has them.
+    const BUILTIN_STYLES_KEY = "seb-now-builtin-styles";
+    const OWNER_COLUMN = "owner_id";
+    const ROOT_RULE = ":root {}";
+    const BUILTIN_STYLES_FAILED = "failed to load the built-in styles";
+    const BUILTIN_STYLES_UNREADABLE = "stored built-in styles unreadable";
+
+    // One `:root` rule on an adopted sheet, or null where constructable sheets
+    // aren't supported (the build's values then stand).
+    const builtinRule = (() => {
+      try {
+        const sheet = new CSSStyleSheet();
+        sheet.insertRule(ROOT_RULE);
+        document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+        return sheet.cssRules[0];
+      } catch {
+        return null;
+      }
+    })();
+
+    function applyBuiltinStyles(rows) {
+      if (!builtinRule) return;
+      [...builtinRule.style].forEach((property) => builtinRule.style.removeProperty(property));
+      builtinDeclarations(rows).forEach(([property, value]) => builtinRule.style.setProperty(property, value));
+    }
+
+    // The cached copy may be anything; one that can't be read sets nothing,
+    // and the build's values stand until the database's arrive.
+    function applyStoredBuiltinStyles() {
+      try {
+        applyBuiltinStyles(storedBuiltinStyles());
+      } catch (error) {
+        console.error(BUILTIN_STYLES_UNREADABLE, error);
+        applyBuiltinStyles([]);
+      }
+    }
+
+    function storedBuiltinStyles() {
+      try {
+        const rows = JSON.parse(localStorage.getItem(BUILTIN_STYLES_KEY));
+        return Array.isArray(rows) ? rows : [];
+      } catch {
+        return [];
+      }
+    }
+
+    async function refreshBuiltinStyles() {
+      const { data, error } = await (await supabaseReady)
+        .from(ENTITIES_TABLE).select(STYLE_SELECT).eq(KIND_COLUMN, STYLE_KIND).is(OWNER_COLUMN, null);
+      if (error) {
+        console.error(BUILTIN_STYLES_FAILED, error);
+        return;
+      }
+      applyBuiltinStyles(data);
+      try {
+        localStorage.setItem(BUILTIN_STYLES_KEY, JSON.stringify(data));
+      } catch {
+        // Storage off (private window): they're fetched again next visit.
+      }
+    }
+
     // Picks `row` for its type, or the type's default when `row` is null.
     function chooseStyle(type, row) {
       styleChoicesRevision++;
@@ -5730,7 +5780,9 @@
       replyInput.addEventListener("blur", () => setTimeout(reposition, 350));
     }
 
+    applyStoredBuiltinStyles();
     applyStoredStyles();
+    refreshBuiltinStyles();
     refreshStoredStyles();
     setupFeed(savedSearchQuery().trim());
     setupVisitReturns();

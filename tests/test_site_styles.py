@@ -3,6 +3,7 @@
 import re
 
 from seb_now.site import StyleRow, render, style_tokens_css
+from seb_now.theme import THEME_CSS_PATH, style_tokens
 
 LENGTH = {"type": "string", "pattern": "^(0|[0-9]{1,4}(\\.[0-9]{1,3})?(px|rem|em|vw|vh|%))$"}
 LAYOUT = {
@@ -36,11 +37,12 @@ def test_a_style_its_type_refuses_sets_nothing() -> None:
 
 def test_the_tokens_override_the_templates_defaults() -> None:
     css = style_tokens_css([_style("layout", {"column_width": "640px", "dock_width": "30rem"})])
-    html = render([], style_css=css)
+    with style_tokens(css):
+        html = render([])
     style = html[html.index("<style>") : html.index("</style>")]
     defaults = style.index("--column-width: 720px;")
     assert defaults < style.index(css)
-    assert "/*__STYLE_TOKENS__*/" not in html
+    assert "/*__THEME_CSS__*/" not in html
 
 
 def test_every_width_reads_a_token() -> None:
@@ -103,14 +105,15 @@ def test_the_built_in_block_style_sets_the_block_tokens() -> None:
         ":root { --block-depth: 5px; --block-ink: #111111; --block-ink-dark: #e8e8e8; "
         "--block-line: 2px; --block-radius: 0; }"
     )
-    html = render([], style_css=css)
+    with style_tokens(css):
+        html = render([])
     assert html.index("--block-depth: 5px;\n") < html.index(css)
 
 
 def test_every_page_carries_the_block_look() -> None:
     for name, html in _pages().items():
         style = _styles(html)
-        assert "/*__BLOCK_CSS__*/" not in html, name
+        assert "/*__THEME_CSS__*/" not in html, name
         assert "--extrusion:" in style and "var(--block-edge)" in style, name
 
 
@@ -128,3 +131,31 @@ def test_no_soft_shadows() -> None:
             for layer in re.split(r",(?![^(]*\))", shadow):
                 lengths = re.findall(r"(?<![\w.(])(-?[\d.]+(?:px|em|rem)?|0)(?=\s)", layer + " ")
                 assert len(lengths) < 3 or float(re.sub(r"[a-z]+", "", lengths[2])) == 0, (name, layer)
+
+
+def test_every_page_carries_the_build_tokens() -> None:
+    css = ":root { --color-accent: #123456; }"
+    with style_tokens(css):
+        pages = _pages()
+    for name, html in pages.items():
+        style = _styles(html)
+        assert style.index("--color-accent: #75352e;") < style.index(css), name
+
+
+def test_colour_lives_only_in_the_theme() -> None:
+    """Pages read the theme's aliases; the only colours they write are neutral
+    translucent greys, white sheens and black shades, which suit any palette."""
+    neutral = re.compile(r"rgba\((128, 128, 128|255, 255, 255|0, 0, 0), [\d.]+\)|#000\b")
+    extension = (THEME_CSS_PATH.parents[3] / "extension" / "static" / "style.css").read_text()
+    for name, css in {**{n: _styles(h) for n, h in _pages().items()}, "extension": extension}.items():
+        own = css.replace(THEME_CSS_PATH.read_text(), "")
+        own = neutral.sub("", own)
+        assert not re.findall(r"#[0-9a-fA-F]{3,8}\b(?![-\w])|rgba?\(|hsla?\(", own), name
+
+
+def test_every_colour_role_has_a_light_and_a_dark_value() -> None:
+    theme = THEME_CSS_PATH.read_text()
+    roles = set(re.findall(r"--color-([a-z-]+?)(?:-dark)?:", theme))
+    for role in roles:
+        assert re.search(rf"--color-{role}: #[0-9a-f]{{6}};", theme), role
+        assert re.search(rf"--color-{role}-dark: #[0-9a-f]{{6}};", theme), role

@@ -70,3 +70,17 @@ function styleDeclarations(schema: StyleSchema, values: StyleValues): [string, s
 function styleProperties(schema: StyleSchema): string[] {
   return Object.keys(schema.properties).filter((token) => TOKEN_NAME.test(token)).map(tokenProperty);
 }
+
+// A style row as the page loads it: its type's path and schema, and its values.
+interface StyleRow { kind_path: string; name: string; style: StyleValues; kinds: { schema: StyleSchema } | null }
+
+// The built-in styles' declarations, one style per type: the first by name,
+// as the build picks them (site.style_tokens_css), so the page and the build
+// agree on which built-in style a type has.
+function builtinDeclarations(rows: StyleRow[]): [string, string][] {
+  const firstByType = [...rows]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .reduce((types, row) => (row.kinds && !types.has(row.kind_path) ? types.set(row.kind_path, row) : types),
+      new Map<string, StyleRow>());
+  return [...firstByType.values()].flatMap((row) => (row.kinds ? styleDeclarations(row.kinds.schema, row.style) : []));
+}
