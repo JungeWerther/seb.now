@@ -15,8 +15,9 @@ import {
   string,
   uuid,
 } from "../_shared/args.ts";
-import { ENV, MCP } from "../_shared/constants.ts";
+import { ENV, MCP, STYLE_TYPES } from "../_shared/constants.ts";
 import { jsonResponses } from "../_shared/helpers.ts";
+import { styleKindPath, styleTypeName, styleValues, tokensOf } from "../_shared/style_args.ts";
 
 // An MCP server (Streamable HTTP transport, stateless: every POST carries one
 // JSON-RPC message and gets one JSON response, no SSE stream). Hand-rolled
@@ -42,7 +43,10 @@ const USER_INSTRUCTIONS =
   " Signed in, you can also help grow the taxonomy: when links (a YouTube style, a genre, a scene) " +
   "fit no leaf topic well, propose one under the closest topic with propose_topic, backed by example " +
   "links; endorse good proposals from others; and label links for the user's own feed with " +
-  "suggest_link_topic. Accepted topics are credited to their proposer in list_topics.";
+  "suggest_link_topic. Accepted topics are credited to their proposer in list_topics. The page's look is " +
+  "styles of a few types (palette, block, layout): list_styles shows them, create_style makes the user's " +
+  "own (best based_on an existing one, changing only the tokens asked for), update_style and delete_style " +
+  "change their own, and pick_style makes one their look on every device. Built-in styles are read-only.";
 
 const PROPOSAL_STATUSES = ["open", "accepted", "rejected"] as const;
 const PROPOSAL_SELECT =
@@ -50,6 +54,8 @@ const PROPOSAL_SELECT =
   "profiles!topic_proposals_proposed_by_fkey(handle), topic_proposal_endorsements(count), " +
   "topic_proposal_examples(p, links(id, title, url))";
 const LINK_SELECT = "id, title, url, author, created_at, link_topics(p, topic_id, topics(name))";
+const STYLE_SELECT = "id, name, description, kind_path, style, owner_id";
+const UNIQUE_VIOLATION = "23505";
 
 const PROTECTED_RESOURCE_METADATA_URL = `${ENV.SUPABASE_URL}/functions/v1/mcp/oauth-protected-resource`;
 const AUTHORIZATION_SERVER = `${ENV.SUPABASE_URL}/auth/v1`;
@@ -582,6 +588,239 @@ const suggestLinkTopicTool = tool({
   },
 });
 
+type StyleRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  kind_path: string;
+  style: Record<string, unknown>;
+  owner_id: string | null;
+};
+type StyleTypeRow = { path: string; label: string; description: string | null; schema: { properties?: Record<string, never> } };
+
+const typeOfPath = (path: string) => path.slice(STYLE_TYPES.KIND_ROOT.length + 1);
+const styleId = (description: string) => uuid({ description });
+
+function formatStyle({ kind_path, owner_id, ...style }: StyleRow, userId?: string): Extra {
+  return {
+    ...style,
+    type: typeOfPath(kind_path),
+    built_in: owner_id === null,
+    ...(userId ? { mine: owner_id === userId } : {}),
+  };
+}
+
+async function styleById(db: Db, id: string): Promise<StyleRow> {
+  const style = await fetched<StyleRow | null>(
+    db.from("entities").select(STYLE_SELECT).eq("id", id).eq("kind", "style").maybeSingle(),
+  );
+  if (!style) throw new InvalidArgs(`No style with id ${id}; see list_styles`);
+  return style;
+}
+
+// A style the caller may change: their own. Built-in and other readers' styles
+// are read-only (RLS refuses them anyway); this says so instead of updating nothing.
+async function ownStyle(db: Db, id: string, userId: string): Promise<StyleRow> {
+  const style = await styleById(db, id);
+  if (style.owner_id !== userId) {
+    throw new InvalidArgs(
+      `'${style.name}' isn't yours to change; create_style with based_on: "${id}" makes your own copy`,
+    );
+  }
+  return style;
+}
+
+// Merges `tokens` into a style and sets its description, only if the style is
+// still what was read (compare-and-set on its values), so two updates racing on
+// different tokens can't drop one another's: the loser re-reads and merges again.
+// Null when every attempt lost the race.
+async function mergeStyle(
+  db: Db,
+  current: StyleRow,
+  tokens: Record<string, string | number> | undefined,
+  description: string | undefined,
+  attemptsLeft: number = MCP.STYLE_UPDATE_ATTEMPTS,
+): Promise<StyleRow | null> {
+  if (attemptsLeft === 0) return null;
+  const changes = {
+    ...(tokens === undefined ? {} : { style: { ...current.style, ...tokens } }),
+    ...(description === undefined ? {} : { description }),
+  };
+  const updated = await fetched<StyleRow | null>(
+    db
+      .from("entities")
+      .update(changes)
+      .eq("id", current.id)
+      .eq("style", JSON.stringify(current.style))
+      .select(STYLE_SELECT)
+      .maybeSingle(),
+    InvalidArgs,
+  );
+  return updated ?? mergeStyle(db, await styleById(db, current.id), tokens, description, attemptsLeft - 1);
+}
+
+const listStylesTool = tool({
+  name: "list_styles",
+  title: "List styles",
+  description: {
+    anon: "The page's style types (palette, block, layout, and any readers added) with the tokens each takes " +
+      "(a primitive such as color or length, or keywords), and every style of them, built-in ones first.",
+    user: "The page's style types (palette, block, layout, and any readers added) with the tokens each takes " +
+      "(a primitive such as color or length, or keywords), every style of them (built-in first, mine marked), " +
+      "and the user's picks.",
+  },
+  auth: "anon",
+  input: { type: optional(styleTypeName) },
+  annotations: readOnly,
+  handler: async ({ type }, { db, userId }) => {
+    const types = db.from("kinds").select("path, label, description, schema");
+    const styles = db.from("entities").select(STYLE_SELECT).eq("kind", "style");
+    const [typeRows, styleRows, picks] = await Promise.all([
+      fetched<StyleTypeRow[]>(
+        type === undefined ? types.not("schema", "is", null).order("path") : types.eq("path", styleKindPath(type)),
+      ),
+      fetched<StyleRow[]>(
+        (type === undefined ? styles : styles.eq("kind_path", styleKindPath(type)))
+          .order("owner_id", { ascending: true, nullsFirst: true })
+          .order("name"),
+      ),
+      userId === undefined
+        ? Promise.resolve([])
+        : fetched<{ type_path: string; style_id: string }[]>(db.from("style_picks").select("type_path, style_id")),
+    ]);
+    if (type !== undefined && !typeRows.length) throw new InvalidArgs(`Unknown style type '${type}'; see list_styles`);
+    return {
+      types: typeRows.map(({ path, schema, ...t }) => ({ name: typeOfPath(path), ...t, tokens: tokensOf(schema) })),
+      styles: styleRows.map((s) => formatStyle(s, userId)),
+      ...(userId === undefined
+        ? {}
+        : { picks: Object.fromEntries(picks.map((p) => [typeOfPath(p.type_path), p.style_id])) }),
+    };
+  },
+});
+
+const createStyleTool = tool({
+  name: "create_style",
+  title: "Create a style",
+  description:
+    "Make a style of a type as the signed-in user. Every token of the type needs a value, so start from an " +
+    "existing style with based_on and give in style only the tokens to change. Values are checked against " +
+    "the type: colours are lowercase hex (#rrggbb or #rrggbbaa), lengths 0 or a number with px, rem, em, vw, " +
+    "vh or %. Styles are public; it becomes the user's look only once picked (pick_style, or the page's " +
+    "Appearance menu).",
+  auth: "user",
+  input: {
+    type: styleTypeName,
+    name: text({ minLength: 2, maxLength: STYLE_TYPES.MAX_STYLE_NAME_LENGTH, description: "The style's name." }),
+    description: optional(text({ maxLength: STYLE_TYPES.MAX_DESCRIPTION_LENGTH, description: "What it's for." })),
+    based_on: optional(styleId("A style of the same type whose values to start from (see list_styles).")),
+    style: styleValues("Token values, e.g. {\"color_page\": \"#ebedf1\"}; with based_on, only the ones to change."),
+  },
+  annotations: writes(false),
+  handler: async ({ type, name, description, based_on: basedOn, style }, { db, userId }) => {
+    const kindPath = styleKindPath(type);
+    const base = basedOn === undefined ? undefined : await styleById(db, basedOn);
+    if (base && base.kind_path !== kindPath) {
+      throw new InvalidArgs(`based_on is a ${typeOfPath(base.kind_path)} style, not a ${type} one`);
+    }
+    const created = await fetched<StyleRow>(
+      db
+        .from("entities")
+        .insert({ name, kind: "style", kind_path: kindPath, description: description ?? null, style: { ...base?.style, ...style } })
+        .select(STYLE_SELECT)
+        .single(),
+      InvalidArgs,
+    );
+    return formatStyle(created, userId);
+  },
+});
+
+const updateStyleTool = tool({
+  name: "update_style",
+  title: "Change a style",
+  description:
+    "Change one of the signed-in user's own styles: the tokens given in style replace those values (the " +
+    "rest are kept), and description replaces its description. Built-in styles and other readers' are " +
+    "read-only; copy one with create_style's based_on instead.",
+  auth: "user",
+  input: {
+    style_id: styleId("One of the user's styles (see list_styles, mine: true)."),
+    style: optional(styleValues("Token values to change, e.g. {\"color_card\": \"#ffffff\"}.")),
+    description: optional(text({ maxLength: STYLE_TYPES.MAX_DESCRIPTION_LENGTH, description: "What it's for." })),
+  },
+  annotations: writes(true),
+  handler: async ({ style_id: id, style, description }, { db, userId }) => {
+    if (style === undefined && description === undefined) throw new InvalidArgs("give style, description or both");
+    const updated = await mergeStyle(db, await ownStyle(db, id, userId), style, description);
+    if (!updated) throw new InvalidArgs("The style kept changing while being updated; try again");
+    return formatStyle(updated, userId);
+  },
+});
+
+const deleteStyleTool = tool({
+  name: "delete_style",
+  title: "Delete a style",
+  description: "Delete one of the signed-in user's own styles. Anyone who picked it goes back to the default.",
+  auth: "user",
+  input: { style_id: styleId("One of the user's styles (see list_styles, mine: true).") },
+  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+  handler: async ({ style_id: id }, { db, userId }) => {
+    const style = await ownStyle(db, id, userId);
+    await fetched(db.from("entities").delete().eq("id", id).select("id").single(), InvalidArgs);
+    return { deleted: id, name: style.name };
+  },
+});
+
+// Not an upsert: a pick's type_path isn't updatable, and an upsert's update
+// would set it. Update the pick, else add it; a first pick that loses a race to
+// another (the key now taken) updates the one that won.
+async function savePick(db: Db, userId: string, typePath: string, styleId: string, retry = true): Promise<void> {
+  const repicked = await fetched<unknown[]>(
+    db
+      .from("style_picks")
+      .update({ style_id: styleId, picked_at: new Date().toISOString() })
+      .eq("type_path", typePath)
+      .eq("user_id", userId)
+      .select("type_path"),
+    InvalidArgs,
+  );
+  if (repicked.length) return;
+  const { error } = await db.from("style_picks").insert({ type_path: typePath, style_id: styleId });
+  if (error?.code === UNIQUE_VIOLATION && retry) return savePick(db, userId, typePath, styleId, false);
+  if (error) throw new InvalidArgs(error.message);
+}
+
+const pickStyleTool = tool({
+  name: "pick_style",
+  title: "Pick a style",
+  description:
+    "Make a style the signed-in user's look for its type on every device, or go back to the type's default " +
+    "with style_id omitted. Any style can be picked, built-in, theirs or another reader's. Picks are kept " +
+    "for a real seb.now account (one with an email); an anonymous one picks in the page's Appearance menu.",
+  auth: "user",
+  input: {
+    type: styleTypeName,
+    style_id: optional(styleId("The style to pick (see list_styles); omit for the default.")),
+  },
+  annotations: writes(true),
+  handler: async ({ type, style_id: id }, { db, userId }) => {
+    const typePath = styleKindPath(type);
+    if (id === undefined) {
+      await fetched(db.from("style_picks").delete().eq("type_path", typePath).eq("user_id", userId));
+      return { type, picked: null };
+    }
+    const style = await styleById(db, id);
+    if (style.kind_path !== typePath) throw new InvalidArgs(`That is a ${typeOfPath(style.kind_path)} style, not a ${type} one`);
+    if (!await fetched<boolean>(db.rpc("is_permanent"))) {
+      throw new InvalidArgs(
+        "Picks are kept for a real seb.now account: add an email under My Profile, or pick it in Appearance meanwhile",
+      );
+    }
+    await savePick(db, userId, typePath, id);
+    return { type, picked: formatStyle(style, userId) };
+  },
+});
+
 const TOOLS: Tool[] = [
   getFeedTool,
   searchLinksTool,
@@ -593,6 +832,11 @@ const TOOLS: Tool[] = [
   proposeTopicTool,
   endorseTopicTool,
   suggestLinkTopicTool,
+  listStylesTool,
+  createStyleTool,
+  updateStyleTool,
+  deleteStyleTool,
+  pickStyleTool,
 ];
 
 const visibleTools = (audience: Auth) => TOOLS.filter((t) => t.auth === "anon" || audience === "user");
