@@ -3,7 +3,7 @@
 // opened from Manage devices, revokes it everywhere).
 
 import { CONFIG } from "./config.ts";
-import { forgetConnection, loadConnection, startConnect } from "./connection.ts";
+import { forgetConnection, loadConnection, requestSebNowAccess, startConnect } from "./connection.ts";
 import { byId } from "./dom.ts";
 
 const state = byId("state", HTMLParagraphElement);
@@ -22,7 +22,13 @@ async function render() {
   disconnectButton.hidden = !connection;
 }
 
-connectButton.addEventListener("click", () => void startConnect());
+connectButton.addEventListener("click", () => {
+  const access = requestSebNowAccess();
+  startConnect(access).catch((error: unknown) => {
+    state.textContent = error instanceof Error ? error.message : String(error);
+    state.dataset.state = "error";
+  });
+});
 disconnectButton.addEventListener("click", () => void forgetConnection().then(render));
 byId("manage", HTMLAnchorElement).href = `${CONFIG.SEB_NOW_ORIGIN}${CONFIG.CONNECT_PATH}`;
 chrome.storage.onChanged.addListener((changes) => {
