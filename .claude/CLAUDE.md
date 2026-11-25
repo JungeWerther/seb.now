@@ -1224,6 +1224,9 @@ mentioning it mean (each described with its area and country), or none. A pick
 with p ≥ `MATCH_MIN_P` sets `wikidata_id` and an empty `country` (the country's
 ISO code, P297). If another entity already has the item, the two are one place
 and a `merge` is staged in `entity_edits` (batch `wikidata-<date>`), not applied.
+The merge keeps the entity named by the item's label (`_shared/merge_direction.ts`), so
+"Perzische Golf" folds into "Persian Gulf" whichever was linked first; a pair already
+proposed, either way round and even if rejected, isn't proposed again.
 The item's area (P131, else its country; current, best-ranked claim) becomes the
 place's parent: the entity with that item, else the unlinked place of that name
 (which takes the item, only if still unlinked and its `country` is unset or the
