@@ -6,6 +6,7 @@ import { serveJev } from "../_shared/jev_function.ts";
 import { pool } from "../_shared/pool.ts";
 import { exponential, retry } from "../_shared/retry.ts";
 import { Wikidata, wikidata, WikidataItem } from "../_shared/wikidata.ts";
+import { mergeDirection } from "../_shared/merge_direction.ts";
 import { ENTITY_EXTRACT, JEV, PLACE_RESOLVE, WIKIDATA } from "../_shared/constants.ts";
 
 // Links place entities to Wikidata, so where a place is comes from what it is,
@@ -19,7 +20,8 @@ import { ENTITY_EXTRACT, JEV, PLACE_RESOLVE, WIKIDATA } from "../_shared/constan
 //     (each item described with the area and country it is in), or none;
 //  3. a pick with p ≥ MATCH_MIN_P sets `wikidata_id` and, when empty, `country`
 //     (ISO 3166-1). If another entity already has that item, the two are one
-//     place: a `merge` is staged in `entity_edits` for review, not applied.
+//     place: a `merge` is staged in `entity_edits` for review, not applied,
+//     keeping the one named by the item's label (_shared/merge_direction.ts).
 //  4. the item's area (P131, else its country) becomes the place's parent
 //     (`set_place_parent`, which writes `place_path`): the entity with that item, else the place of that
 //     name not yet linked and not known to be in another country (which takes
@@ -204,16 +206,19 @@ async function save(db: SupabaseClient, wd: Wikidata, pick: Pick) {
     const holder = item.id !== place.wikidata_id ? await entityWithItem(db, item.id) : null;
     if (holder) {
       const batch = `${PLACE_RESOLVE.MERGE_BATCH_PREFIX}-${new Date().toISOString().slice(0, 10)}`;
-      // One proposal per pair, however often the place is looked at.
+      const { from, into } = mergeDirection(place, holder, item.label);
+      // One proposal per pair, either way round, however often the place is
+      // looked at; a rejected one stays rejected.
+      const pair = `and(entity_id.eq.${from.id},into_id.eq.${into.id}),and(entity_id.eq.${into.id},into_id.eq.${from.id})`;
       const { data: proposed, error: proposedError } = await db.from("entity_edits").select("id")
-        .eq("op", "merge").eq("entity_id", place.id).eq("into_id", holder.id).in("status", ["staged", "applied"]).limit(1);
+        .eq("op", "merge").or(pair).in("status", ["staged", "applied", "rejected"]).limit(1);
       if (proposedError) throw new Error(proposedError.message);
       const { error } = (proposed as unknown[]).length ? { error: null } : await db.from("entity_edits").insert({
-        batch, op: "merge", entity_id: place.id, entity_name: place.name, into_id: holder.id, into_name: holder.name,
+        batch, op: "merge", entity_id: from.id, entity_name: from.name, into_id: into.id, into_name: into.name,
         reason: `same Wikidata item ${item.id}`, decided_by: "jev", p,
       });
       if (error) throw new Error(error.message);
-      outcome.staged_merge_into = holder.name;
+      outcome.staged_merge = { from: from.name, into: into.name };
     } else {
       const iso = place.country ? null : await wd.isoOf(item);
       // Only while still unlinked (or already this item): an overlapping run
