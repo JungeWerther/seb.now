@@ -53,6 +53,7 @@ ALLOWED = {
     ("entity-extract/index.ts", "CONCEPT"): "sentinel option key of the Jev question",
     ("entity-extract/index.ts", "NOT_A_NAME"): "sentinel option key of the Jev question",
     ("entity-extract/index.ts", "PAGE_MENTION_OPTIONS"): "a Jev question's options (prompt schema)",
+    ("entity-extract/index.ts", "PAGE_MENTION_QUESTION"): "a Jev question's wording (prompt schema)",
     ("query-parse/index.ts", "NONE"): "sentinel option key of the Jev question",
     ("query-parse/index.ts", "DEFAULT_SORT"): "one of feed_query's sort names, checked by the database",
     ("query-parse/index.ts", "SORTS"): "feed_query's sort names with their Jev descriptions (prompt schema)",
