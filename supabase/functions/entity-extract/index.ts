@@ -92,13 +92,16 @@ type Kind = keyof typeof KIND_OPTIONS;
 
 // On the page, whether a phrase is a name and of what kind is one question, so
 // a page's many phrases cost one question each: a name's p is the sum over kinds.
+// Every question carries its own options, so what all the kinds share is said
+// once, in the question.
 const CONCEPT = "concept";
 const NOT_A_NAME = "not_a_name";
+const PAGE_MENTION_QUESTION =
+  "what is `phrase`? If it is exactly the name, not more and not less, of one specific thing, " +
+  "choose that thing's kind; otherwise choose whether it is a general concept or neither.";
 const PAGE_MENTION_OPTIONS = {
-  ...Object.fromEntries(Object.entries(KIND_OPTIONS).map(([kind, description]) => [
-    kind,
-    `The phrase is exactly the name, not more and not less, of one specific thing of this kind: ${description}`,
-  ])),
+  ...KIND_OPTIONS,
+  other: "One specific thing of another kind.",
   [CONCEPT]: MENTION_OPTIONS.concept,
   [NOT_A_NAME]: MENTION_OPTIONS.other,
 };
@@ -238,7 +241,7 @@ async function findNames(jev: JevClient, linkId: string, state: JsonValue, phras
     if (phrase.sentence) {
       questions[`m${i}`] = {
         type: "choice",
-        instructions: phraseInstructions(phrase, "what is `phrase`?"),
+        instructions: phraseInstructions(phrase, PAGE_MENTION_QUESTION),
         criteria: PAGE_MENTION_OPTIONS,
       };
       return;
