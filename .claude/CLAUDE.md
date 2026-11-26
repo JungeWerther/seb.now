@@ -1407,7 +1407,8 @@ percent-encoded. A new page every reader has goes in the template. It also write
 `dist/robots.txt` (`robots.py`): `templates/robots.txt` (everyone allowed under
 `User-agent: *`) then one group, `Disallow: /`, naming every crawler whose
 `crawler_agents.robots_disallow` is set (`20261126200000_crawler_robots.sql`:
-Google's and OpenAI's search and AI crawlers), so who is turned away is a row
+Google's and OpenAI's search and AI crawlers except Googlebot, so the site stays in
+Google Search), so who is turned away is a row
 update and a rebuild.
 
 **Installable app — `seb_now.pwa`.** The build writes, next to `index.html`:
