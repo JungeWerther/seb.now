@@ -176,11 +176,15 @@ def test_readers_cannot_list_crawler_accounts(db: "psycopg.Connection") -> None:
         db.execute("select * from public.crawler_accounts")
 
 
-def test_robots_txt_turns_away_google_and_openai_crawlers_only(db: "psycopg.Connection") -> None:
-    rows = db.execute("select operator, purpose from public.crawler_agents where robots_disallow").fetchall()
+def test_robots_txt_turns_away_exactly_google_and_openai_search_and_ai_crawlers(db: "psycopg.Connection") -> None:
+    rows = db.execute("select token, operator, purpose, robots_disallow from public.crawler_agents").fetchall()
+    wrong = [
+        token
+        for token, operator, purpose, disallowed in rows
+        if disallowed != (operator in {"Google", "OpenAI"} and purpose in {"search", "ai"})
+    ]
     assert rows
-    assert {operator for operator, _ in rows} == {"Google", "OpenAI"}
-    assert {purpose for _, purpose in rows} <= {"search", "ai"}
+    assert wrong == []
 
 
 @pytest.mark.parametrize("token", ["googlebot", "google-extended", "google-cloudvertexbot", "gptbot", "oai-searchbot"])
