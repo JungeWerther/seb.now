@@ -18,7 +18,12 @@ from psycopg import errors, sql  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS = [
-    ROOT / "supabase" / "migrations" / name for name in ("20261029120000_accounts.sql", "20261120150000_crawlers.sql")
+    ROOT / "supabase" / "migrations" / name
+    for name in (
+        "20261029120000_accounts.sql",
+        "20261120150000_crawlers.sql",
+        "20261126200000_crawler_robots.sql",
+    )
 ]
 SHAPES = [Path(__file__).with_name(name) for name in ("accounts_shape.sql", "crawlers_shape.sql")]
 SERVER_URL = os.environ.get("TEST_DATABASE_URL", "")
@@ -169,3 +174,26 @@ def test_readers_cannot_list_crawler_accounts(db: "psycopg.Connection") -> None:
     me = user(db, FIREFOX)
     with requesting(db, me, FIREFOX), pytest.raises(errors.InsufficientPrivilege):
         db.execute("select * from public.crawler_accounts")
+
+
+def test_robots_txt_turns_away_google_and_openai_crawlers_but_googlebot(db: "psycopg.Connection") -> None:
+    rows = db.execute("select token, operator, purpose, robots_disallow from public.crawler_agents").fetchall()
+    wrong = [
+        token
+        for token, operator, purpose, disallowed in rows
+        if disallowed != (operator in {"Google", "OpenAI"} and purpose in {"search", "ai"} and token != "googlebot")
+    ]
+    assert rows
+    assert wrong == []
+
+
+@pytest.mark.parametrize("token", ["google-extended", "google-cloudvertexbot", "gptbot", "oai-searchbot"])
+def test_each_named_google_and_openai_crawler_is_disallowed(db: "psycopg.Connection", token: str) -> None:
+    row = db.execute("select robots_disallow from public.crawler_agents where token = %s", (token,)).fetchone()
+    assert row == (True,)
+
+
+@pytest.mark.parametrize("token", ["googlebot", "chrome-lighthouse", "bingbot", "claudebot", "duckduckbot"])
+def test_other_readers_stay_allowed(db: "psycopg.Connection", token: str) -> None:
+    row = db.execute("select robots_disallow from public.crawler_agents where token = %s", (token,)).fetchone()
+    assert row == (False,)

@@ -957,7 +957,10 @@ anyone logged out and makes no account. `public.crawler_accounts` (service_role,
 owner-executed since it reads `auth.users`/`auth.sessions`) are the anonymous
 accounts whose first session was a crawler; their rows are kept, so stats leave
 them out by joining against it rather than deleting anything. A crawler is a
-new row in `crawler_agents`.
+new row in `crawler_agents`. `crawler_agents.robots_disallow`
+(`20261126200000_crawler_robots.sql`) marks the crawlers robots.txt sends away
+(Google's and OpenAI's search and AI crawlers, except Googlebot, so the site stays in Google Search); the build writes `dist/robots.txt`
+from it, so who is turned away is a row update.
 
 **Visits and how readers come back.** `public.link_visits` is one row per
 click on a row's title or cover (private to the visitor by RLS; the page also
