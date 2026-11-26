@@ -19,8 +19,8 @@ from seb_now.constants import ROBOTS_TXT_DISALLOW_ALL, ROBOTS_TXT_PATH
 
 TEMPLATE_PATH = Path(__file__).parent / "templates" / "robots.txt"
 
-# A user-agent product token (RFC 9309 §2.2.1): letters, digits, "_" and "-".
-PRODUCT_TOKEN = re.compile(r"[A-Za-z0-9_-]+")
+# A user-agent product token (RFC 9309 §2.2.1): ASCII letters, "_" and "-" only.
+PRODUCT_TOKEN = re.compile(r"[A-Za-z_-]+")
 
 
 def product_token(token: str) -> str:

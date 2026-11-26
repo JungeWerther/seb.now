@@ -35,7 +35,7 @@ def test_a_token_listed_twice_is_named_once() -> None:
     assert render_robots_txt(["gptbot", "gptbot"]).count("User-agent: gptbot") == 1
 
 
-@pytest.mark.parametrize("token", ["gptbot\nAllow: /", "googlebot Disallow", "bot#x", ""])
+@pytest.mark.parametrize("token", ["gptbot\nAllow: /", "googlebot Disallow", "bot#x", "mj12bot", ""])
 def test_a_token_cannot_add_a_line_or_rule(token: str) -> None:
     with pytest.raises(ValueError, match="product token"):
         render_robots_txt([token])
