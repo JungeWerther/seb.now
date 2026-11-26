@@ -1392,7 +1392,7 @@ manual step until that changes.
 
 **Crawlers and `llms.txt`.** DO's static site can't route by user agent, so
 crawlers get the same page as everyone, minus the session: `site.py` reads the
-tokens of `public.crawler_agents` (`load_crawler_tokens`, see "Crawlers read,
+tokens of `public.crawler_agents` (`load_crawler_agents`, see "Crawlers read,
 they don't send signals") into the page as `CRAWLER_AGENT_TOKENS`, and
 `ensureSession` returns no session for a matching `navigator.userAgent`, so a
 crawler makes no anonymous account and sends no impressions, visits or votes
@@ -1403,7 +1403,12 @@ build also writes `dist/llms.txt` (`llms.py`, served at `seb.now/llms.txt`):
 using `/mcp` as a plain HTTP endpoint, the sort and source pages,
 site-relative links; it names no infrastructure, `test_it_names_no_infrastructure`) followed by the pre-rendered links, each one line with
 its title's brackets escaped and its URL's link-ending characters
-percent-encoded. A new page every reader has goes in the template.
+percent-encoded. A new page every reader has goes in the template. It also writes
+`dist/robots.txt` (`robots.py`): `templates/robots.txt` (everyone allowed under
+`User-agent: *`) then one group, `Disallow: /`, naming every crawler whose
+`crawler_agents.robots_disallow` is set (`20261126200000_crawler_robots.sql`:
+Google's and OpenAI's search and AI crawlers), so who is turned away is a row
+update and a rebuild.
 
 **Installable app — `seb_now.pwa`.** The build writes, next to `index.html`:
 `manifest.json` (`/` as id, start and scope, standalone, shortcuts to `/o/latest`

@@ -126,6 +126,7 @@ class CrawlerAgentsRow(TypedDict):
     operator: str
     purpose: str
     created_at: str
+    robots_disallow: bool
 
 
 class DomainSourceTypesRow(TypedDict):
