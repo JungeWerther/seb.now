@@ -103,6 +103,11 @@ LLMS_TXT_LINKS_HEADING = "Latest links"
 # Separates a link's domain from its topics in its line.
 LLMS_TXT_NOTE_SEPARATOR = " · "
 
+# robots.py — written under dist/ so it is served at seb.now/robots.txt; the
+# crawlers crawler_agents.robots_disallow names get this rule as one group.
+ROBOTS_TXT_PATH = "robots.txt"
+ROBOTS_TXT_DISALLOW_ALL = "Disallow: /"
+
 # site.py — value of every field in the #article-template markup, which the
 # page script overwrites per link
 TEMPLATE_ARTICLE_BLANK = ""

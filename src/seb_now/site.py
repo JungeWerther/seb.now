@@ -56,6 +56,7 @@ from seb_now.db_types import Json, Table
 from seb_now.llms import write_llms_txt
 from seb_now.posts import load_posts, write_posts
 from seb_now.pwa import with_app_head, write_pwa
+from seb_now.robots import write_robots_txt
 from seb_now.rows import select, validated
 from seb_now.sanitize import page_csp, safe_http_url, script_json
 from seb_now.source_type import classify_source, display_domain, favicon_host
@@ -143,6 +144,7 @@ class FeedRow(TypedDict):
 
 class CrawlerAgentRow(TypedDict):
     token: str
+    robots_disallow: bool
 
 
 class DomainSourceTypeRow(TypedDict):
@@ -249,11 +251,20 @@ def load_domain_source_types() -> dict[str, SourceType]:
     return {row["domain"]: SourceType(row["source_type"]) for row in validated(DomainSourceTypeRow, response.data)}
 
 
-def load_crawler_tokens() -> list[str]:
-    """User-agent tokens of crawlers (20261120150000_crawlers.sql), which the page
-    script checks before its anonymous sign-in, so a crawler makes no account."""
+def load_crawler_agents() -> list[CrawlerAgentRow]:
+    """Crawlers (20261120150000_crawlers.sql): their tokens, which the page script
+    checks before its anonymous sign-in so a crawler makes no account, and which of
+    them robots.txt turns away (20261126200000_crawler_robots.sql)."""
     response = get_unauthenticated_client().table(Table.CRAWLER_AGENTS).select(select(CrawlerAgentRow)).execute()
-    return sorted(row["token"] for row in validated(CrawlerAgentRow, response.data))
+    return validated(CrawlerAgentRow, response.data)
+
+
+def crawler_tokens(agents: Iterable[CrawlerAgentRow]) -> list[str]:
+    return sorted(agent["token"] for agent in agents)
+
+
+def robots_disallowed(agents: Iterable[CrawlerAgentRow]) -> list[str]:
+    return crawler_tokens(filter(lambda agent: agent["robots_disallow"], agents))
 
 
 def load_builtin_styles() -> list[StyleRow]:
@@ -506,14 +517,17 @@ def main() -> None:
     supabase_url = os.environ["SUPABASE_URL"]
     supabase_anon_key = os.environ["SUPABASE_ANON_KEY"]
     articles = build_articles(load_feed(), load_domain_source_types())
+    crawlers = load_crawler_agents()
     # Every page carries the built-in styles' values after the theme's defaults.
     with style_tokens(style_tokens_css(load_builtin_styles())):
         write_pages(
             articles,
             supabase_url=supabase_url,
             supabase_anon_key=supabase_anon_key,
-            crawler_tokens=load_crawler_tokens(),
+            crawler_tokens=crawler_tokens(crawlers),
         )
+    robots_path = write_robots_txt(OUTPUT_PATH.parent, robots_disallowed(crawlers))
+    print(f"wrote {robots_path}")
 
 
 def write_pages(

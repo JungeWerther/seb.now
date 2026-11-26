@@ -1,0 +1,7 @@
+# seb.now: readers, agents and feed readers are welcome. Agents can read the
+# feed through the MCP server at /mcp; /llms.txt describes the site.
+#
+# The crawlers named below are asked to stay away from the whole site.
+
+User-agent: *
+Allow: /
