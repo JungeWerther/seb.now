@@ -176,24 +176,24 @@ def test_readers_cannot_list_crawler_accounts(db: "psycopg.Connection") -> None:
         db.execute("select * from public.crawler_accounts")
 
 
-def test_robots_txt_turns_away_exactly_google_and_openai_search_and_ai_crawlers(db: "psycopg.Connection") -> None:
+def test_robots_txt_turns_away_google_and_openai_crawlers_but_googlebot(db: "psycopg.Connection") -> None:
     rows = db.execute("select token, operator, purpose, robots_disallow from public.crawler_agents").fetchall()
     wrong = [
         token
         for token, operator, purpose, disallowed in rows
-        if disallowed != (operator in {"Google", "OpenAI"} and purpose in {"search", "ai"})
+        if disallowed != (operator in {"Google", "OpenAI"} and purpose in {"search", "ai"} and token != "googlebot")
     ]
     assert rows
     assert wrong == []
 
 
-@pytest.mark.parametrize("token", ["googlebot", "google-extended", "google-cloudvertexbot", "gptbot", "oai-searchbot"])
+@pytest.mark.parametrize("token", ["google-extended", "google-cloudvertexbot", "gptbot", "oai-searchbot"])
 def test_each_named_google_and_openai_crawler_is_disallowed(db: "psycopg.Connection", token: str) -> None:
     row = db.execute("select robots_disallow from public.crawler_agents where token = %s", (token,)).fetchone()
     assert row == (True,)
 
 
-@pytest.mark.parametrize("token", ["chrome-lighthouse", "bingbot", "claudebot", "duckduckbot"])
+@pytest.mark.parametrize("token", ["googlebot", "chrome-lighthouse", "bingbot", "claudebot", "duckduckbot"])
 def test_other_readers_stay_allowed(db: "psycopg.Connection", token: str) -> None:
     row = db.execute("select robots_disallow from public.crawler_agents where token = %s", (token,)).fetchone()
     assert row == (False,)

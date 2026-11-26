@@ -6,7 +6,8 @@
 --
 -- The build reads the column and writes dist/robots.txt from it, so changing
 -- who is turned away is an update here, not a code change. Google's and
--- OpenAI's crawlers are turned away, search included; their audit tools
+-- OpenAI's crawlers are turned away, except Googlebot itself, so seb.now stays
+-- in Google Search while Google-Extended (AI training) is refused. Audit tools
 -- (chrome-lighthouse) don't read robots.txt and keep the default.
 --
 -- Additive only: a new column with a default, one new crawler row, and flags
@@ -25,4 +26,5 @@ on conflict (token) do nothing;
 
 update public.crawler_agents
   set robots_disallow = true
-  where operator in ('Google', 'OpenAI') and purpose in ('search', 'ai');
+  where operator in ('Google', 'OpenAI') and purpose in ('search', 'ai')
+    and token <> 'googlebot';
